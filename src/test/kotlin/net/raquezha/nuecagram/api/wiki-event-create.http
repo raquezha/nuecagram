@@ -1,0 +1,58 @@
+POST http://127.0.0.1:8080/webhook
+Content-Type: application/json
+User-Agent: GitLab/16.11.2-ee
+X-Gitlab-Event: Wiki Page Hook
+X-Gitlab-Webhook-UUID: 4934cc87-96a7-401b-8256-4aa3ea1c8f74
+X-Gitlab-Instance: https://gitlab.com
+X-Gitlab-Token: [REDACTED]
+X-Gitlab-Event-UUID: 04862d56-febc-4be8-8339-be10e5120f02
+X-Nuecagram-Token: {{X-Nuecagram-Token}}
+X-Nuecagram-Chat-Id: {{X-Nuecagram-Chat-Id}}
+X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
+
+{
+  "object_kind": "wiki_page",
+  "user": {
+    "id": 38,
+    "name": "raquezha",
+    "username": "raquezha",
+    "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/38/avatar.png",
+    "email": "[REDACTED]"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app-customer-app",
+    "description": "This is awesome"
+    "web_url": "https://gitlab.com/android-team/customer-app",
+    "avatar_url": "https://gitlab.com/uploads/-/system/project/avatar/105/photo_2023-09-26_14-46-04_Background_Removed.png",
+    "git_ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "git_http_url": "https://gitlab.com/android-team/customer-app.git",
+    "namespace": "customer-app",
+    "visibility_level": 0,
+    "path_with_namespace": "android-team/customer-app",
+    "default_branch": "main",
+    "ci_config_path": null,
+    "homepage": "https://gitlab.com/android-team/customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "http_url": "https://gitlab.com/android-team/customer-app.git"
+  },
+  "wiki": {
+    "web_url": "https://gitlab.com/android-team/customer-app/-/wikis/home",
+    "git_ssh_url": "git@gitlab.com:android-team/customer-app.wiki.git",
+    "git_http_url": "https://gitlab.com/android-team/customer-app.wiki.git",
+    "path_with_namespace": "android-team/customer-app.wiki",
+    "default_branch": "master"
+  },
+  "object_attributes": {
+    "format": "markdown",
+    "message": "Tutorial New Wiki",
+    "title": "home",
+    "slug": "home",
+    "version_id": "fc59ebb50c39ad06d05d4a72446809225d5267b5",
+    "url": "https://gitlab.com/android-team/customer-app/-/wikis/home",
+    "action": "create",
+    "diff_url": "https://gitlab.com/android-team/customer-app/-/wikis/home/diff?version_id=fc59ebb50c39ad06d05d4a72446809225d5267b5",
+    "content": "This is a sample content of the newly created page"
+  }
+}

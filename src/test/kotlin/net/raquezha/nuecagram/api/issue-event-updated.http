@@ -1,0 +1,120 @@
+POST http://127.0.0.1:8080/webhook
+Content-Type: application/json
+User-Agent: GitLab/16.11.2-ee
+X-Gitlab-Event: Issue Hook
+X-Gitlab-Webhook-UUID: 4934cc87-96a7-401b-8256-4aa3ea1c8f74
+X-Gitlab-Instance: https://gitlab.com
+X-Gitlab-Token: [REDACTED]
+X-Gitlab-Event-UUID: 04862d56-febc-4be8-8339-be10e5120f02
+X-Nuecagram-Token: {{X-Nuecagram-Token}}
+X-Nuecagram-Chat-Id: {{X-Nuecagram-Chat-Id}}
+X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
+
+{
+  "object_kind": "issue",
+  "event_type": "issue",
+  "user": {
+    "id": 38,
+    "name": "raquezha",
+    "username": "raquezha",
+    "avatar_url": "https://gitlab.com/avatar.png",
+    "email": "[REDACTED]"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app",
+    "description": "Sample Description",
+    "web_url": "https://gitlab.com/android-team/sampple-app",
+    "avatar_url": "https://sample-avatar-url.com",
+    "git_ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "git_http_url": "https://gitlab.com/android-team/customer-app.git",
+    "namespace": "customer-app",
+    "visibility_level": 0,
+    "path_with_namespace": "android-team/customer-app",
+    "default_branch": "main",
+    "ci_config_path": null,
+    "homepage": "https://gitlab.com/android-team/customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "http_url": "https://gitlab.com/android-team/customer-app.git"
+  },
+  "object_attributes": {
+    "author_id": 38,
+    "closed_at": null,
+    "confidential": false,
+    "created_at": "2023-03-27 08:42:29 UTC",
+    "description": "Write or drag a comment here",
+    "discussion_locked": null,
+    "due_date": null,
+    "id": 2098,
+    "iid": 596,
+    "last_edited_at": "2024-06-19 01:45:14 UTC",
+    "last_edited_by_id": 38,
+    "milestone_id": null,
+    "moved_to_id": null,
+    "duplicated_to_id": null,
+    "project_id": 105,
+    "relative_position": 915898,
+    "state_id": 1,
+    "time_estimate": 0,
+    "title": "Test Issue",
+    "updated_at": "2024-06-19 01:45:14 UTC",
+    "updated_by_id": 38,
+    "weight": null,
+    "health_status": null,
+    "url": "https://gitlab.com/android-team/customer-app/-/issues/596",
+    "total_time_spent": 0,
+    "time_change": 0,
+    "human_total_time_spent": null,
+    "human_time_change": null,
+    "human_time_estimate": null,
+    "assignee_ids": [
+
+    ],
+    "assignee_id": null,
+    "labels": [
+
+    ],
+    "state": "opened",
+    "severity": "unknown",
+    "customer_relations_contacts": [
+
+    ],
+    "action": "update"
+  },
+  "labels": [
+
+  ],
+  "changes": {
+    "description": {
+      "previous": null,
+      "current": "Write or drag a comment here"
+    },
+    "last_edited_at": {
+      "previous": null,
+      "current": "2024-06-19 01:45:14 UTC"
+    },
+    "last_edited_by_id": {
+      "previous": null,
+      "current": 38
+    },
+    "title": {
+      "previous": "Test",
+      "current": "Test Issue"
+    },
+    "updated_at": {
+      "previous": "2023-03-27 08:42:29 UTC",
+      "current": "2024-06-19 01:45:14 UTC"
+    },
+    "updated_by_id": {
+      "previous": null,
+      "current": 38
+    }
+  },
+  "repository": {
+    "name": "customer-app-customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "description": "This is awesome",
+    "homepage": "https://gitlab.com/android-team/customer-app"
+  }
+}

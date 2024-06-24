@@ -1,0 +1,120 @@
+POST http://localhost:80/webhook
+Content-Type: application/json
+User-Agent: GitLab/16.11.2-ee
+X-Gitlab-Event: Push Hook
+X-Gitlab-Webhook-UUID: 4934cc87-96a7-401b-8256-4aa3ea1c8f74
+X-Gitlab-Instance: https://gitlab.com
+X-Gitlab-Token: [REDACTED]
+X-Gitlab-Event-UUID: 04862d56-febc-4be8-8339-be10e5120f02
+X-Nuecagram-Token: {{X-Nuecagram-Token}}
+X-Nuecagram-Chat-Id: {{X-Nuecagram-Chat-Id}}
+X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
+
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "b1bee95f3e7f1287988b4af86a46cc2d34175af4",
+  "after": "39bd32ef881c77c4f1b4c23bbc6e70d77ff2c158",
+  "ref": "refs/heads/main",
+  "ref_protected": true,
+  "checkout_sha": "39bd32ef881c77c4f1b4c23bbc6e70d77ff2c158",
+  "message": null,
+  "user_id": 44,
+  "user_name": "Ralph Eufracio",
+  "user_username": "ralpheufracio",
+  "user_email": "",
+  "user_avatar": "https://secure.gravatar.com/avatar/47e1004d34051d0781507825fe54cfd095452c482042bab42d9c0309c5d49f15?s=80&d=identicon",
+  "project_id": 107,
+  "project": {
+    "id": 107,
+    "name": "tindahannimama-customer-app",
+    "description": "",
+    "web_url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app",
+    "avatar_url": "https://gitlab.com/512x512_.png",
+    "git_ssh_url": "git@gitlab.com:android-team/tindahannimama/tindahannimama-customer-app.git",
+    "git_http_url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app.git",
+    "namespace": "tindahannimama",
+    "visibility_level": 0,
+    "path_with_namespace": "android-team/tindahannimama/tindahannimama-customer-app",
+    "default_branch": "main",
+    "ci_config_path": null,
+    "homepage": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app",
+    "url": "git@gitlab.com:android-team/tindahannimama/tindahannimama-customer-app.git",
+    "ssh_url": "git@gitlab.com:android-team/tindahannimama/tindahannimama-customer-app.git",
+    "http_url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app.git"
+  },
+  "commits": [
+    {
+      "id": "efb8d8087e50253ed72e98cc684adea3d9d0ec3f",
+      "message": "Use new staging server url\n",
+      "title": "Use new staging server url",
+      "timestamp": "2024-06-11T10:59:21+08:00",
+      "url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app/-/commit/efb8d8087e50253ed72e98cc684adea3d9d0ec3f",
+      "author": {
+        "name": "Ralph Eufracio",
+        "email": "[REDACTED]"
+      },
+      "added": [
+
+      ],
+      "modified": [
+        "app-tindahannimama/build.gradle.kts"
+      ],
+      "removed": [
+
+      ]
+    },
+    {
+      "id": "39bd32ef881c77c4f1b4c23bbc6e70d77ff2c158",
+      "message": "Merge branch 'adjust-staging-url' into 'main'\n\nUse new staging server url\n\nSee merge request android-team/tindahannimama/tindahannimama-customer-app!480",
+      "title": "Merge branch 'adjust-staging-url' into 'main'",
+      "timestamp": "2024-06-11T03:04:03+00:00",
+      "url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app/-/commit/39bd32ef881c77c4f1b4c23bbc6e70d77ff2c158",
+      "author": {
+        "name": "Ralph Eufracio",
+        "email": "[REDACTED]"
+      },
+      "added": [
+
+      ],
+      "modified": [
+        "app-tindahannimama/build.gradle.kts"
+      ],
+      "removed": [
+
+      ]
+    },
+    {
+      "id": "39bd32ef881c77000004c23bbc6e70d77ff2c158",
+      "message": "Just a regular commit by raquezha",
+      "title": "Just a regular commit by raquezha",
+      "timestamp": "2024-06-11T03:04:03+00:00",
+      "url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app/-/commit/39bd32ef881c77000004c23bbc6e70d77ff2c158",
+      "author": {
+        "name": "Jan Celada",
+        "email": "jan@nueca.com.ph"
+      },
+      "added": [
+
+      ],
+      "modified": [
+        "app-tindahannimama/build.gradle.kts"
+      ],
+      "removed": [
+
+      ]
+    }
+  ],
+  "total_commits_count": 2,
+  "push_options": {
+  },
+  "repository": {
+    "name": "tindahannimama-customer-app",
+    "url": "git@gitlab.com:android-team/tindahannimama/tindahannimama-customer-app.git",
+    "description": "",
+    "homepage": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app",
+    "git_http_url": "https://gitlab.com/android-team/tindahannimama/tindahannimama-customer-app.git",
+    "git_ssh_url": "git@gitlab.com:android-team/tindahannimama/tindahannimama-customer-app.git",
+    "visibility_level": 0
+  }
+}

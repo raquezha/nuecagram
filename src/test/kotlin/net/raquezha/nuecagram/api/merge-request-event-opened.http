@@ -1,0 +1,166 @@
+POST http://127.0.0.1:8080/webhook
+Content-Type: application/json
+User-Agent: GitLab/16.11.2-ee
+X-Gitlab-Event: Merge Request Hook
+X-Gitlab-Webhook-UUID: 4934cc87-96a7-401b-8256-4aa3ea1c8f74
+X-Gitlab-Instance: https://gitlab.com
+X-Gitlab-Token: [REDACTED]
+X-Gitlab-Event-UUID: 04862d56-febc-4be8-8339-be10e5120f02
+X-Nuecagram-Token: {{X-Nuecagram-Token}}
+X-Nuecagram-Chat-Id: {{X-Nuecagram-Chat-Id}}
+X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
+
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 38,
+    "name": "raquezha",
+    "username": "raquezha",
+    "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/38/avatar.png",
+    "email": "[REDACTED]"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app-customer-app",
+    "description": "This is awesome"
+    "web_url": "https://gitlab.com/android-team/customer-app",
+    "avatar_url": "https://gitlab.com/uploads/-/system/project/avatar/105/photo_2023-09-26_14-46-04_Background_Removed.png",
+    "git_ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "git_http_url": "https://gitlab.com/android-team/customer-app.git",
+    "namespace": "customer-app",
+    "visibility_level": 0,
+    "path_with_namespace": "android-team/customer-app",
+    "default_branch": "main",
+    "ci_config_path": null,
+    "homepage": "https://gitlab.com/android-team/customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "http_url": "https://gitlab.com/android-team/customer-app.git"
+  },
+  "object_attributes": {
+    "assignee_id": null,
+    "author_id": 38,
+    "created_at": "2024-06-19 06:43:37 UTC",
+    "description": "",
+    "draft": true,
+    "head_pipeline_id": 53062,
+    "id": 8489,
+    "iid": 835,
+    "last_edited_at": null,
+    "last_edited_by_id": null,
+    "merge_commit_sha": null,
+    "merge_error": null,
+    "merge_params": {
+      "force_remove_source_branch": "1"
+    },
+    "merge_status": "checking",
+    "merge_user_id": null,
+    "merge_when_pipeline_succeeds": false,
+    "milestone_id": null,
+    "source_branch": "test-branch",
+    "source_project_id": 105,
+    "state_id": 1,
+    "target_branch": "main",
+    "target_project_id": 105,
+    "time_estimate": 0,
+    "title": "Draft: Test branch",
+    "updated_at": "2024-06-19 06:43:38 UTC",
+    "updated_by_id": null,
+    "prepared_at": "2024-06-19 06:43:38 UTC",
+    "assignee_ids": [
+
+    ],
+    "blocking_discussions_resolved": true,
+    "detailed_merge_status": "checking",
+    "first_contribution": false,
+    "human_time_change": null,
+    "human_time_estimate": null,
+    "human_total_time_spent": null,
+    "labels": [
+
+    ],
+    "last_commit": {
+      "id": "20f73df08b2fe02c5a8a9e77b445df69fab96f15",
+      "message": "Merge branch 'fix-address' into 'main'\n\nBottomsheet Fix\n\nSee merge request android-team/customer-app!833",
+      "title": "Merge branch 'fix-address' into 'main'",
+      "timestamp": "2024-04-23T03:27:58+00:00",
+      "url": "https://gitlab.com/android-team/customer-app/-/commit/20f73df08b2fe02c5a8a9e77b445df69fab96f15",
+      "author": {
+        "name": "raquezha",
+        "email": "[REDACTED]"
+      }
+    },
+    "reviewer_ids": [
+
+    ],
+    "source": {
+      "id": 105,
+      "name": "customer-app-customer-app",
+      "description": "This is awesome"
+      "web_url": "https://gitlab.com/android-team/customer-app",
+      "avatar_url": "https://gitlab.com/uploads/-/system/project/avatar/105/photo_2023-09-26_14-46-04_Background_Removed.png",
+      "git_ssh_url": "git@gitlab.com:android-team/customer-app.git",
+      "git_http_url": "https://gitlab.com/android-team/customer-app.git",
+      "namespace": "customer-app",
+      "visibility_level": 0,
+      "path_with_namespace": "android-team/customer-app",
+      "default_branch": "main",
+      "ci_config_path": null,
+      "homepage": "https://gitlab.com/android-team/customer-app",
+      "url": "git@gitlab.com:android-team/customer-app.git",
+      "ssh_url": "git@gitlab.com:android-team/customer-app.git",
+      "http_url": "https://gitlab.com/android-team/customer-app.git"
+    },
+    "state": "opened",
+    "target": {
+      "id": 105,
+      "name": "customer-app-customer-app",
+      "description": "This is awesome"
+      "web_url": "https://gitlab.com/android-team/customer-app",
+      "avatar_url": "https://gitlab.com/uploads/-/system/project/avatar/105/photo_2023-09-26_14-46-04_Background_Removed.png",
+      "git_ssh_url": "git@gitlab.com:android-team/customer-app.git",
+      "git_http_url": "https://gitlab.com/android-team/customer-app.git",
+      "namespace": "customer-app",
+      "visibility_level": 0,
+      "path_with_namespace": "android-team/customer-app",
+      "default_branch": "main",
+      "ci_config_path": null,
+      "homepage": "https://gitlab.com/android-team/customer-app",
+      "url": "git@gitlab.com:android-team/customer-app.git",
+      "ssh_url": "git@gitlab.com:android-team/customer-app.git",
+      "http_url": "https://gitlab.com/android-team/customer-app.git"
+    },
+    "time_change": 0,
+    "total_time_spent": 0,
+    "url": "https://gitlab.com/android-team/customer-app/-/merge_requests/835",
+    "work_in_progress": true,
+    "approval_rules": [
+
+    ],
+    "action": "open"
+  },
+  "labels": [
+
+  ],
+  "changes": {
+    "merge_status": {
+      "previous": "preparing",
+      "current": "checking"
+    },
+    "updated_at": {
+      "previous": "2024-06-19 06:43:37 UTC",
+      "current": "2024-06-19 06:43:38 UTC"
+    },
+    "prepared_at": {
+      "previous": null,
+      "current": "2024-06-19 06:43:38 UTC"
+    }
+  },
+  "repository": {
+    "name": "customer-app-customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "description": "This is awesome"
+    "homepage": "https://gitlab.com/android-team/customer-app"
+  }
+}

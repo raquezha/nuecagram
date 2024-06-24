@@ -1,0 +1,6 @@
+{
+  "name": "nuecagram",
+  "env": "dev",
+  "host": "localhost",
+  "port": 8080
+}

@@ -1,0 +1,163 @@
+POST http://127.0.0.1:8080/webhook
+Content-Type: application/json
+User-Agent: GitLab/16.11.2-ee
+X-Gitlab-Event: Issue Hook
+X-Gitlab-Webhook-UUID: 4934cc87-96a7-401b-8256-4aa3ea1c8f74
+X-Gitlab-Instance: https://gitlab.com
+X-Gitlab-Token: [REDACTED]
+X-Gitlab-Event-UUID: 04862d56-febc-4be8-8339-be10e5120f02
+X-Nuecagram-Token: {{X-Nuecagram-Token}}
+X-Nuecagram-Chat-Id: {{X-Nuecagram-Chat-Id}}
+X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
+
+{
+  "object_kind": "issue",
+  "event_type": "issue",
+  "user": {
+    "id": 38,
+    "name": "raquezha",
+    "username": "raquezha",
+    "avatar_url": "https://gitlab.com/avatar.png",
+    "email": "[REDACTED]"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app",
+    "description": "Sample Description",
+    "web_url": "https://gitlab.com/android-team/sampple-app",
+    "avatar_url": "https://sample-avatar-url.com",
+    "git_ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "git_http_url": "https://gitlab.com/android-team/customer-app.git",
+    "namespace": "customer-app",
+    "visibility_level": 0,
+    "path_with_namespace": "android-team/customer-app",
+    "default_branch": "main",
+    "ci_config_path": null,
+    "homepage": "https://gitlab.com/android-team/customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "ssh_url": "git@gitlab.com:android-team/customer-app.git",
+    "http_url": "https://gitlab.com/android-team/customer-app.git"
+  },
+  "object_attributes": {
+    "author_id": 38,
+    "closed_at": null,
+    "confidential": false,
+    "created_at": "2024-06-11 07:56:28 UTC",
+    "description": "This is the issue of all issue around the world. Suffer now! Die!",
+    "discussion_locked": null,
+    "due_date": null,
+    "id": 2658,
+    "iid": 597,
+    "last_edited_at": null,
+    "last_edited_by_id": null,
+    "milestone_id": null,
+    "moved_to_id": null,
+    "duplicated_to_id": null,
+    "project_id": 105,
+    "relative_position": null,
+    "state_id": 1,
+    "time_estimate": 0,
+    "title": "Nuecagram New Issue",
+    "updated_at": "2024-06-11 07:56:28 UTC",
+    "updated_by_id": null,
+    "weight": null,
+    "health_status": null,
+    "url": "https://gitlab.com/android-team/customer-app/-/issues/597",
+    "total_time_spent": 0,
+    "time_change": 0,
+    "human_total_time_spent": null,
+    "human_time_change": null,
+    "human_time_estimate": null,
+    "assignee_ids": [
+      38
+    ],
+    "assignee_id": 38,
+    "labels": [
+      {
+        "id": 128,
+        "title": "Doing",
+        "color": "#808080",
+        "project_id": null,
+        "created_at": "2022-12-22 10:16:32 UTC",
+        "updated_at": "2022-12-22 10:16:32 UTC",
+        "template": false,
+        "description": "",
+        "type": "GroupLabel",
+        "group_id": 44
+      }
+    ],
+    "state": "opened",
+    "severity": "unknown",
+    "customer_relations_contacts": [
+
+    ],
+    "action": "open"
+  },
+  "labels": [
+    {
+      "id": 128,
+      "title": "Doing",
+      "color": "#808080",
+      "project_id": null,
+      "created_at": "2022-12-22 10:16:32 UTC",
+      "updated_at": "2022-12-22 10:16:32 UTC",
+      "template": false,
+      "description": "",
+      "type": "GroupLabel",
+      "group_id": 44
+    }
+  ],
+  "changes": {
+    "author_id": {
+      "previous": null,
+      "current": 38
+    },
+    "created_at": {
+      "previous": null,
+      "current": "2024-06-11 07:56:28 UTC"
+    },
+    "description": {
+      "previous": null,
+      "current": "This is the issue of all issue around the world. Suffer now! Die!"
+    },
+    "id": {
+      "previous": null,
+      "current": 2658
+    },
+    "iid": {
+      "previous": null,
+      "current": 597
+    },
+    "project_id": {
+      "previous": null,
+      "current": 105
+    },
+    "time_estimate": {
+      "previous": null,
+      "current": 0
+    },
+    "title": {
+      "previous": null,
+      "current": "Nuecagram New Issue"
+    },
+    "updated_at": {
+      "previous": null,
+      "current": "2024-06-11 07:56:28 UTC"
+    }
+  },
+  "repository": {
+    "name": "🤖customer-app-customer-app",
+    "url": "git@gitlab.com:android-team/customer-app.git",
+    "description": "This is awesome",
+    "homepage": "https://gitlab.com/android-team/customer-app"
+  },
+  "assignees": [
+    {
+      "id": 38,
+      "name": "raquezha",
+      "username": "raquezha",
+      "avatar_url": "https://gitlab.com/uploads/-/system/user/avatar/38/avatar.png",
+      "email": "[REDACTED]"
+    }
+  ]
+}

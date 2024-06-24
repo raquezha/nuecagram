@@ -1,0 +1,4 @@
+# noinspection EditorConfigKeyCorrectness
+[*.{kt,kts}]
+ktlint_standard_no-wildcard-imports = disabled # Disables the `final-newline` rule in the `standard` rule set provided by KtLint
+
