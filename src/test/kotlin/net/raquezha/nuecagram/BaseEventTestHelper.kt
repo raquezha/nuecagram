@@ -10,8 +10,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
-import net.raquezha.nuecagram.di.appModule
-import net.raquezha.nuecagram.di.testModule
+import io.mockk.every
+import io.mockk.mockkObject
+import net.raquezha.nuecagram.di.SystemEnvImpl
+import net.raquezha.nuecagram.di.testAppModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.CHAT_ID
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
@@ -36,9 +38,7 @@ abstract class BaseEventTestHelper : KoinTest {
             configureRouting()
             koin {
                 modules(
-                    appModule().toMutableList().apply {
-                        add(testModule)
-                    },
+                    testAppModule()
                 )
             }
         }
@@ -95,12 +95,15 @@ abstract class BaseEventTestHelper : KoinTest {
         @JvmStatic
         fun setUpClass() {
             // Start Koin once per test class
+            mockkObject(SystemEnvImpl)
+            every { SystemEnvImpl.getBotApi() } returns "mock_bot_api"
+            every { SystemEnvImpl.getSecretToken() } returns "mock_secret_token"
+
+
             if (GlobalContext.getOrNull() == null) {
                 startKoin {
                     modules(
-                        appModule().toMutableList().apply {
-                            add(testModule)
-                        },
+                       testAppModule()
                     )
                 }
             }
