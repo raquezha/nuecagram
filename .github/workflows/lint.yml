@@ -11,11 +11,13 @@ jobs:
         uses: actions/setup-java@v3
         with:
           java-version: "17"
-          distribution: 'temurin'
+          distribution: "temurin"
           overwrite-settings: false
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
       - name: Run Lint
         run: ./gradlew lintKotlin
+      - name: Run Tests
+        run: ./gradlew test
 
 
