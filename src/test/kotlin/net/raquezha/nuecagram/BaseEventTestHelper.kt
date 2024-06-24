@@ -46,7 +46,6 @@ abstract class BaseEventTestHelper : KoinTest {
 
     @Before
     fun setUp() {
-
         testHeaders =
             HeadersBuilder().apply {
                 append(HttpHeaders.UserAgent, USER_AGENT)
@@ -86,7 +85,6 @@ abstract class BaseEventTestHelper : KoinTest {
         const val EVENT_PUSH = "Push Hook"
         const val EVENT_TAG = "Tag Push Hook"
         const val EVENT_ISSUE = "Issue Hook"
-        const val EVENT_NOTE = "Note Hook"
         const val EVENT_MERGE = "Merge Request Hook"
         const val EVENT_WIKI = "Wiki Page Hook"
         const val EVENT_JOB = "Job Hook"

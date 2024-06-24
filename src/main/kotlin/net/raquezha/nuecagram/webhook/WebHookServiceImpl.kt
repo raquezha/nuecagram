@@ -89,11 +89,11 @@ class WebHookServiceImpl(
             event = event,
             headerEvent = request.headers[GITLAB_EVENT]?.trim() ?: throw GitLabApiException("missing '$GITLAB_EVENT' header!"),
             headerSecretToken =
-            request.headers[SECRET_TOKEN]?.trim(
-                ' ',
-                '[',
-                ']',
-            ) ?: throw GitLabApiException("missing '$SECRET_TOKEN' header!"),
+                request.headers[SECRET_TOKEN]?.trim(
+                    ' ',
+                    '[',
+                    ']',
+                ) ?: throw GitLabApiException("missing '$SECRET_TOKEN' header!"),
             headerChatId = request.headers[CHAT_ID]?.trim() ?: throw GitLabApiException("missing '$CHAT_ID' header!"),
             headerTopicId = request.headers[TOPIC_ID]?.trim(),
         ).apply {

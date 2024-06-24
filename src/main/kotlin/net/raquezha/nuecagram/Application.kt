@@ -27,25 +27,28 @@ fun main(): Unit =
         ).start(true)
     }
 
-fun config(filename: String): net.raquezha.nuecagram.ConfigWithSecrets {
-    val config = ConfigLoaderBuilder.default()
-        .addResourceSource(filename)
-        .withExplicitSealedTypes()
-        .build()
-        .loadConfigOrThrow<net.raquezha.nuecagram.Config>()
+fun config(filename: String): ConfigWithSecrets {
+    val config =
+        ConfigLoaderBuilder.default()
+            .addResourceSource(filename)
+            .withExplicitSealedTypes()
+            .build()
+            .loadConfigOrThrow<Config>()
 
-    val botApi = System.getenv("TELEGRAM_BOT_TOKEN")
-        ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN environment variable is not set")
-    val secretToken = System.getenv("NUECAGRAM_SECRET_TOKEN")
-        ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN environment variable is not set")
+    val botApi =
+        System.getenv("TELEGRAM_BOT_TOKEN")
+            ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN environment variable is not set")
+    val secretToken =
+        System.getenv("NUECAGRAM_SECRET_TOKEN")
+            ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN environment variable is not set")
 
-    return net.raquezha.nuecagram.ConfigWithSecrets(
+    return ConfigWithSecrets(
         name = config.name,
         env = config.env,
         host = config.host,
         port = config.port,
         botApi = botApi,
-        secretToken = secretToken
+        secretToken = secretToken,
     )
 }
 
