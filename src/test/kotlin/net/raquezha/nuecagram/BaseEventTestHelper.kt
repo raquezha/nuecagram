@@ -38,7 +38,7 @@ abstract class BaseEventTestHelper : KoinTest {
             configureRouting()
             koin {
                 modules(
-                    testAppModule()
+                    testAppModule(),
                 )
             }
         }
@@ -99,11 +99,10 @@ abstract class BaseEventTestHelper : KoinTest {
             every { SystemEnvImpl.getBotApi() } returns "mock_bot_api"
             every { SystemEnvImpl.getSecretToken() } returns "mock_secret_token"
 
-
             if (GlobalContext.getOrNull() == null) {
                 startKoin {
                     modules(
-                       testAppModule()
+                        testAppModule(),
                     )
                 }
             }

@@ -37,14 +37,15 @@ fun appModule() =
         provideConfigModule,
     )
 
-fun testAppModule() = listOf(
-    provideLogger,
-    provideTelegramService,
-    provideWebhookModule,
-    provideTokenProvider,
-    provideHttpClient,
-    testModule
-)
+fun testAppModule() =
+    listOf(
+        provideLogger,
+        provideTelegramService,
+        provideWebhookModule,
+        provideTokenProvider,
+        provideHttpClient,
+        testModule,
+    )
 
 val testModule =
     module {
@@ -66,7 +67,7 @@ val provideConfigModule =
         configWithSecrets(
             filename = "/application.json",
             botApi = SystemEnvImpl.getBotApi(),
-            secretToken = SystemEnvImpl.getSecretToken()
+            secretToken = SystemEnvImpl.getSecretToken(),
         ).also { config ->
             single { config }
         }

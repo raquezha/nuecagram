@@ -24,7 +24,7 @@ class ApplicationTest {
             application {
                 koin {
                     modules(
-                        testAppModule()
+                        testAppModule(),
                     )
                 }
             }
@@ -32,7 +32,6 @@ class ApplicationTest {
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals("This application is made to receive webhooks request and send telegram notification", response.bodyAsText())
         }
-
 
     companion object {
         @BeforeClass
@@ -43,11 +42,10 @@ class ApplicationTest {
             every { SystemEnvImpl.getBotApi() } returns "mock_bot_api"
             every { SystemEnvImpl.getSecretToken() } returns "mock_secret_token"
 
-
             if (GlobalContext.getOrNull() == null) {
                 startKoin {
                     modules(
-                        testAppModule()
+                        testAppModule(),
                     )
                 }
             }
