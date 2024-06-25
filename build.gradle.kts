@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "net.raquezha"
-version = "0.0.3"
+version = file("version.txt").readText().trim()
 
 ktor {
     fatJar {

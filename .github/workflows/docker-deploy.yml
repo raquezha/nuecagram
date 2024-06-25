@@ -50,7 +50,11 @@ jobs:
       - name: Update version in build.gradle.kts
         run: |
           version=${GITHUB_REF#refs/tags/}
-          sed -i "s/version = \".*\"/version = \"$version\"/" build.gradle.kts
+          echo "$version" > version.txt
+          if [ $? -ne 0 ]; then
+            echo "Failed to update version.txt."
+            exit 1
+          fi
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add build.gradle.kts
