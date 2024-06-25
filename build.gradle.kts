@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 import io.ktor.plugin.features.DockerImageRegistry.Companion.dockerHub
 import io.ktor.plugin.features.DockerPortMapping
 import io.ktor.plugin.features.DockerPortMappingProtocol.TCP
@@ -10,7 +12,7 @@ plugins {
 }
 
 group = "net.raquezha"
-version = "0.0.3"
+version = file("version.txt").readText().trim()
 
 ktor {
     fatJar {
@@ -90,6 +92,41 @@ dependencies {
     testImplementation(libs.google.truth)
     testImplementation(libs.koin.test)
     testImplementation(libs.koin.test.junit4)
+    testImplementation(libs.mockk)
 }
 
 
+tasks.register<Copy>("installHooks") {
+    val gitHookPreCommit = File(rootProject.rootDir, ".git/hooks/pre-commit")
+    val gitHookPrePush = File(rootProject.rootDir, ".git/hooks/pre-push")
+    if (!(gitHookPreCommit.exists() && gitHookPrePush.exists())) {
+        logger.info("Installing Git hooks...")
+        from(File(rootProject.rootDir, ".githooks/pre-commit"), File(rootProject.rootDir, ".githooks/pre-push"))
+        into { File(rootProject.rootDir, ".git/hooks") }
+        filePermissions {
+            user {
+                read = true
+                execute = true
+            }
+            other.execute = false
+            dirPermissions {
+                // Kotlin doesn't support local numeric literals: instead of mode = 0755
+                // need to write as mode = "755.toInt(radix = 8)
+                // rwxr-xr-x means (0755) read, write and execute for owner
+                // read and execute for group
+                // read and execute for other
+                unix("rwxr-xr-x")
+            }
+            println(
+                """Checking the following settings helps avoid miscellaneous issues:
+          * Settings -> Editor -> General -> Remove trailing spaces on: Modified lines
+          * Settings -> Editor -> General -> Ensure every file ends with a line break
+          * Settings -> Editor -> General -> Auto Import -> Optimize imports on the fly (for both Kotlin and Java)"""
+            )
+        }
+    }
+}
+
+tasks.named("prepareKotlinBuildScriptModel") {
+    dependsOn("installHooks")
+}

@@ -1,0 +1,32 @@
+name: Setup Gradle
+
+on:
+  workflow_call:
+    inputs:
+      gradle-task:
+        description: 'Gradle task to run'
+        required: true
+        type: string
+
+jobs:
+  setup-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          overwrite-settings: false
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Run Gradle Task
+        run: ./gradlew ${{ inputs.gradle-task }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          NUECAGRAM_SECRET_TOKEN: ${{ secrets.NUECAGRAM_SECRET_TOKEN }}

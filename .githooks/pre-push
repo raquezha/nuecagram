@@ -1,0 +1,22 @@
+#!/bin/sh
+
+error="🔴"
+passed="🟢"
+
+echo "Executing lint..."
+./gradlew lintKotlin
+if [ $? == 1 ]; then
+  echo "$error lintKotlin failed. Run formatKotlin then try again."
+  exit 1
+else
+  echo "$passed ktlint passed!"
+fi
+
+echo "Executing tests..."
+./gradlew test
+if [ $? == 1 ]; then
+  echo "$error test failed. Fixed tests then try again."
+  exit 1
+else
+  echo "$passed tests passed!"
+fi

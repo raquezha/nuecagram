@@ -13,6 +13,7 @@ import io.ktor.client.plugins.plugin
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
@@ -36,14 +37,38 @@ fun appModule() =
         provideConfigModule,
     )
 
+fun testAppModule() =
+    listOf(
+        provideLogger,
+        provideTelegramService,
+        provideWebhookModule,
+        provideTokenProvider,
+        provideHttpClient,
+        testModule,
+    )
+
 val testModule =
     module {
         single<TelegramService> { MockTelegramService() }
+        single<ConfigWithSecrets> {
+            ConfigWithSecrets(
+                name = "TestConfig",
+                env = "test",
+                host = "localhost",
+                port = 8080,
+                botApi = "mock_bot_api",
+                secretToken = "mock_secret_token",
+            )
+        }
     }
 
 val provideConfigModule =
     module(createdAtStart = true) {
-        net.raquezha.nuecagram.config("/application.json").also { config ->
+        configWithSecrets(
+            filename = "/application.json",
+            botApi = SystemEnvImpl.getBotApi(),
+            secretToken = SystemEnvImpl.getSecretToken(),
+        ).also { config ->
             single { config }
         }
     }

@@ -27,20 +27,23 @@ fun main(): Unit =
         ).start(true)
     }
 
-fun config(filename: String): ConfigWithSecrets {
+@OptIn(ExperimentalHoplite::class)
+fun config(filename: String): Config {
     val config =
         ConfigLoaderBuilder.default()
             .addResourceSource(filename)
             .withExplicitSealedTypes()
             .build()
             .loadConfigOrThrow<Config>()
+    return config
+}
 
-    val botApi =
-        System.getenv("TELEGRAM_BOT_TOKEN")
-            ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN environment variable is not set")
-    val secretToken =
-        System.getenv("NUECAGRAM_SECRET_TOKEN")
-            ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN environment variable is not set")
+fun configWithSecrets(
+    filename: String,
+    botApi: String,
+    secretToken: String,
+): ConfigWithSecrets {
+    val config = config(filename)
 
     return ConfigWithSecrets(
         name = config.name,
