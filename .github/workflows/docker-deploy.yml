@@ -3,7 +3,10 @@ name: Build and Deploy to Docker Hub
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - v[0-9]+.[0-9]+.[0-9]+
+
+permissions:
+  contents: write
 
 jobs:
   build-and-push:
@@ -31,23 +34,52 @@ jobs:
       - name: Tag Docker image
         run: |
           image_tag=${GITHUB_REF#refs/tags/}
-          docker tag nuecagram-docker-image:latest user/repository:$image_tag
-          docker tag nuecagram-docker-image:latest user/repository:latest
+          docker tag nuecagram-docker-image:latest raquezha/nuecagram:$image_tag
+          docker tag nuecagram-docker-image:latest raquezha/nuecagram:latest
           if [ $? -ne 0 ]; then
             echo "Failed to tag Docker image."
             exit 1
           fi
+
       - name: Push Docker image
         run: |
           image_tag=${GITHUB_REF#refs/tags/}
-          docker push user/repository:$image_tag
-          docker push user/repository:latest
+          docker push raquezha/nuecagram:$image_tag
+          docker push raquezha/nuecagram:latest
           if [ $? -ne 0 ]; then
             echo "Failed to push Docker image."
             exit 1
           fi
 
-      - name: Update version in build.gradle.kts
+      - name: Package artifacts
+        run: |
+          mkdir release
+          cp build/libs/*.jar release/
+          cp build/distributions/*.zip release/
+          cp build/distributions/*.tar release/
+
+      - name: Create release using GitHub CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+        run: |
+          gh release create "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
+              --notes "Release ${tag#v}" \
+              --generate-notes
+
+      - name: Upload artifacts to GitHub release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/*
+          asset_name: my-ktor-app-${{ github.ref }}.zip
+          asset_content_type: application/zip
+
+      - name: Update version in build.gradle.kts and push it
         run: |
           version=${GITHUB_REF#refs/tags/}
           echo "$version" > version.txt
@@ -57,7 +89,7 @@ jobs:
           fi
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add build.gradle.kts
+          git add version.txt
           git commit -m "Update version to $version"
           git push origin main
           if [ $? -ne 0 ]; then

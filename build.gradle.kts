@@ -15,9 +15,6 @@ group = "net.raquezha"
 version = file("version.txt").readText().trim()
 
 ktor {
-    fatJar {
-        archiveFileName.set("fat.jar")
-    }
     docker {
         jreVersion.set(JavaVersion.VERSION_17)
         localImageName.set("nuecagram-docker-image")
