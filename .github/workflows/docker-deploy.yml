@@ -75,23 +75,13 @@ jobs:
              --notes "Release ${tag#v}" \
              --generate-notes
 
-      - name: Upload jar artifact
+      - name: Upload fat jar artifact
         uses: actions/upload-artifact@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: net.raquezha.nuecagram-${{ github.ref_name }}.jar
-          path: build/libs/net.raquezha.nuecagram-${{ github.ref_name }}.jar
-          if-no-files-found: error
-          overwrite: true
-
-      - name: Upload all jar artifact
-        uses: actions/upload-artifact@v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          name: net.raquezha.nuecagram-all.jar
-          path: build/libs/net.raquezha.nuecagram-all.jar
+          name: nuecagram-${{ github.ref_name }}-fat.jar
+          path: build/libs/nuecagram-fat.jar
           if-no-files-found: error
           overwrite: true
 

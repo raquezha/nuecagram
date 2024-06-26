@@ -15,6 +15,9 @@ group = "net.raquezha"
 version = file("version.txt").readText().trim()
 
 ktor {
+    fatJar {
+        archiveFileName.set("nuecagram-fat.jar")
+    }
     jib {
         outputPaths {
             tar = "${rootDir}/build/jib/nuecagram-jib-image.tar"
