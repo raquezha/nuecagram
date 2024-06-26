@@ -94,23 +94,3 @@ jobs:
           path: ./build/jib/*.*
           if-no-files-found: error
           overwrite: true
-
-      - name: Update version in build.gradle.kts and push it
-        run: |
-          version=${GITHUB_REF#refs/tags/}
-          echo "$version" > version.txt
-          if [ $? -ne 0 ]; then
-            echo "Failed to update version.txt."
-            exit 1
-          fi
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add version.txt
-          git commit -m "Update version to $version"
-          git push origin main
-          if [ $? -ne 0 ]; then
-            echo "Failed to push updated version to Git."
-            exit 1
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
