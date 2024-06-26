@@ -79,14 +79,53 @@ jobs:
               --notes "Release ${tag#v}" \
               --generate-notes
 
-      - name: Upload artifacts to GitHub release
+      - name: Upload jar artifact
         uses: actions/upload-artifact@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          name: nuecagram-${{ github.ref_name }}
-          path: ./release/*
+          name: net.raquezha.nuecagram-${{ github.ref_name }}.jar
+          path: ./release/net.raquezha.nuecagram-${{ github.ref_name }}.jar
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload tar artifact
+        uses: actions/upload-artifact@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: net.raquezha.nuecagram-${{ github.ref_name }}.tar
+          path: ./release/net.raquezha.nuecagram-${{ github.ref_name }}.tar
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: net.raquezha.nuecagram-${{ github.ref_name }}.zip
+          path: ./release/net.raquezha.nuecagram-${{ github.ref_name }}.zip
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload all jar artifact
+        uses: actions/upload-artifact@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: net.raquezha.nuecagram-all.jar
+          path: ./release/net.raquezha.nuecagram-all.jar
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload jib artifact
+        uses: actions/upload-artifact@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: net.raquezha.nuecagram.jib
+          path: ./build/jib/*
           if-no-files-found: error
           overwrite: true
 
