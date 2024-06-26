@@ -36,7 +36,7 @@ jobs:
         run: ./gradlew buildImage
 
       - name: Load Docker image
-        run: docker load -i build/jib-image.tar
+        run: docker load -i build/jib/nuecagram-jib-image.tar
 
       - name: Build & Tag Docker image
         run: |
