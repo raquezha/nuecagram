@@ -74,11 +74,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
         run: |
-          gh release create "$tag" \
-              --repo="$GITHUB_REPOSITORY" \
-              --title="${tag#v}" \
-              --notes "Release ${tag#v}" \
-              --generate-notes
+          gh release create "${tag#v}" \
+             --repo="$GITHUB_REPOSITORY" \
+             --title="${tag#v}" \
+             --notes "Release ${tag#v}" \
+             --generate-notes
 
       - name: Upload jar artifact
         uses: actions/upload-artifact@v4
