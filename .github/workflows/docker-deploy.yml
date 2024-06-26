@@ -67,6 +67,7 @@ jobs:
           cp build/libs/*.jar release/
           cp build/distributions/*.zip release/
           cp build/distributions/*.tar release/
+          cp build/jib/*.* release
 
       - name: Create release using GitHub CLI
         env:
@@ -75,7 +76,7 @@ jobs:
         run: |
           gh release create "$tag" \
               --repo="$GITHUB_REPOSITORY" \
-              --title="{tag#v}" \
+              --title="${tag#v}" \
               --notes "Release ${tag#v}" \
               --generate-notes
 
@@ -85,7 +86,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram-${{ github.ref_name }}.jar
-          path: ./release/net.raquezha.nuecagram-${{ github.ref_name }}.jar
+          path: release/net.raquezha.nuecagram-${{ github.ref_name }}.jar
           if-no-files-found: error
           overwrite: true
 
@@ -95,7 +96,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram-${{ github.ref_name }}.tar
-          path: ./release/net.raquezha.nuecagram-${{ github.ref_name }}.tar
+          path: release/net.raquezha.nuecagram-${{ github.ref_name }}.tar
           if-no-files-found: error
           overwrite: true
 
@@ -105,7 +106,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram-${{ github.ref_name }}.zip
-          path: ./release/net.raquezha.nuecagram-${{ github.ref_name }}.zip
+          path: release/net.raquezha.nuecagram-${{ github.ref_name }}.zip
           if-no-files-found: error
           overwrite: true
 
@@ -115,7 +116,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram-all.jar
-          path: ./release/net.raquezha.nuecagram-all.jar
+          path: release/net.raquezha.nuecagram-all.jar
           if-no-files-found: error
           overwrite: true
 
@@ -125,7 +126,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram.jib
-          path: ./build/jib/*
+          path: build/jib/*
           if-no-files-found: error
           overwrite: true
 
