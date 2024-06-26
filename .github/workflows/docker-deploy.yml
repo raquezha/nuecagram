@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-env:
-  ENVIRONMENT: production
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -61,16 +58,8 @@ jobs:
       - name: Build Project
         run: ./gradlew build
 
-      - name: Package artifacts
-        run: |
-          mkdir release
-          cp build/libs/*.jar release/
-          cp build/distributions/*.zip release/
-          cp build/distributions/*.tar release/
-          cp build/jib/*.* release
-
       - name: List release directory contents (optional)
-        run: ls release/
+        run: ls build
 
       - name: Create release using GitHub CLI
         env:
@@ -89,27 +78,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram-${{ github.ref_name }}.jar
-          path: ./release/*.*.*-${{ github.ref_name }}.jar
-          if-no-files-found: error
-          overwrite: true
-
-      - name: Upload tar artifact
-        uses: actions/upload-artifact@v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          name: net.raquezha.nuecagram-${{ github.ref_name }}.tar
-          path: ./release/*.*.*-${{ github.ref_name }}.tar
-          if-no-files-found: error
-          overwrite: true
-
-      - name: Upload zip artifact
-        uses: actions/upload-artifact@v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          name: net.raquezha.nuecagram-${{ github.ref_name }}.zip
-          path: ./release/*.*.*-${{ github.ref_name }}.zip
+          path: build/libs/net.raquezha.nuecagram-${{ github.ref_name }}.jar
           if-no-files-found: error
           overwrite: true
 
@@ -119,7 +88,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: net.raquezha.nuecagram-all.jar
-          path: ./release/*.*.*-all.jar
+          path: build/libs/net.raquezha.nuecagram-all.jar
           if-no-files-found: error
           overwrite: true
 
