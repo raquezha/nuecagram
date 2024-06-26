@@ -35,7 +35,10 @@ jobs:
       - name: Build Docker image
         run: ./gradlew buildImage
 
-      - name: Tag Docker image
+      - name: Load Docker image
+        run: docker load -i build/jib-image.tar
+
+      - name: Build & Tag Docker image
         run: |
           image_tag=${GITHUB_REF#refs/tags/}
           docker tag nuecagram-docker-image:latest raquezha/nuecagram:$image_tag
