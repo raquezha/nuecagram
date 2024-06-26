@@ -15,6 +15,14 @@ group = "net.raquezha"
 version = file("version.txt").readText().trim()
 
 ktor {
+    jib {
+        outputPaths {
+            tar = "${rootDir}/build/jib/nuecagram-jib-image.tar"
+            digest = "${rootDir}/build/jib/nuecagram-jib-image.digest"
+            imageId = "${rootDir}/build/jib/nuecagram-jib-image.id"
+            imageJson = "${rootDir}/build/jib/nuecagram-jib-image.json"
+        }
+    }
     docker {
         jreVersion.set(JavaVersion.VERSION_17)
         localImageName.set("nuecagram-docker-image")
