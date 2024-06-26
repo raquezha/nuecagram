@@ -75,7 +75,7 @@ jobs:
         run: |
           gh release create "$tag" \
               --repo="$GITHUB_REPOSITORY" \
-              --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
+              --title="{tag#v}" \
               --notes "Release ${tag#v}" \
               --generate-notes
 
