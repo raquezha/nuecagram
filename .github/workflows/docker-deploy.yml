@@ -64,7 +64,9 @@ jobs:
           ls build/jib
           ls build/libs
 
-      - name: Create release using GitHub CLI
+      - name: Create Release
+        uses: actions/create-release@v1
+        id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
@@ -74,23 +76,26 @@ jobs:
              --title="${tag#v}" \
              --notes "Release ${tag#v}" \
              --generate-notes
+          upload_url=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.upload_url')
+          echo "upload_url=${upload_url}" >> $GITHUB_ENV
 
       - name: Upload fat jar artifact
-        uses: actions/upload-artifact@v4
+        id: upload-release-asset-fat-jar
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: nuecagram-${{ github.ref_name }}-fat.jar
-          path: build/libs/nuecagram-fat.jar
-          if-no-files-found: error
-          overwrite: true
+          upload_url: ${{ env.upload_url }}
+          asset_path: build/libs/nuecagram-fat.jar
+          asset_name: nuecagram-${{ github.ref_name }}-fat.jar
+          asset_content_type: application/java-archive
 
       - name: Upload jib artifact
         uses: actions/upload-artifact@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: net.raquezha.nuecagram.jib
-          path: ./build/jib/*.*
-          if-no-files-found: error
-          overwrite: true
+          upload_url: ${{ env.upload_url }}
+          asset_path: build/jib/nuecagram-jib-image.tar
+          asset_name: net.raquezha.nuecagram.jib.tar
+          asset_content_type: application/x-tar
