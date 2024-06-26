@@ -76,25 +76,25 @@ jobs:
              --notes "Release ${tag#v}" \
              --generate-notes
           upload_url=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.upload_url')
-          echo "upload_url=${upload_url}" >> $GITHUB_ENV
+          echo "upload_url=${upload_url}" >> $GITHUB_OUTPUT
 
       - name: Upload fat jar artifact
-        id: upload-release-asset-fat-jar
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.upload_url }}
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/libs/nuecagram-fat.jar
           asset_name: nuecagram-${{ github.ref_name }}-fat.jar
           asset_content_type: application/java-archive
 
       - name: Upload jib artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ env.upload_url }}
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/jib/nuecagram-jib-image.tar
           asset_name: net.raquezha.nuecagram.jib.tar
           asset_content_type: application/x-tar
+
