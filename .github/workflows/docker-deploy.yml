@@ -81,7 +81,7 @@ jobs:
           echo "clean_tag=${clean_tag}" >> $GITHUB_OUTPUT
 
       - name: Upload fat jar artifact
-        uses: actions/upload-release-asset@v1
+        uses: shogo82148/actions-upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -91,7 +91,7 @@ jobs:
           asset_content_type: application/java-archive
 
       - name: Upload jib tar artifact
-        uses: actions/upload-release-asset@v1
+        uses: shogo82148/actions-upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
