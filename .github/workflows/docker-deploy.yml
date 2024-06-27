@@ -70,13 +70,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
         run: |
+          clean_tag=${tag#v}
           gh release create "$tag" \
              --repo="$GITHUB_REPOSITORY" \
              --title="${tag#v}" \
-             --notes "Release ${tag#v}" \
+             --notes "Release $clean_tag" \
              --generate-notes
           upload_url=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.upload_url')
           echo "upload_url=${upload_url}" >> $GITHUB_OUTPUT
+          echo "clean_tag=${clean_tag}" >> $GITHUB_OUTPUT
 
       - name: Upload fat jar artifact
         uses: actions/upload-release-asset@v1
@@ -85,7 +87,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/libs/nuecagram-fat.jar
-          asset_name: nuecagram-${tag#v}-fat.jar
+          asset_name: nuecagram-${{ steps.create_release.outputs.upload_url }}-fat.jar
           asset_content_type: application/java-archive
 
       - name: Upload jib tar artifact
@@ -95,6 +97,6 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/jib/nuecagram-jib-image.tar
-          asset_name: nuecagram-${tag#v}.jib.tar
+          asset_name: nuecagram-${{ steps.create_release.outputs.upload_url }}.jib.tar
           asset_content_type: application/x-tar
 
