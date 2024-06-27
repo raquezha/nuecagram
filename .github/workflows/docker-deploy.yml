@@ -85,16 +85,16 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/libs/nuecagram-fat.jar
-          asset_name: nuecagram-${{ github.ref_name }}-fat.jar
+          asset_name: nuecagram-${tag#v}-fat.jar
           asset_content_type: application/java-archive
 
-      - name: Upload jib artifact
+      - name: Upload jib tar artifact
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/jib/nuecagram-jib-image.tar
-          asset_name: net.raquezha.nuecagram.jib.tar
+          asset_name: nuecagram-${tag#v}.jib.tar
           asset_content_type: application/x-tar
 
