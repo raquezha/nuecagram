@@ -87,7 +87,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/libs/nuecagram-fat.jar
-          asset_name: nuecagram-${{ steps.create_release.outputs.upload_url }}-fat.jar
+          asset_name: nuecagram-${{ steps.create_release.outputs.clean_tag }}-fat.jar
           asset_content_type: application/java-archive
 
       - name: Upload jib tar artifact
@@ -97,6 +97,6 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: build/jib/nuecagram-jib-image.tar
-          asset_name: nuecagram-${{ steps.create_release.outputs.upload_url }}.jib.tar
+          asset_name: nuecagram-${{ steps.create_release.outputs.clean_tag }}.jib.tar
           asset_content_type: application/x-tar
 
