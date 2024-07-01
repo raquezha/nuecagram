@@ -1,8 +1,6 @@
 # Nuecagram
 
-Nuecagram simplifies GitLab webhook handling, delivering notifications directly to your Telegram chat groups
-___
-
+Nuecagram simplifies GitLab webhook handling, delivering notifications directly to your Telegram 
 
 # Getting Started
 ## 1. Identify Your Telegram Group Chat
@@ -91,8 +89,8 @@ You can automate the setup of the GitLab webhook using the provided script. Foll
 
 5. **Test Your Webhook:**
 
-# How to host Integram on your own server (using your private bots)
-___
+# How to host Nuecagram on your own server (using your private bots)
+
 ## 🐳 Docker way
 
 ### Prerequisites :
