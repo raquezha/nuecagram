@@ -55,6 +55,9 @@ jobs:
             exit 1
           fi
 
+      - name: Push changes to koyeb branch
+        run: git push origin koyeb
+
       - name: Build Project
         run: ./gradlew build
 
@@ -99,4 +102,6 @@ jobs:
           asset_path: build/jib/nuecagram-jib-image.tar
           asset_name: nuecagram-${{ steps.create_release.outputs.clean_tag }}.jib.tar
           asset_content_type: application/x-tar
+
+
 
