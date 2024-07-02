@@ -55,9 +55,6 @@ jobs:
             exit 1
           fi
 
-      - name: Push changes to koyeb branch
-        run: git push origin koyeb
-
       - name: Build Project
         run: ./gradlew build
 
