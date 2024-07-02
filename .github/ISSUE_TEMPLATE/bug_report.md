@@ -45,11 +45,3 @@ Add any other relevant information that might help diagnose the issue, such as:
 
 * Operating system and environment details (if applicable)
 * Any recent changes made to the codebase
-
-**Labels:**
-
-* (Optional) Add relevant labels to categorize the issue (e.g., bug, feature request)
-
-**Assignee:**
-
-* (Optional) Assign the issue to a specific developer (if applicable)
