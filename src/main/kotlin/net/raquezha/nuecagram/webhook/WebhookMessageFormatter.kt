@@ -1,3 +1,5 @@
+@file:Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
+
 package net.raquezha.nuecagram.webhook
 
 import io.github.oshai.kotlinlogging.KLogger
@@ -9,6 +11,11 @@ import org.gitlab4j.api.webhook.DeploymentEvent
 import org.gitlab4j.api.webhook.Event
 import org.gitlab4j.api.webhook.IssueEvent
 import org.gitlab4j.api.webhook.MergeRequestEvent
+import org.gitlab4j.api.webhook.NoteEvent
+import org.gitlab4j.api.webhook.NoteEvent.NoteableType.COMMIT
+import org.gitlab4j.api.webhook.NoteEvent.NoteableType.ISSUE
+import org.gitlab4j.api.webhook.NoteEvent.NoteableType.MERGE_REQUEST
+import org.gitlab4j.api.webhook.NoteEvent.NoteableType.SNIPPET
 import org.gitlab4j.api.webhook.PipelineEvent
 import org.gitlab4j.api.webhook.PushEvent
 import org.gitlab4j.api.webhook.ReleaseEvent
@@ -16,7 +23,7 @@ import org.gitlab4j.api.webhook.TagPushEvent
 import org.gitlab4j.api.webhook.WikiPageEvent
 import org.koin.java.KoinJavaComponent.inject
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.*
 
 class WebhookMessageFormatter {
     private val logger by inject<KLogger>(KLogger::class.java)
@@ -32,6 +39,7 @@ class WebhookMessageFormatter {
             is IssueEvent -> formatIssueEventMessage(event)
             is BuildEvent -> formatBuildEventMessage(event)
             is MergeRequestEvent -> formatMergeRequestEventMessage(event)
+            is NoteEvent -> formatNoteEvent(event)
             else -> throwUnsupportedEventException(event)
         }
     }
@@ -95,8 +103,48 @@ class WebhookMessageFormatter {
         return "${repository.homepage}/-/job/$buildId"
     }
 
+    private fun NoteEvent.getUrl(label: String): String {
+        return objectAttributes.url.link(label)
+    }
+
     private fun Date?.formatFinishedAt(): String {
         return this?.let { SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy").format(it) } ?: "N/A"
+    }
+
+    private fun formatNoteEvent(event: NoteEvent): String {
+        val randomCommentMessage = RandomCommentMessage()
+        val randomMessage = randomCommentMessage.getRandomComment()
+        return when (event.objectAttributes.noteableType) {
+            SNIPPET -> throw SkipEventException() // won't support snippet for now
+            ISSUE ->
+                event.generateNoteMessage(
+                    randomMessage = randomMessage,
+                    url = event.getUrl("issue"),
+                    description = "Issue: ${event.issue.title}",
+                )
+            MERGE_REQUEST ->
+                event.generateNoteMessage(
+                    randomMessage = randomMessage,
+                    url = event.getUrl("merge request"),
+                    description = "Merge Request: ${event.mergeRequest.title}",
+                )
+            COMMIT ->
+                event.generateNoteMessage(
+                    randomMessage = randomMessage,
+                    url = event.getUrl("commit"),
+                    description = "Commit Message: ${event.commit.message}",
+                )
+        }
+    }
+
+    private fun NoteEvent.generateNoteMessage(
+        randomMessage: String,
+        url: String,
+        description: String,
+    ): String {
+        return "${user.name.bold()} $randomMessage $url in ${project.name.bold()}:\n" +
+            "\n${objectAttributes.note}\n" +
+            "\n${description.trim().italic()}"
     }
 
     private fun formatPipelineEvent(event: PipelineEvent): String {
