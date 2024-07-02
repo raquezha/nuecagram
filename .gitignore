@@ -36,3 +36,4 @@ out/
 .vscode/
 *.env
 /src/test/kotlin/com/app/nuecagram/api/http-client.private.env.json
+/src/test/kotlin/net/raquezha/nuecagram/api/http-client.private.env.json

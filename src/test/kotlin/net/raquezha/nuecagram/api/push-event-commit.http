@@ -1,4 +1,4 @@
-POST http://localhost:80/webhook
+POST http://localhost:8080/webhook
 Content-Type: application/json
 User-Agent: GitLab/16.11.2-ee
 X-Gitlab-Event: Push Hook
@@ -55,13 +55,13 @@ X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
         "email": "[REDACTED]"
       },
       "added": [
-
+        "app-tindahannimama/sample.kt"
       ],
       "modified": [
-        "app-tindahannimama/build.gradle.kts"
+        "app-tindahannimama/build.gradle.kts",
+        "app-tindahannimama/build.gradle"
       ],
       "removed": [
-
       ]
     },
     {
