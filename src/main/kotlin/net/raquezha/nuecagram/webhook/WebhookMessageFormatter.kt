@@ -315,7 +315,7 @@ class WebhookMessageFormatter {
         link: String,
         repositoryName: String,
     ): String {
-        return "${user.bold()} ${action.bold()} $link in project ${repositoryName.bold()}\n\n"
+        return "${user.bold()} ${action.bold()} $link in project ${repositoryName}\n\n"
     }
 
     private fun getFormattedAction(action: String): String {
