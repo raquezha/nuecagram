@@ -90,6 +90,7 @@ abstract class BaseEventTestHelper : KoinTest {
         const val EVENT_JOB = "Job Hook"
         const val EVENT_DEPLOYMENT = "Deployment Hook"
         const val EVENT_RELEASE = "Release Hook"
+        const val EVENT_NOTE = "Note Hook"
 
         @BeforeClass
         @JvmStatic
