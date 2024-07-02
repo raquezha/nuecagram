@@ -7,10 +7,6 @@ assignees: ''
 
 ---
 
-## Nuecagram Ktor Issue Template
-
-**Title:** [Brief description of the issue]
-
 **Description:**
 
 * A clear and concise description of the bug encountered in your Nuecagram application.
