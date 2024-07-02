@@ -168,11 +168,19 @@ class WebhookMessageFormatter {
         val fileSummary =
             buildString {
                 val changes = event.commits.flatMap { listOf(it.added.size, it.removed.size, it.modified.size) }
-                if (changes.any { it > 0 }) {
-                    append("${changes.sum()} files ")
-                    append(if (changes[2] > 0) "modified" else "")
-                    append(if (changes[0] > 0) "added" else "")
-                    append(if (changes[1] > 0) "removed" else "")
+                val totalChanges = changes.sum()
+                if (totalChanges > 0) {
+                    append("$totalChanges file${if (totalChanges > 1) "s" else ""} changes. ")
+                    val modified = changes[2]
+                    val added = changes[0]
+                    val removed = changes[1]
+
+                    val parts = mutableListOf<String>()
+                    if (modified > 0) parts.add("$modified modified")
+                    if (added > 0) parts.add("$added added")
+                    if (removed > 0) parts.add("$removed removed")
+
+                    append(parts.joinToString(separator = ", ", prefix = "", postfix = ""))
                 }
             }
         val pushedCommitLabel =
@@ -187,7 +195,7 @@ class WebhookMessageFormatter {
 
         return buildString {
             append("$pushedCommitLabel\n$fileSummary ")
-            append("${compareUrl.link("${event.before.take(8)}...${event.after.take(8)}")})")
+            append("(${compareUrl.link("${event.before.take(8)}...${event.after.take(8)}")})")
         }
     }
 
