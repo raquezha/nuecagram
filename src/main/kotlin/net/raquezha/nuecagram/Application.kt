@@ -9,28 +9,28 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
-import kotlinx.coroutines.runBlocking
 import net.raquezha.nuecagram.di.appModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.plugins.configureSerialization
+import net.raquezha.nuecagram.plugins.configureTelegram
 import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 
-fun main(): Unit =
-    runBlocking {
-        val config = config("/application.json")
-        embeddedServer(
-            Netty,
-            watchPaths = listOf("nuecagram"),
-            port = config.port,
-            module = Application::module,
-        ).start(true)
-    }
+fun main() {
+    val config = config("/application.json")
+    embeddedServer(
+        Netty,
+        watchPaths = listOf("nuecagram"),
+        port = config.port,
+        module = Application::module,
+    ).start(true)
+}
 
 @OptIn(ExperimentalHoplite::class)
 fun config(filename: String): Config {
     val config =
-        ConfigLoaderBuilder.default()
+        ConfigLoaderBuilder
+            .default()
             .addResourceSource(filename)
             .withExplicitSealedTypes()
             .build()
@@ -62,4 +62,5 @@ fun Application.module() {
     }
     configureSerialization()
     configureRouting()
+    configureTelegram()
 }

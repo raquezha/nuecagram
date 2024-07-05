@@ -1,5 +1,7 @@
 package net.raquezha.nuecagram.di
 
+import eu.vendeli.tgbot.TelegramBot
+import eu.vendeli.tgbot.types.internal.LogLvl
 import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
@@ -44,6 +46,7 @@ fun testAppModule() =
         provideWebhookModule,
         provideTokenProvider,
         provideHttpClient,
+        provideTelegramBot,
         testModule,
     )
 
@@ -112,15 +115,11 @@ val provideHttpClient =
 
 val provideTokenProvider =
     module {
-        val config: ConfigWithSecrets by inject(ConfigWithSecrets::class.java)
-        single {
-            TelegramBotToken(config.botApi)
-        }
-        single {
-            SecretToken(config.secretToken)
-        }
         single<TokenProvider> {
-            TokenProviderImpl(get(), get())
+            TokenProviderImpl(
+                botToken = TelegramBotToken(get<ConfigWithSecrets>().botApi),
+                secretToken = SecretToken(get<ConfigWithSecrets>().secretToken),
+            )
         }
     }
 
@@ -138,9 +137,22 @@ val provideTelegramService =
         }
     }
 
+val provideTelegramBot =
+    module {
+        single<TelegramBot> {
+            TelegramBot(
+                token = get<ConfigWithSecrets>().botApi,
+                botConfiguration = {
+                    logging {
+                        botLogLevel = LogLvl.ALL
+                    }
+                },
+            )
+        }
+    }
+
 val provideWebhookModule =
     module {
-
         single<WebhookMessageFormatter> {
             WebhookMessageFormatter()
         }

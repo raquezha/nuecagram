@@ -4,15 +4,15 @@ class TokenProviderImpl(
     private val botToken: TelegramBotToken,
     private val secretToken: SecretToken,
 ) : TokenProvider {
-    class TelegramBotToken(val value: String)
+    class TelegramBotToken(
+        val value: String,
+    )
 
-    class SecretToken(val value: String)
+    class SecretToken(
+        val value: String,
+    )
 
-    override fun getBotToken(): String {
-        return botToken.value
-    }
+    override fun getBotToken(): String = botToken.value
 
-    override fun getSecretToken(): String {
-        return secretToken.value
-    }
+    override fun getSecretToken(): String = secretToken.value
 }

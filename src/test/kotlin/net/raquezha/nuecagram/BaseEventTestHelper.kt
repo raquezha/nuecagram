@@ -60,21 +60,21 @@ abstract class BaseEventTestHelper : KoinTest {
     suspend fun ApplicationTestBuilder.postWebhook(
         gitlabEvent: String,
         payload: String,
-    ): String {
-        return client.post("/webhook") {
-            setBody(payload)
-            contentType(ContentType.Application.Json)
-            headers {
-                header(HttpHeaders.ContentType, ContentType.Application.Json)
-                header(GITLAB_EVENT, gitlabEvent)
-                testHeaders.entries().forEach {
-                    header(it.key, it.value)
+    ): String =
+        client
+            .post("/webhook") {
+                setBody(payload)
+                contentType(ContentType.Application.Json)
+                headers {
+                    header(HttpHeaders.ContentType, ContentType.Application.Json)
+                    header(GITLAB_EVENT, gitlabEvent)
+                    testHeaders.entries().forEach {
+                        header(it.key, it.value)
+                    }
+                    header(CHAT_ID, "Test Chat ID")
+                    header(TOPIC_ID, "TEST Topic ID")
                 }
-                header(CHAT_ID, "Test Chat ID")
-                header(TOPIC_ID, "TEST Topic ID")
-            }
-        }.bodyAsText()
-    }
+            }.bodyAsText()
 
     companion object {
         const val USER_AGENT = "GitLab/16.11.2-ee"
