@@ -28,8 +28,8 @@ import java.util.*
 class WebhookMessageFormatter {
     private val logger by inject<KLogger>(KLogger::class.java)
 
-    fun formatEventMessage(event: Event): String {
-        return when (event) {
+    fun formatEventMessage(event: Event): String =
+        when (event) {
             is PipelineEvent -> formatPipelineEvent(event)
             is PushEvent -> formatPushEventMessage(event)
             is TagPushEvent -> formatTagPushEvent(event)
@@ -42,7 +42,6 @@ class WebhookMessageFormatter {
             is NoteEvent -> formatNoteEvent(event)
             else -> throwUnsupportedEventException(event)
         }
-    }
 
     private fun String.bold() = "<b>$this</b>"
 
@@ -71,45 +70,31 @@ class WebhookMessageFormatter {
         }
     }
 
-    private fun BuildEvent.getBuildStatusMessage(): String {
-        return when (buildStatus) {
+    private fun BuildEvent.getBuildStatusMessage(): String =
+        when (buildStatus) {
             "failed" -> failedStatus()
             "canceled" -> canceledStatus()
             "pending" -> pendingStatus()
             "running" -> runningStatus()
             else -> throw GitLabApiException("[build status $buildStatus not supported.]")
         }
-    }
 
-    private fun BuildEvent.failedStatus(): String {
-        return "${"failed".bold()} due to ${buildFailureReason.italicBold()} at ${buildFinishedAt?.formatFinishedAt()}."
-    }
+    private fun BuildEvent.failedStatus(): String =
+        "${"failed".bold()} due to ${buildFailureReason.italicBold()} at ${buildFinishedAt?.formatFinishedAt()}."
 
-    private fun BuildEvent.canceledStatus(): String {
-        return "been ${"canceled".bold()} at ${buildFinishedAt?.formatFinishedAt()}."
-    }
+    private fun BuildEvent.canceledStatus(): String = "been ${"canceled".bold()} at ${buildFinishedAt?.formatFinishedAt()}."
 
     @Suppress("UnusedReceiverParameter")
-    private fun BuildEvent.pendingStatus(): String {
-        return "been created and in ${"pending".bold()} status."
-    }
+    private fun BuildEvent.pendingStatus(): String = "been created and in ${"pending".bold()} status."
 
     @Suppress("UnusedReceiverParameter")
-    private fun BuildEvent.runningStatus(): String {
-        return "started running. Only time will tell when will it be finished."
-    }
+    private fun BuildEvent.runningStatus(): String = "started running. Only time will tell when will it be finished."
 
-    private fun BuildEvent.getJobUrl(): String {
-        return "${repository.homepage}/-/job/$buildId"
-    }
+    private fun BuildEvent.getJobUrl(): String = "${repository.homepage}/-/job/$buildId"
 
-    private fun NoteEvent.getUrl(label: String): String {
-        return objectAttributes.url.link(label)
-    }
+    private fun NoteEvent.getUrl(label: String): String = objectAttributes.url.link(label)
 
-    private fun Date?.formatFinishedAt(): String {
-        return this?.let { SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy").format(it) } ?: "N/A"
-    }
+    private fun Date?.formatFinishedAt(): String = this?.let { SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy").format(it) } ?: "N/A"
 
     private fun formatNoteEvent(event: NoteEvent): String {
         val randomCommentMessage = RandomCommentMessage()
@@ -141,11 +126,10 @@ class WebhookMessageFormatter {
         randomMessage: String,
         url: String,
         description: String,
-    ): String {
-        return "${user.name.bold()} $randomMessage $url in ${project.name.bold()}:\n" +
+    ): String =
+        "${user.name.bold()} $randomMessage $url in ${project.name.bold()}:\n" +
             "\n${objectAttributes.note}\n" +
             "\n${description.trim().italic()}"
-    }
 
     private fun formatPipelineEvent(event: PipelineEvent): String {
         val status = event.objectAttributes.status
@@ -174,8 +158,8 @@ class WebhookMessageFormatter {
         return "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"
     }
 
-    private fun formatIssueEventMessage(event: IssueEvent): String {
-        return buildIssueMessage(
+    private fun formatIssueEventMessage(event: IssueEvent): String =
+        buildIssueMessage(
             userMention = event.user.name,
             issueUrl = event.objectAttributes.url,
             issueTitle = event.objectAttributes.title,
@@ -183,7 +167,6 @@ class WebhookMessageFormatter {
             issueDescription = event.objectAttributes.description,
             action = getFormattedAction(event.objectAttributes.action),
         )
-    }
 
     private fun buildIssueMessage(
         userMention: String,
@@ -192,8 +175,8 @@ class WebhookMessageFormatter {
         repositoryName: String,
         issueDescription: String?,
         action: String,
-    ): String {
-        return formatActionWithTitleAndDescription(
+    ): String =
+        formatActionWithTitleAndDescription(
             user = userMention,
             action = action,
             link = issueUrl.link("issue#${issueUrl.extractIssueNumber()}"),
@@ -201,11 +184,8 @@ class WebhookMessageFormatter {
             title = issueTitle,
             description = issueDescription,
         )
-    }
 
-    private fun String.extractIssueNumber(): String? {
-        return Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
-    }
+    private fun String.extractIssueNumber(): String? = Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
 
     private fun AbstractPushEvent.mentionBranch(): String {
         val destStr = project.pathWithNamespace.ifEmpty { repository.name }
@@ -251,16 +231,12 @@ class WebhookMessageFormatter {
         homepage: String,
         before: String,
         after: String,
-    ): String {
-        return "$homepage/compare/$before...$after"
-    }
+    ): String = "$homepage/compare/$before...$after"
 
     private fun mention(
         userName: String?,
         name: String,
-    ): String {
-        return userName?.takeIf { it.isNotEmpty() }?.let { "@${it.bold()}" } ?: name.bold()
-    }
+    ): String = userName?.takeIf { it.isNotEmpty() }?.let { "@${it.bold()}" } ?: name.bold()
 
     private fun formatCommits(event: PushEvent): String {
         val otherCommiter =
@@ -289,14 +265,13 @@ class WebhookMessageFormatter {
         }
     }
 
-    private fun formatWikiPageEvent(event: WikiPageEvent): String {
-        return formatAction(
+    private fun formatWikiPageEvent(event: WikiPageEvent): String =
+        formatAction(
             user = event.user.name,
             action = getFormattedAction(event.objectAttributes.action),
             link = "a <a href='${event.objectAttributes.url}'>Wiki Page</a>",
             repositoryName = event.project.name,
         )
-    }
 
     private fun formatDeployEventMessage(event: DeploymentEvent): String {
         val projectName = event.project.name ?: "Unknown project"
@@ -324,15 +299,14 @@ class WebhookMessageFormatter {
         }
     }
 
-    private fun formatReleaseEventMessage(event: ReleaseEvent): String {
-        return buildString {
+    private fun formatReleaseEventMessage(event: ReleaseEvent): String =
+        buildString {
             append("Release ${event.url.link(event.name).bold()}")
             append(" ${getFormattedAction(event.action)} in project ${event.project.name.bold()}")
         }
-    }
 
-    private fun formatMergeRequestEventMessage(event: MergeRequestEvent): String {
-        return formatActionWithTitleAndDescription(
+    private fun formatMergeRequestEventMessage(event: MergeRequestEvent): String =
+        formatActionWithTitleAndDescription(
             user = event.user.name,
             action = event.objectAttributes.state,
             link = "merge request${event.objectAttributes.url.link("#${event.objectAttributes.id}")}",
@@ -340,7 +314,6 @@ class WebhookMessageFormatter {
             title = event.objectAttributes.title,
             description = event.objectAttributes.description,
         )
-    }
 
     private fun formatActionWithTitleAndDescription(
         user: String,
@@ -349,25 +322,22 @@ class WebhookMessageFormatter {
         repositoryName: String,
         title: String,
         description: String?,
-    ): String {
-        return buildString {
+    ): String =
+        buildString {
             append(formatAction(user, action, link, repositoryName))
             append(title.bold())
             if (!description.isNullOrEmpty()) append("\n\t\t${description.italic()}")
         }
-    }
 
     private fun formatAction(
         user: String,
         action: String,
         link: String,
         repositoryName: String,
-    ): String {
-        return "${user.bold()} ${action.bold()} $link in project ${repositoryName}\n\n"
-    }
+    ): String = "${user.bold()} ${action.bold()} $link in project ${repositoryName}\n\n"
 
-    private fun getFormattedAction(action: String): String {
-        return when (action.lowercase()) {
+    private fun getFormattedAction(action: String): String =
+        when (action.lowercase()) {
             "delete" -> "deleted"
             "create" -> "created"
             "update" -> "updated"
@@ -376,5 +346,4 @@ class WebhookMessageFormatter {
             "reopen" -> "reopened"
             else -> throw SkipEventException()
         }
-    }
 }

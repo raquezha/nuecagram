@@ -45,8 +45,8 @@ class WebHookServiceImpl(
             ReleaseEvent.X_GITLAB_EVENT,
         )
 
-    override suspend fun handleRequest(call: ApplicationCall): EventData {
-        return try {
+    override suspend fun handleRequest(call: ApplicationCall): EventData =
+        try {
             val webhookData = call.getWebhookData()
             handleSecretToken(webhookData.headerSecretToken)
             handleEvents(webhookData.headerEvent)
@@ -61,7 +61,6 @@ class WebHookServiceImpl(
             logger.error { errorMessage }
             throw GitLabApiException(errorMessage)
         }
-    }
 
     private fun handleSecretToken(secretToken: String?) {
         if (!isValidSecretToken(secretToken)) {
@@ -71,9 +70,7 @@ class WebHookServiceImpl(
         }
     }
 
-    override fun getSecretToken(): String? {
-        return this.secretToken
-    }
+    override fun getSecretToken(): String? = this.secretToken
 
     override fun setSecretToken(secretToken: String?) {
         this.secretToken = secretToken

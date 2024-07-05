@@ -5,7 +5,9 @@ import io.ktor.server.testing.testApplication
 import org.junit.Test
 import org.koin.test.KoinTest
 
-class WikiPageEventWebhookTest : BaseEventTestHelper(), KoinTest {
+class WikiPageEventWebhookTest :
+    BaseEventTestHelper(),
+    KoinTest {
     @Test
     fun testWebhookWikiPageEvent() =
         testApplication {

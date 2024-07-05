@@ -9,10 +9,20 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlinter)
+    alias(libs.plugins.ksp)
 }
 
 group = "net.raquezha"
 version = file("version.txt").readText().trim()
+
+
+tasks.formatKotlinMain {
+    exclude { it.file.path.contains("generated/")}
+}
+
+tasks.lintKotlinMain {
+    exclude { it.file.path.contains("generated/")}
+}
 
 ktor {
     fatJar {
@@ -45,6 +55,8 @@ ktor {
             )
         )
     }
+
+
 }
 application {
     mainClass.set("io.ktor.server.netty.EngineMain")
@@ -94,6 +106,8 @@ dependencies {
     implementation(libs.kotlin.logging)
     implementation(libs.hoplite)
     implementation(libs.hoplite.json)
+    implementation(libs.vendeli.telegram.bot)
+    "ksp"(libs.vendeli.ksp)
 
     testImplementation(libs.ktor.server.tests)
     testImplementation(libs.kotlin.test)
