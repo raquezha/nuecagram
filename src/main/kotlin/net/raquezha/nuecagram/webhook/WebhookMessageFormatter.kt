@@ -90,7 +90,7 @@ class WebhookMessageFormatter {
     @Suppress("UnusedReceiverParameter")
     private fun BuildEvent.runningStatus(): String = "started running. Only time will tell when will it be finished."
 
-    private fun BuildEvent.getJobUrl(): String = "${repository.homepage}/-/job/$buildId"
+    private fun BuildEvent.getJobUrl(): String = "${repository.homepage}/-/jobs/$buildId"
 
     private fun NoteEvent.getUrl(label: String): String = objectAttributes.url.link(label)
 
