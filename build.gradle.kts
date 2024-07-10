@@ -24,6 +24,14 @@ tasks.lintKotlinMain {
     exclude { it.file.path.contains("generated/")}
 }
 
+tasks.lintKotlinTest {
+    exclude { it.file.path.contains("generated/") }
+}
+
+tasks.formatKotlinTest {
+    exclude { it.file.path.contains("generated/") }
+}
+
 ktor {
     fatJar {
         archiveFileName.set("nuecagram-fat.jar")
