@@ -6,11 +6,11 @@ import eu.vendeli.tgbot.api.message.message
 import eu.vendeli.tgbot.types.User
 import io.ktor.server.application.Application
 import kotlinx.coroutines.launch
-import org.koin.ktor.ext.inject
+import net.raquezha.nuecagram.di.SystemEnvImpl
 
 fun Application.configureTelegram() {
     launch {
-        val telegramBot: TelegramBot by inject()
+        val telegramBot = TelegramBot(SystemEnvImpl.getBotApi())
         telegramBot.handleUpdates()
     }
 }
