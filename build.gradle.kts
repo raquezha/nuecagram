@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.hoplite)
     implementation(libs.hoplite.json)
     implementation(libs.vendeli.telegram.bot)
+    implementation(libs.tgbot)
     "ksp"(libs.vendeli.ksp)
 
     testImplementation(libs.ktor.server.tests)
@@ -123,6 +124,7 @@ dependencies {
     testImplementation(libs.koin.test)
     testImplementation(libs.koin.test.junit4)
     testImplementation(libs.mockk)
+
 }
 
 

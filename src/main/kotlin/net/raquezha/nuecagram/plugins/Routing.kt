@@ -1,12 +1,10 @@
 package net.raquezha.nuecagram.plugins
 
-import eu.vendeli.tgbot.TelegramBot
 import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.OK
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
-import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -26,16 +24,10 @@ fun Application.configureRouting() {
     val logger by inject<KLogger>()
     val telegramService by inject<TelegramService>()
     val formatter: WebhookMessageFormatter by inject()
-    val telegramBot: TelegramBot by inject()
 
     routing {
         get("/") {
             call.respondText("This application is made to receive webhooks request and send telegram notification")
-        }
-
-        post("/nuecagram-bot/webhook") {
-            telegramBot.update.parseAndHandle(call.receiveText())
-            call.respond(OK)
         }
 
         post("/webhook") {
