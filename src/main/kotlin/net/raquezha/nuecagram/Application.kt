@@ -12,7 +12,6 @@ import io.ktor.server.netty.Netty
 import net.raquezha.nuecagram.di.appModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.plugins.configureSerialization
-import net.raquezha.nuecagram.plugins.configureTelegram
 import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 
@@ -62,5 +61,5 @@ fun Application.module() {
     }
     configureSerialization()
     configureRouting()
-    configureTelegram()
+    // configureTelegram()
 }
