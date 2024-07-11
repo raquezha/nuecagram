@@ -115,11 +115,15 @@ val provideHttpClient =
 
 val provideTokenProvider =
     module {
+        val config: ConfigWithSecrets by inject(ConfigWithSecrets::class.java)
+        single {
+            TelegramBotToken(config.botApi)
+        }
+        single {
+            SecretToken(config.secretToken)
+        }
         single<TokenProvider> {
-            TokenProviderImpl(
-                botToken = TelegramBotToken(get<ConfigWithSecrets>().botApi),
-                secretToken = SecretToken(get<ConfigWithSecrets>().secretToken),
-            )
+            TokenProviderImpl(get(), get())
         }
     }
 
