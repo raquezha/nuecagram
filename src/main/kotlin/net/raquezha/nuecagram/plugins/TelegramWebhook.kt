@@ -11,7 +11,11 @@ import net.raquezha.nuecagram.di.SystemEnvImpl
 fun Application.configureTelegram() {
     launch {
         val telegramBot = TelegramBot(SystemEnvImpl.getBotApi())
-        telegramBot.handleUpdates()
+        telegramBot.handleUpdates {
+            onCommand("/start") {
+                message { "Hello! ${user.username}" }.send(user, telegramBot)
+            }
+        }
     }
 }
 
@@ -21,7 +25,7 @@ suspend fun start(
     bot: TelegramBot,
 ) {
     message {
-"""
+        """
 Hi here! To setup notifications for this chat your GitLab project(repo), open Settings -> Web Hooks and add this URL:
 https://nuecagram.raquezha.net
 
@@ -33,6 +37,6 @@ custom_headers": [
 ]
 
 "X-Nuecagram-Topic-Id is optional. If your group chat enabled topics and want to send the message to a specific topic then add this header"
-""".trimIndent()
+        """.trimIndent()
     }.send(user, bot)
 }
