@@ -61,7 +61,7 @@ class WebhookMessageFormatter {
         if (event.buildStatus in listOf("success", "created")) {
             throw SkipEventException()
         }
-        val jobUrl = event.getJobUrl().link("#${event.buildId}")
+        val jobUrl = event.getPipelineUrl().link("#${event.buildId}")
         return buildString {
             append("Job ${event.buildName.bold()} $jobUrl ")
             append("triggered by ${event.user.name.bold()} ")
@@ -90,11 +90,13 @@ class WebhookMessageFormatter {
     @Suppress("UnusedReceiverParameter")
     private fun BuildEvent.runningStatus(): String = "started running. Only time will tell when will it be finished."
 
-    private fun BuildEvent.getJobUrl(): String = "${repository.homepage}/-/jobs/$buildId"
+    private fun BuildEvent.getPipelineUrl(): String = "${repository.homepage}/-/jobs/$buildId"
 
     private fun NoteEvent.getUrl(label: String): String = objectAttributes.url.link(label)
 
     private fun Date?.formatFinishedAt(): String = this?.let { SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy").format(it) } ?: "N/A"
+
+    private fun PipelineEvent.getPipelineUrl(): String = "${project.webUrl}-/pipelines/${objectAttributes.id}"
 
     private fun formatNoteEvent(event: NoteEvent): String {
         val randomCommentMessage = RandomCommentMessage()
@@ -135,7 +137,8 @@ class WebhookMessageFormatter {
         val status = event.objectAttributes.status
         val projectName = event.project.name
         val ref = event.objectAttributes.ref
-        val clickablePipeline = event.project.webUrl.link("#${event.objectAttributes.id}".bold())
+
+        val clickablePipeline = event.getPipelineUrl().link("#${event.objectAttributes.id}".bold())
 
         return buildString {
             append("Pipeline $clickablePipeline for branch ${ref.bold()} ")
