@@ -63,7 +63,7 @@ class WebhookMessageFormatter {
         }
         val jobUrl = event.getJobUrl().link("#${event.buildId}")
         return buildString {
-            append("Job ${event.buildName.bold()}$jobUrl ")
+            append("Job ${event.buildName.bold()} $jobUrl ")
             append("triggered by ${event.user.name.bold()} ")
             append("in project ${event.repository.name.bold()} has ")
             append(event.getBuildStatusMessage())
