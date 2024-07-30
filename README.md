@@ -1,6 +1,6 @@
 # Nuecagram
 
-Nuecagram simplifies GitLab webhook handling, delivering notifications directly to your Telegram 
+Nuecagram simplifies GitLab webhook handling, delivering notifications directly to your Telegram
 
 # Getting Started
 ## 1. Identify Your Telegram Group Chat
@@ -33,11 +33,11 @@ Set up a webhook in your GitLab repository to trigger events in Nuecagram:
 
     - **URL:** Use the following endpoint for Nuecagram:
       ```
-      http://nuecagram.com/webhook
+      https://nuecagram.raquezha.net/webhook
       ```
     - **Custom Headers:**
       ```
-      X-Nuecagram-Token: [Secret token for payload validation]
+      X-Nuecagram-Token: [Message me on telegram @raquezha for the token]
       X-Nuecagram-Chat-Id: [Telegram group chat ID]
       X-Nuecagram-Topic-Id (optional): [Topic or thread ID within Telegram]
       ```
@@ -61,31 +61,31 @@ Set up a webhook in your GitLab repository to trigger events in Nuecagram:
 
 5. **Test Your Webhook:**
     - Use the test button at the bottom to ensure your webhook is correctly configured and functional.
-   
+
 ### Automate GitLab Webhook Configuration
 
 You can automate the setup of the GitLab webhook using the provided script. Follow these steps:
 
 1. **Navigate to the `scripts` Folder:**
-   - Locate the `setup-webhook.sh` script in your repository's `scripts` folder.
+    - Locate the `setup-webhook.sh` script in your repository's `scripts` folder.
 
 2. **Modify Script Values:**
-   - Open `setup-webhook.sh` and modify the following variables:
-      - `PROJECT_ID`: Your GitLab project ID.
-      - `WEBHOOK_URL`: URL where Nuecagram is deployed (`http://nuecagram.com/webhook`).
-      - `PRIVATE_TOKEN`: Your GitLab private token for authentication.
-      - `WEBHOOK_NAME`: Name for your Nuecagram webhook.
-      - `WEBHOOK_DESCRIPTION`: Description for your Nuecagram webhook.
-      - `SECRET_TOKEN`: Secret token for payload validation.
-      - `X-Nuecagram-Chat-Id`: Your Telegram group chat ID.
-      - `X-Nuecagram-Topic-Id`: (Optional) Topic or thread ID within Telegram.
+    - Open `setup-webhook.sh` and modify the following variables:
+        - `PROJECT_ID`: Your GitLab project ID.
+        - `WEBHOOK_URL`: URL where Nuecagram is deployed (`http://nuecagram.com/webhook`).
+        - `PRIVATE_TOKEN`: Your GitLab private token for authentication.
+        - `WEBHOOK_NAME`: Name for your Nuecagram webhook.
+        - `WEBHOOK_DESCRIPTION`: Description for your Nuecagram webhook.
+        - `SECRET_TOKEN`: Secret token for payload validation.
+        - `X-Nuecagram-Chat-Id`: Your Telegram group chat ID.
+        - `X-Nuecagram-Topic-Id`: (Optional) Topic or thread ID within Telegram.
 
 3. **Make the Script Executable:**
-   - If not already executable, run `chmod +x setup-webhook.sh` to make the script executable.
+    - If not already executable, run `chmod +x setup-webhook.sh` to make the script executable.
 
 4. **Run the Script:**
-   - Execute the script by running `./scripts/setup-webhook.sh`.
-   - The script will make a POST request to GitLab's API to create the webhook with the specified configurations.
+    - Execute the script by running `./scripts/setup-webhook.sh`.
+    - The script will make a POST request to GitLab's API to create the webhook with the specified configurations.
 
 5. **Test Your Webhook:**
 
@@ -96,7 +96,7 @@ You can automate the setup of the GitLab webhook using the provided script. Foll
 ### Prerequisites :
 - You will need [docker](https://docs.docker.com/install/) and [docker-compose](https://docs.docker.com/compose/install/) installed
 - Create your Telegram bot(s) by talking to [@BotFather](https://t.me/botfather)
-  
+
 ### Clone the Repository
 
 ```bash
@@ -127,7 +127,7 @@ docker run -d -e TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN -e NUECAGRAM_SECRET_TOKE
 Configure your GitLab project's webhook to send events to the endpoint provided by Nuecagram. Ensure to include the required custom headers for validation.
 
 
-Take note of this required custom header when you add new webhoo!
+Take note of this required custom header when you add new webhook!
 
 ```
 Custom Headers:
