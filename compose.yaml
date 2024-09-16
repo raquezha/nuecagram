@@ -1,0 +1,31 @@
+services:
+  gradle-build:
+    image: gradle:8.4-jdk17
+    container_name: nuecagram_build_service
+    volumes:
+      - ./:/home/gradle/src
+    working_dir: /home/gradle/src
+    command: gradle buildFatJar --no-daemon --info
+    networks:
+      - app-network
+
+  java-run:
+    image: openjdk:17
+    container_name: nuecagram_service
+    environment:
+      - TELEGRAM_BOT_TOKEN=<ADD_TOKEN_HERE>
+      - NUECAGRAM_SECRET_TOKEN=<ADD_TOKEN_HERE>
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./build/libs:/app
+    working_dir: /app
+    command: java -jar nuecagram-fat.jar
+    depends_on:
+      - gradle-build
+    networks:
+      - app-network
+  
+networks:
+  app-network:
+    driver: bridge
