@@ -311,8 +311,8 @@ class WebhookMessageFormatter {
     private fun formatMergeRequestEventMessage(event: MergeRequestEvent): String =
         formatActionWithTitleAndDescription(
             user = event.user.name,
-            action = event.objectAttributes.state,
-            link = "merge request${event.objectAttributes.url.link("#${event.objectAttributes.id}")}",
+            action = getFormattedAction(event.objectAttributes.action),
+            link = "${event.objectAttributes.url.link("merge request#${event.objectAttributes.id}")}",
             repositoryName = event.repository.name,
             title = event.objectAttributes.title,
             description = event.objectAttributes.description,
@@ -347,6 +347,11 @@ class WebhookMessageFormatter {
             "open" -> "opened"
             "close" -> "closed"
             "reopen" -> "reopened"
+            "approved" -> "approved"
+            "unapproved" -> "unapproved"
+            "approval" -> "approval"
+            "unapproval" -> "unapproval"
+            "merge" -> "merged"
             else -> throw SkipEventException()
         }
 }
