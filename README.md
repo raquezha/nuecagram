@@ -113,6 +113,8 @@ export TELEGRAM_BOT_TOKEN=yourtoken
 export NUECAGRAM_SECRET_TOKEN=yourcustomtoken
 ```
 
+If planning to use Docker Compose instead, edit the environment variables in `compose.yaml` starting at line 16.
+
 ### Build and Run the Docker Image
 
 Use Docker to build and run the Nuecagram application:
@@ -120,6 +122,12 @@ Use Docker to build and run the Nuecagram application:
 ```bash
 docker build -t nuecagram .
 docker run -d -e TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN -e NUECAGRAM_SECRET_TOKEN=$NUECAGRAM_SECRET_TOKEN -p 8080:80 nuecagram
+```
+
+Docker Compose:
+```bash
+docker compose build
+docker compose up
 ```
 
 ### Configure GitLab Webhook
