@@ -14,6 +14,7 @@ jib = "3.4.3"
 mockk = "1.13.11"
 vendeli = "6.2.0"
 tgbot = "15.0.0"
+gitlab4jApi = "6.0.0-rc.5"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -37,7 +38,7 @@ ktor-client-json = { module = "io.ktor:ktor-client-json", version.ref = "ktor" }
 
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
-gitlab4j-api = { module = "com.github.gitlab4j:gitlab4j-api", version = "main-SNAPSHOT" }
+gitlab4j-api = { module = "org.gitlab4j:gitlab4j-api", version.ref = "gitlab4jApi" }
 google-truth = { module = "com.google.truth:truth", version.ref = "truth" }
 
 koin-ktor = { module = "io.insert-koin:koin-ktor", version.ref = "koin" }
