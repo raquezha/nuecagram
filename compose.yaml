@@ -6,6 +6,8 @@ services:
       - ./:/home/gradle/src
     working_dir: /home/gradle/src
     command: gradle buildFatJar --no-daemon --info
+    networks:
+      - app-network
 
   java-run:
     image: openjdk:17
