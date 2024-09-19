@@ -51,6 +51,8 @@ class WebhookMessageFormatter {
 
     private fun String.link(label: String) = "<a href=\"$this\">$label</a>"
 
+    private fun String.isNullHash(): Boolean = this == "0000000000000000000000000000000000000000"
+
     private fun throwUnsupportedEventException(event: Event): Nothing {
         val message = "Unsupported event object_kind, object_kind=${event.objectKind}"
         logger.error { message }
@@ -166,10 +168,6 @@ class WebhookMessageFormatter {
             afterSha.isNullHash() -> "${event.userName.bold()} deleted $itemType $tagUrl at ${event.repository.name}"
             else -> "${event.userName.bold()} updated $itemType $tagUrl at ${event.repository.name}"
         }
-    }
-
-    private fun String.isNullHash(): Boolean {
-        return this == "0000000000000000000000000000000000000000"
     }
 
     private fun formatIssueEventMessage(event: IssueEvent): String =
