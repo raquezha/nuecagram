@@ -22,7 +22,8 @@ services:
     working_dir: /app
     command: java -jar nuecagram-fat.jar
     depends_on:
-      - gradle-build
+      gradle-build:
+        condition: service_completed_successfully
     networks:
       - app-network
   
