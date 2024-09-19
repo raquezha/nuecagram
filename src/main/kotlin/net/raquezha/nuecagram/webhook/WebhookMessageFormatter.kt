@@ -158,7 +158,18 @@ class WebhookMessageFormatter {
         val itemType = if (refType == "heads") "branch" else "tag"
         val tagUrl = "${event.repository.homepage}/tree/${urlEncode(tagName)}".link(tagName)
 
-        return "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"
+        val beforeSha = event.before
+        val afterSha = event.after
+
+        return when {
+            beforeSha.isNullHash() -> "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"
+            afterSha.isNullHash() -> "${event.userName.bold()} deleted $itemType $tagUrl at ${event.repository.name}"
+            else -> "${event.userName.bold()} updated $itemType $tagUrl at ${event.repository.name}"
+        }
+    }
+
+    private fun String.isNullHash(): Boolean {
+        return this == "0000000000000000000000000000000000000000"
     }
 
     private fun formatIssueEventMessage(event: IssueEvent): String =
