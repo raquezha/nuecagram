@@ -51,6 +51,8 @@ class WebhookMessageFormatter {
 
     private fun String.link(label: String) = "<a href=\"$this\">$label</a>"
 
+    private fun String.isNullHash(): Boolean = this == "0000000000000000000000000000000000000000"
+
     private fun throwUnsupportedEventException(event: Event): Nothing {
         val message = "Unsupported event object_kind, object_kind=${event.objectKind}"
         logger.error { message }
@@ -158,7 +160,14 @@ class WebhookMessageFormatter {
         val itemType = if (refType == "heads") "branch" else "tag"
         val tagUrl = "${event.repository.homepage}/tree/${urlEncode(tagName)}".link(tagName)
 
-        return "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"
+        val beforeSha = event.before
+        val afterSha = event.after
+
+        return when {
+            beforeSha.isNullHash() -> "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"
+            afterSha.isNullHash() -> "${event.userName.bold()} deleted $itemType $tagUrl at ${event.repository.name}"
+            else -> "${event.userName.bold()} updated $itemType $tagUrl at ${event.repository.name}"
+        }
     }
 
     private fun formatIssueEventMessage(event: IssueEvent): String =
@@ -259,7 +268,7 @@ class WebhookMessageFormatter {
         return if (event.commits.isNotEmpty()) {
             "${event.userName.bold()} pushed $wp to $clickableBranch\n\n$commitText"
         } else {
-            if (event.after != "0000000000000000000000000000000000000000" && event.after.isNotEmpty()) {
+            if (!event.after.isNullHash() && event.after.isNotEmpty()) {
                 "${event.userName.bold()} created branch $clickableBranch"
             } else {
                 val destStr = event.project.pathWithNamespace.ifEmpty { event.repository.name }
