@@ -270,7 +270,7 @@ class WebhookMessageFormatter {
         return if (event.commits.isNotEmpty()) {
             "${event.userName.bold()} pushed $wp to $clickableBranch\n\n$commitText"
         } else {
-            if (event.after != "0000000000000000000000000000000000000000" && event.after.isNotEmpty()) {
+            if (!event.after.isNullHash() && event.after.isNotEmpty()) {
                 "${event.userName.bold()} created branch $clickableBranch"
             } else {
                 val destStr = event.project.pathWithNamespace.ifEmpty { event.repository.name }
