@@ -60,7 +60,7 @@ class WebhookMessageFormatter {
     }
 
     private fun formatBuildEventMessage(event: BuildEvent): String {
-        if (event.buildStatus in listOf("success", "created")) {
+        if (event.buildStatus in listOf("created")) {
             throw SkipEventException()
         }
         val jobUrl = event.getPipelineUrl().link("#${event.buildId}")
@@ -78,6 +78,7 @@ class WebhookMessageFormatter {
             "canceled" -> canceledStatus()
             "pending" -> pendingStatus()
             "running" -> runningStatus()
+            "success" -> successStatus()
             else -> throw GitLabApiException("[build status $buildStatus not supported.]")
         }
 
@@ -91,6 +92,8 @@ class WebhookMessageFormatter {
 
     @Suppress("UnusedReceiverParameter")
     private fun BuildEvent.runningStatus(): String = "started running. Only time will tell when will it be finished."
+
+    private fun BuildEvent.successStatus(): String = "finished ${"successfully".bold()}."
 
     private fun BuildEvent.getPipelineUrl(): String = "${repository.homepage}/-/jobs/$buildId"
 
