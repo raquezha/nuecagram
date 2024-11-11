@@ -3,17 +3,19 @@ package net.raquezha.nuecagram.plugins
 import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.OK
-import io.ktor.server.application.Application
-import io.ktor.server.application.call
+import io.ktor.server.application.*
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
+import net.raquezha.nuecagram.webhook.EventData
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
@@ -22,8 +24,8 @@ import org.koin.ktor.ext.inject
 fun Application.configureRouting() {
     val webhookService by inject<WebHookService>()
     val logger by inject<KLogger>()
-    val telegramService by inject<TelegramService>()
-    val formatter: WebhookMessageFormatter by inject()
+
+    val requestQueue = Channel<EventData>()
 
     routing {
         get("/") {
@@ -31,19 +33,47 @@ fun Application.configureRouting() {
         }
 
         post("/webhook") {
-            val webhookData =
-                try {
-                    webhookService.handleRequest(call)
-                } catch (e: Exception) {
-                    call.respond(BadRequest, e.message.toString())
-                    return@post // Exit the coroutine if there's an error
+            try {
+                val webhookData = webhookService.handleRequest(call)
+                logger.debug {
+                    "handling request webhook data: ${webhookData.log()}"
                 }
 
-            val event = webhookData.event
-            val chatDetails = webhookData.chatDetails()
-            logger.debug {
-                "handling request webhook data: ${webhookData.log()}"
+                requestQueue.send(webhookData)
+
+                call.respond(OK, "Webhook received successfully")
+            } catch (skipEx: SkipEventException) {
+                call.respond(
+                    BadRequest,
+                    message = "Request not supported.",
+                )
+            } catch (e: Exception) {
+                call.respond(
+                    BadRequest,
+                    message = "Failed to process request.\n\n${e.message}",
+                )
             }
+        }
+
+        this@configureRouting.launch {
+            this@configureRouting.processQueue(requestQueue)
+        }
+    }
+}
+
+suspend fun Application.processQueue(queue: Channel<EventData>) {
+    val logger by inject<KLogger>()
+    val telegramService by inject<TelegramService>()
+    val formatter: WebhookMessageFormatter by inject()
+
+    logger.debug { "processing queue" }
+    for (data in queue) {
+        try {
+            val event = data.event
+            val chatDetails = data.chatDetails()
+
+            logger.debug { "got a call" }
+
             coroutineScope {
                 val sendMessageJob =
                     async {
@@ -57,18 +87,14 @@ fun Application.configureRouting() {
                             ),
                         )
                     }
-                try {
-                    sendMessageJob.await() // Ensure sendMessage completes before responding
-                    call.respond(OK, "Webhook received successfully")
-                } catch (skipEventException: SkipEventException) {
-                    call.respond(OK, "Webhook received successfully")
-                } catch (exception: Exception) {
-                    call.respond(
-                        status = BadRequest,
-                        message = "Failed to process the request. ${exception.message}",
-                    )
-                }
+                sendMessageJob.await() // Ensure sendMessage completes before responding
+                logger.debug { "sent message" }
             }
+        } catch (skipEx: SkipEventException) {
+            logger.debug { "${data.event.objectKind} is being skipped" }
+        } catch (e: Exception) {
+            logger.error { "Error processing webhook data. ${data.log()}\n${e.message}" }
         }
     }
+    logger.debug { "stopped processing queue" }
 }
