@@ -60,11 +60,12 @@ class WebhookMessageFormatter {
     }
 
     private fun formatBuildEventMessage(event: BuildEvent): String {
-        if (event.buildStatus in listOf("success", "created")) {
+        if (event.buildStatus in listOf("created")) {
             throw SkipEventException()
         }
         val jobUrl = event.getPipelineUrl().link("#${event.buildId}")
         return buildString {
+            append(event.getBuildStatusEmoji())
             append("Job ${event.buildName.bold()} $jobUrl ")
             append("triggered by ${event.user.name.bold()} ")
             append("in project ${event.repository.name.bold()} has ")
@@ -72,12 +73,25 @@ class WebhookMessageFormatter {
         }
     }
 
+    private fun BuildEvent.getBuildStatusEmoji(): String =
+        when (buildStatus) {
+            "created" -> "✨ "
+            "pending" -> "⏳ "
+            "running" -> "\uD83D\uDFE2 "
+            "success" -> "✅ "
+            "failed" -> "❎ "
+            "canceled" -> "⛔ "
+            else -> ""
+        }
+
     private fun BuildEvent.getBuildStatusMessage(): String =
         when (buildStatus) {
-            "failed" -> failedStatus()
-            "canceled" -> canceledStatus()
+            "created" -> createdStatus()
             "pending" -> pendingStatus()
             "running" -> runningStatus()
+            "success" -> successStatus()
+            "failed" -> failedStatus()
+            "canceled" -> canceledStatus()
             else -> throw GitLabApiException("[build status $buildStatus not supported.]")
         }
 
@@ -87,10 +101,15 @@ class WebhookMessageFormatter {
     private fun BuildEvent.canceledStatus(): String = "been ${"canceled".bold()} at ${buildFinishedAt?.formatFinishedAt()}."
 
     @Suppress("UnusedReceiverParameter")
-    private fun BuildEvent.pendingStatus(): String = "been created and in ${"pending".bold()} status."
+    private fun BuildEvent.createdStatus(): String = "been ${"created".bold()}."
 
     @Suppress("UnusedReceiverParameter")
-    private fun BuildEvent.runningStatus(): String = "started running. Only time will tell when will it be finished."
+    private fun BuildEvent.pendingStatus(): String = "went to ${"pending".bold()} status."
+
+    @Suppress("UnusedReceiverParameter")
+    private fun BuildEvent.runningStatus(): String = "started ${"running".bold()}. Only time will tell when will it be finished."
+
+    private fun BuildEvent.successStatus(): String = "finished ${"successfully".bold()} at ${buildFinishedAt?.formatFinishedAt()}."
 
     private fun BuildEvent.getPipelineUrl(): String = "${repository.homepage}/-/jobs/$buildId"
 

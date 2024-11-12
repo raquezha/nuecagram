@@ -45,6 +45,8 @@ class WebHookServiceImpl(
             ReleaseEvent.X_GITLAB_EVENT,
         )
 
+    private val runningJobsIdMap = mutableMapOf<Long, String>()
+
     override suspend fun handleRequest(call: ApplicationCall): EventData =
         try {
             val webhookData = call.getWebhookData()
@@ -61,6 +63,19 @@ class WebHookServiceImpl(
             logger.error { errorMessage }
             throw GitLabApiException(errorMessage)
         }
+
+    override fun getMessageIdOfEvent(buildEventId: Long): String? = runningJobsIdMap[buildEventId]
+
+    override fun setMessageIdOfEvent(
+        buildEventId: Long,
+        messageId: String,
+    ) {
+        runningJobsIdMap[buildEventId] = messageId
+    }
+
+    override fun clearMessageIdOfEvent(buildEventId: Long) {
+        runningJobsIdMap.remove(buildEventId)
+    }
 
     private fun handleSecretToken(secretToken: String?) {
         if (!isValidSecretToken(secretToken)) {
@@ -82,9 +97,13 @@ class WebHookServiceImpl(
         event.requestQueryString = request.queryString()
         event.requestSecretToken = secretToken
 
+        runningJobsIdMap.onEach { logger.debug { it } }
+
         return EventData(
             event = event,
-            headerEvent = request.headers[GITLAB_EVENT]?.trim() ?: throw GitLabApiException("missing '$GITLAB_EVENT' header!"),
+            headerEvent =
+                request.headers[GITLAB_EVENT]?.trim()
+                    ?: throw GitLabApiException("missing '$GITLAB_EVENT' header!"),
             headerSecretToken =
                 request.headers[SECRET_TOKEN]?.trim(
                     ' ',
@@ -93,8 +112,7 @@ class WebHookServiceImpl(
                 ) ?: throw GitLabApiException("missing '$SECRET_TOKEN' header!"),
             headerChatId = request.headers[CHAT_ID]?.trim() ?: throw GitLabApiException("missing '$CHAT_ID' header!"),
             headerTopicId = request.headers[TOPIC_ID]?.trim(),
-        ).apply {
-        }
+        )
     }
 
     private fun handleEvents(eventName: String?) {

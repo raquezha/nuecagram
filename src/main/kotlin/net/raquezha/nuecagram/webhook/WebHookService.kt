@@ -33,4 +33,13 @@ interface WebHookService {
     }
 
     suspend fun handleRequest(call: ApplicationCall): EventData
+
+    fun getMessageIdOfEvent(buildEventId: Long): String?
+
+    fun setMessageIdOfEvent(
+        buildEventId: Long,
+        messageId: String,
+    )
+
+    fun clearMessageIdOfEvent(buildEventId: Long)
 }
