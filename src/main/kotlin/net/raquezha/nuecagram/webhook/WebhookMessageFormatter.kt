@@ -115,7 +115,16 @@ class WebhookMessageFormatter {
 
     private fun NoteEvent.getUrl(label: String): String = objectAttributes.url.link(label)
 
-    private fun Date?.formatFinishedAt(): String = this?.let { SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy").format(it) } ?: "N/A"
+    private fun Date?.formatFinishedAt(): String =
+        this?.let {
+            logger.debug { "unformatted date: $it" }
+            val formatter = SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy")
+            formatter.timeZone = TimeZone.getTimeZone("Asia/Manila")
+
+            formatter.format(it).also { formatted ->
+                logger.debug { "formatted date: $formatted" }
+            }
+        } ?: "N/A"
 
     private fun PipelineEvent.getPipelineUrl(): String = "${project.webUrl}-/pipelines/${objectAttributes.id}"
 
