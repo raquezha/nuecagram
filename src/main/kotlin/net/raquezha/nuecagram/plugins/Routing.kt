@@ -9,19 +9,17 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import net.raquezha.nuecagram.webhook.EventData
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
+import org.koin.core.parameter.parametersOf
 import org.koin.ktor.ext.inject
 
 fun Application.configureRouting() {
     val webhookService by inject<WebHookService>()
+    val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
-
-    val requestQueue = Channel<EventData>()
 
     routing {
         get("/") {
@@ -35,7 +33,7 @@ fun Application.configureRouting() {
                     "handling request webhook data: ${webhookData.log()}"
                 }
 
-                requestQueue.send(webhookData)
+                webhookRequestHandler.enqueue(webhookData)
 
                 call.respond(OK, "Webhook received successfully")
             } catch (skipEx: SkipEventException) {
@@ -52,7 +50,7 @@ fun Application.configureRouting() {
         }
 
         this@configureRouting.launch {
-            WebhookRequestHandler(this@configureRouting).processQueue(requestQueue)
+            webhookRequestHandler.processQueue()
         }
     }
 }

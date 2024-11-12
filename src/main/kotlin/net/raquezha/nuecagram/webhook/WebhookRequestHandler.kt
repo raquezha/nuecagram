@@ -13,7 +13,13 @@ import org.koin.ktor.ext.inject
 class WebhookRequestHandler(
     private val application: Application,
 ) {
-    suspend fun processQueue(queue: Channel<EventData>) {
+    private val queue = Channel<EventData>()
+
+    suspend fun enqueue(eventData: EventData) {
+        queue.send(eventData)
+    }
+
+    suspend fun processQueue() {
         val webhookService by application.inject<WebHookService>()
         val logger by application.inject<KLogger>()
         val telegramService by application.inject<TelegramService>()
