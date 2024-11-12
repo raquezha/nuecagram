@@ -14,6 +14,7 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.client.plugins.plugin
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.*
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
@@ -26,6 +27,7 @@ import net.raquezha.nuecagram.telegram.TokenProviderImpl.TelegramBotToken
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebHookServiceImpl
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
+import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.dsl.module
 import org.koin.java.KoinJavaComponent.inject
 
@@ -37,6 +39,7 @@ fun appModule() =
         provideTokenProvider,
         provideHttpClient,
         provideConfigModule,
+        provideWebhookRequestHandler,
     )
 
 fun testAppModule() =
@@ -165,5 +168,12 @@ val provideWebhookModule =
         single<WebHookService> {
             val tokenProvider: TokenProvider by inject()
             WebHookServiceImpl(tokenProvider.getSecretToken(), get())
+        }
+    }
+
+val provideWebhookRequestHandler =
+    module {
+        single { params ->
+            WebhookRequestHandler(application = params.get<Application>())
         }
     }
