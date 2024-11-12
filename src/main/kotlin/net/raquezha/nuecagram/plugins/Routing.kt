@@ -19,6 +19,7 @@ import net.raquezha.nuecagram.webhook.EventData
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
+import org.gitlab4j.api.webhook.BuildEvent
 import org.koin.ktor.ext.inject
 
 fun Application.configureRouting() {
@@ -62,6 +63,7 @@ fun Application.configureRouting() {
 }
 
 suspend fun Application.processQueue(queue: Channel<EventData>) {
+    val webhookService by inject<WebHookService>()
     val logger by inject<KLogger>()
     val telegramService by inject<TelegramService>()
     val formatter: WebhookMessageFormatter by inject()
@@ -72,8 +74,6 @@ suspend fun Application.processQueue(queue: Channel<EventData>) {
             val event = data.event
             val chatDetails = data.chatDetails()
 
-            logger.debug { "got a call" }
-
             coroutineScope {
                 val sendMessageJob =
                     async {
@@ -81,19 +81,41 @@ suspend fun Application.processQueue(queue: Channel<EventData>) {
                             Message(
                                 chatId = chatDetails.chatId,
                                 threadId = chatDetails.topicId,
+                                messageId =
+                                    if (event is BuildEvent) {
+                                        webhookService.getMessageIdOfEvent(event.buildId)
+                                    } else {
+                                        null
+                                    },
                                 text = formatter.formatEventMessage(event),
                                 parseMode = "HTML",
                                 disableWebPagePreview = true,
                             ),
                         )
                     }
-                sendMessageJob.await() // Ensure sendMessage completes before responding
-                logger.debug { "sent message" }
+                val messageId = sendMessageJob.await() // Ensure sendMessage completes before responding
+                logger.debug { "sent message $messageId" }
+
+                if (event is BuildEvent) {
+                    when {
+                        event.buildStatus in listOf("success", "canceled", "failed") -> {
+                            webhookService.clearMessageIdOfEvent(event.buildId)
+                            logger.debug { "build #${event.buildId} finished, removed saved message id" }
+                        }
+                        else -> {
+                            webhookService.setMessageIdOfEvent(event.buildId, messageId)
+                            logger.debug { "saved build #${event.buildId}'s message id $messageId" }
+                        }
+                    }
+                }
             }
         } catch (skipEx: SkipEventException) {
-            logger.debug { "${data.event.objectKind} is being skipped" }
+            logger.debug { "skipped event" }
         } catch (e: Exception) {
-            logger.error { "Error processing webhook data. ${data.log()}\n${e.message}" }
+            logger.error { "Error processing webhook data.\n${e.message}" }
+        } finally {
+            // delay a bit for the next request
+            // delay(300)
         }
     }
     logger.debug { "stopped processing queue" }
