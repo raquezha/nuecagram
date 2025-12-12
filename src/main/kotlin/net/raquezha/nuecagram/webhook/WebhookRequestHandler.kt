@@ -8,6 +8,7 @@ import kotlinx.coroutines.coroutineScope
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import org.gitlab4j.api.webhook.BuildEvent
+import org.gitlab4j.api.webhook.PipelineEvent
 import org.koin.ktor.ext.inject
 
 class WebhookRequestHandler(
@@ -30,38 +31,36 @@ class WebhookRequestHandler(
             try {
                 val event = data.event
                 val chatDetails = data.chatDetails()
-                val messageId =
-                    when (event) {
-                        is BuildEvent -> webhookService.getMessageIdOfEvent(event.buildId)
-                        else -> null
+
+                when (event) {
+                    is PipelineEvent -> {
+                        handlePipelineEvent(
+                            event = event,
+                            chatDetails = chatDetails,
+                            webhookService = webhookService,
+                            telegramService = telegramService,
+                            formatter = formatter,
+                            logger = logger,
+                        )
                     }
-                coroutineScope {
-                    val sendMessageJob =
-                        async {
-                            telegramService.sendMessage(
-                                Message(
-                                    chatId = chatDetails.chatId,
-                                    threadId = chatDetails.topicId,
-                                    messageId = messageId,
-                                    text = formatter.formatEventMessage(event),
-                                    parseMode = PARSE_MODE,
-                                    disableWebPagePreview = true,
-                                ),
-                            )
-                        }
-                    val messageJob = sendMessageJob.await() // Ensure sendMessage completes before responding
-                    logger.debug { "sent message $messageJob" }
-                    if (event is BuildEvent) {
-                        when {
-                            event.buildStatus in listOf("success", "canceled", "failed") -> {
-                                webhookService.clearMessageIdOfEvent(event.buildId)
-                                logger.debug { "build #${event.buildId} finished, removed saved message id" }
-                            }
-                            else -> {
-                                webhookService.setMessageIdOfEvent(event.buildId, messageJob)
-                                logger.debug { "saved build #${event.buildId}'s message id $messageJob" }
-                            }
-                        }
+                    is BuildEvent -> {
+                        handleBuildEvent(
+                            event = event,
+                            chatDetails = chatDetails,
+                            webhookService = webhookService,
+                            telegramService = telegramService,
+                            formatter = formatter,
+                            logger = logger,
+                        )
+                    }
+                    else -> {
+                        handleGenericEvent(
+                            event = data.event,
+                            chatDetails = chatDetails,
+                            telegramService = telegramService,
+                            formatter = formatter,
+                            logger = logger,
+                        )
                     }
                 }
             } catch (skipEx: SkipEventException) {
@@ -73,11 +72,94 @@ class WebhookRequestHandler(
         logger.debug { MESSAGE_STOPPED }
     }
 
+    private suspend fun handlePipelineEvent(
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        webhookService: WebHookService,
+        telegramService: TelegramService,
+        formatter: WebhookMessageFormatter,
+        logger: KLogger,
+    ) {
+        val pipelineId = event.objectAttributes.id
+        val status = event.objectAttributes.status
+        val existingMessageId = webhookService.getPipelineMessageId(pipelineId)
+
+        coroutineScope {
+            val sendMessageJob =
+                async {
+                    telegramService.sendMessage(
+                        Message(
+                            chatId = chatDetails.chatId,
+                            threadId = chatDetails.topicId,
+                            messageId = existingMessageId,
+                            text = formatter.formatEventMessage(event),
+                            parseMode = PARSE_MODE,
+                            disableWebPagePreview = true,
+                        ),
+                    )
+                }
+            val messageId = sendMessageJob.await()
+            logger.debug { "Pipeline #$pipelineId: sent/updated message $messageId" }
+
+            when (status) {
+                in PIPELINE_TERMINAL_STATUSES -> {
+                    webhookService.clearPipelineMessageId(pipelineId)
+                    logger.debug { "Pipeline #$pipelineId finished ($status), cleared message tracking" }
+                }
+                else -> {
+                    webhookService.setPipelineMessageId(pipelineId, messageId)
+                    logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
+                }
+            }
+        }
+    }
+
+    private suspend fun handleBuildEvent(
+        event: BuildEvent,
+        chatDetails: ChatDetails,
+        webhookService: WebHookService,
+        telegramService: TelegramService,
+        formatter: WebhookMessageFormatter,
+        logger: KLogger,
+    ) {
+        // Skip individual job events - we handle jobs via PipelineEvent
+        logger.debug { "Skipping BuildEvent #${event.buildId} - handled via PipelineEvent" }
+        throw SkipEventException()
+    }
+
+    private suspend fun handleGenericEvent(
+        event: org.gitlab4j.api.webhook.Event,
+        chatDetails: ChatDetails,
+        telegramService: TelegramService,
+        formatter: WebhookMessageFormatter,
+        logger: KLogger,
+    ) {
+        coroutineScope {
+            val sendMessageJob =
+                async {
+                    telegramService.sendMessage(
+                        Message(
+                            chatId = chatDetails.chatId,
+                            threadId = chatDetails.topicId,
+                            messageId = null,
+                            text = formatter.formatEventMessage(event),
+                            parseMode = PARSE_MODE,
+                            disableWebPagePreview = true,
+                        ),
+                    )
+                }
+            val messageId = sendMessageJob.await()
+            logger.debug { "Sent message $messageId for ${event.objectKind}" }
+        }
+    }
+
     companion object {
         const val PARSE_MODE = "HTML"
         const val MESSAGE_PROCESSING = "Queue started processing."
         const val MESSAGE_STOPPED = "Queue stopped processing."
         const val MESSAGE_ERROR = "Error processing webhook data."
         const val MESSAGE_SKIPPED = "This event is skipped."
+
+        private val PIPELINE_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
     }
 }

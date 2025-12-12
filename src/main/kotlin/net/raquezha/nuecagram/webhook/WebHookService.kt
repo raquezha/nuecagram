@@ -42,4 +42,30 @@ interface WebHookService {
     )
 
     fun clearMessageIdOfEvent(buildEventId: Long)
+
+    /**
+     * Get the Telegram message ID for a pipeline.
+     *
+     * @param pipelineId the pipeline ID
+     * @return the Telegram message ID, or null if not tracked
+     */
+    fun getPipelineMessageId(pipelineId: Long): String?
+
+    /**
+     * Set the Telegram message ID for a pipeline.
+     *
+     * @param pipelineId the pipeline ID
+     * @param messageId the Telegram message ID
+     */
+    fun setPipelineMessageId(
+        pipelineId: Long,
+        messageId: String,
+    )
+
+    /**
+     * Clear the tracked message ID for a pipeline (call on completion).
+     *
+     * @param pipelineId the pipeline ID
+     */
+    fun clearPipelineMessageId(pipelineId: Long)
 }

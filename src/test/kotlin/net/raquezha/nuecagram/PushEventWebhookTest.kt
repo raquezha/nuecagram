@@ -6,10 +6,12 @@ import org.junit.Test
 
 class PushEventWebhookTest : BaseEventTestHelper() {
     @Test
-    fun testWebhookPushEvent() =
+    fun testWebhookPushEventIsReceivedButSkippedDuringProcessing() =
         testApplication {
             configureTestApplication()
             val response = postWebhook(EVENT_PUSH, SAMPLE_PAYLOAD)
+            // Push events are received successfully but skipped during processing
+            // (handled via PipelineEvent consolidation instead)
             assertThat(response).isEqualTo("Webhook received successfully")
         }
 

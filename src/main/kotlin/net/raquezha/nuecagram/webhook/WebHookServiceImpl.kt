@@ -46,6 +46,7 @@ class WebHookServiceImpl(
         )
 
     private val runningJobsIdMap = mutableMapOf<Long, String>()
+    private val pipelineMessageIdMap = mutableMapOf<Long, String>()
 
     override suspend fun handleRequest(call: ApplicationCall): EventData =
         try {
@@ -75,6 +76,19 @@ class WebHookServiceImpl(
 
     override fun clearMessageIdOfEvent(buildEventId: Long) {
         runningJobsIdMap.remove(buildEventId)
+    }
+
+    override fun getPipelineMessageId(pipelineId: Long): String? = pipelineMessageIdMap[pipelineId]
+
+    override fun setPipelineMessageId(
+        pipelineId: Long,
+        messageId: String,
+    ) {
+        pipelineMessageIdMap[pipelineId] = messageId
+    }
+
+    override fun clearPipelineMessageId(pipelineId: Long) {
+        pipelineMessageIdMap.remove(pipelineId)
     }
 
     private fun handleSecretToken(secretToken: String?) {
