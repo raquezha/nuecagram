@@ -4,6 +4,8 @@ package net.raquezha.nuecagram.webhook
 
 import io.github.oshai.kotlinlogging.KLogger
 import org.gitlab4j.api.GitLabApiException
+import org.gitlab4j.api.models.Job
+import org.gitlab4j.api.models.JobStatus
 import org.gitlab4j.api.utils.UrlEncoder.urlEncode
 import org.gitlab4j.api.webhook.AbstractPushEvent
 import org.gitlab4j.api.webhook.BuildEvent
@@ -60,17 +62,8 @@ class WebhookMessageFormatter {
     }
 
     private fun formatBuildEventMessage(event: BuildEvent): String {
-        if (event.buildStatus in listOf("created")) {
-            throw SkipEventException()
-        }
-        val jobUrl = event.getPipelineUrl().link("#${event.buildId}")
-        return buildString {
-            append(event.getBuildStatusEmoji())
-            append("Job ${event.buildName.bold()} $jobUrl ")
-            append("triggered by ${event.user.name.bold()} ")
-            append("in project ${event.repository.name.bold()} has ")
-            append(event.getBuildStatusMessage())
-        }
+        // Skip individual build/job events - handled via PipelineEvent consolidation
+        throw SkipEventException()
     }
 
     private fun BuildEvent.getBuildStatusEmoji(): String =
@@ -165,20 +158,131 @@ class WebhookMessageFormatter {
 
     private fun formatPipelineEvent(event: PipelineEvent): String {
         val status = event.objectAttributes.status
-        val projectName = event.project.name
+        val pipelineId = event.objectAttributes.id
         val ref = event.objectAttributes.ref
+        val commitSha = event.commit?.id?.take(7) ?: "unknown"
+        val userName = event.user?.name ?: "Unknown"
+        val pipelineUrl = event.getPipelineUrl()
+        val projectWebUrl = event.project.webUrl
 
-        val clickablePipeline = event.getPipelineUrl().link("#${event.objectAttributes.id}".bold())
+        val statusEmoji = getPipelineStatusEmoji(status)
+        val statusText = getPipelineStatusText(status)
+        val clickablePipeline = pipelineUrl.link("#$pipelineId")
 
         return buildString {
-            append("Pipeline $clickablePipeline for branch ${ref.bold()} ")
-            append("in project ${projectName.bold()} has ")
-            when (status) {
-                "failed" -> append("failed!".bold())
-                "canceled" -> append("has been ${"canceled".bold()}.")
-                else -> throw SkipEventException()
+            append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
+            append("Branch: ${ref.bold()} • $commitSha\n\n")
+
+            val jobs = event.jobs.orEmpty()
+            if (jobs.isNotEmpty()) {
+                val sortedJobs =
+                    jobs.sortedWith(
+                        compareBy(
+                            { getStageOrder(it.stage, event.objectAttributes.stages) },
+                            { it.id },
+                        ),
+                    )
+
+                sortedJobs.forEachIndexed { index, job ->
+                    val isLast = index == sortedJobs.size - 1
+                    val prefix = if (isLast) "└─" else "├─"
+                    val jobEmoji = getJobStatusEmoji(job.status)
+                    val jobName = job.name
+                    val jobUrl = "$projectWebUrl/-/jobs/${job.id}"
+
+                    val jobStatusText = formatJobStatus(job, jobUrl)
+                    append("$prefix $jobEmoji $jobName$jobStatusText\n")
+                }
+                append("\n")
             }
+
+            val duration = event.objectAttributes.duration
+            if (duration != null && status in listOf("success", "failed", "canceled")) {
+                append("Total: ${formatDuration(duration.toLong())} • ")
+            }
+            append("Triggered by ${userName.bold()}")
         }
+    }
+
+    private fun getPipelineStatusEmoji(status: String): String =
+        when (status) {
+            "pending" -> "⏳"
+            "running" -> "🔄"
+            "success" -> "✅"
+            "failed" -> "❌"
+            "canceled" -> "⛔"
+            "skipped" -> "⏭️"
+            "manual" -> "👆"
+            "scheduled" -> "🕐"
+            else -> "❓"
+        }
+
+    private fun getPipelineStatusText(status: String): String =
+        when (status) {
+            "pending" -> "pending"
+            "running" -> "running"
+            "success" -> "passed"
+            "failed" -> "failed"
+            "canceled" -> "canceled"
+            "skipped" -> "skipped"
+            "manual" -> "manual"
+            "scheduled" -> "scheduled"
+            else -> status
+        }
+
+    private fun getJobStatusEmoji(status: JobStatus?): String =
+        when (status) {
+            JobStatus.CREATED -> "🆕"
+            JobStatus.PENDING -> "⏳"
+            JobStatus.RUNNING -> "🔄"
+            JobStatus.SUCCESS -> "✅"
+            JobStatus.FAILED -> "❌"
+            JobStatus.CANCELED -> "⛔"
+            JobStatus.SKIPPED -> "⏭️"
+            JobStatus.MANUAL -> "👆"
+            else -> "❓"
+        }
+
+    private fun formatJobStatus(
+        job: Job,
+        jobUrl: String,
+    ): String {
+        val status = job.status ?: return ""
+        val duration = job.duration
+
+        return when (status) {
+            JobStatus.SUCCESS -> {
+                if (duration != null) " (${formatDuration(duration.toLong())})" else ""
+            }
+            JobStatus.FAILED -> {
+                " ${jobUrl.link("View Logs")}"
+            }
+            JobStatus.RUNNING -> " running..."
+            JobStatus.PENDING -> " pending"
+            JobStatus.CANCELED -> " canceled"
+            JobStatus.SKIPPED -> " skipped"
+            JobStatus.MANUAL -> " manual"
+            else -> ""
+        }
+    }
+
+    private fun formatDuration(seconds: Long): String {
+        val minutes = seconds / 60
+        val secs = seconds % 60
+        return if (minutes > 0) {
+            "%02d:%02d".format(minutes, secs)
+        } else {
+            "00:%02d".format(secs)
+        }
+    }
+
+    private fun getStageOrder(
+        stage: String?,
+        stages: List<String>?,
+    ): Int {
+        if (stage == null || stages == null) return Int.MAX_VALUE
+        val index = stages.indexOf(stage)
+        return if (index >= 0) index else Int.MAX_VALUE
     }
 
     private fun formatTagPushEvent(event: TagPushEvent): String {
@@ -290,19 +394,8 @@ class WebhookMessageFormatter {
     }
 
     private fun formatPushEventMessage(event: PushEvent): String {
-        val clickableBranch = event.mentionBranch()
-        val commitText = formatCommits(event)
-        val wp = getWebPreview(event)
-        return if (event.commits.isNotEmpty()) {
-            "${event.userName.bold()} pushed $wp to $clickableBranch\n\n$commitText"
-        } else {
-            if (!event.after.isNullHash() && event.after.isNotEmpty()) {
-                "${event.userName.bold()} created branch $clickableBranch"
-            } else {
-                val destStr = event.project.pathWithNamespace.ifEmpty { event.repository.name }
-                "${event.userName.bold()} deleted branch ${"$destStr/${event.branch}".bold()}\n"
-            }
-        }
+        // Skip push events - pipeline consolidation handles notifications
+        throw SkipEventException()
     }
 
     private fun formatWikiPageEvent(event: WikiPageEvent): String =
