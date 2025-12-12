@@ -64,21 +64,25 @@ jobs:
           ls build/jib
           ls build/libs
 
-      - name: Create Release
+      - name: Create Release if not exists
         id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
         run: |
-          clean_tag=${tag#v}
-          gh release create "$tag" \
-             --repo="$GITHUB_REPOSITORY" \
-             --title="${tag#v}" \
-             --notes "Release $clean_tag" \
-             --generate-notes
+          # If the release already exists, use it; otherwise create it.
+          if gh release view "$tag" --repo="$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists, using existing release."
+          else
+            gh release create "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${tag#v}" \
+              --notes "Release ${tag#v}" \
+              --generate-notes
+          fi
           upload_url=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.upload_url')
           echo "upload_url=${upload_url}" >> $GITHUB_OUTPUT
-          echo "clean_tag=${clean_tag}" >> $GITHUB_OUTPUT
+          echo "clean_tag=${tag#v}" >> $GITHUB_OUTPUT
 
       - name: Upload fat jar artifact
         uses: shogo82148/actions-upload-release-asset@v1
