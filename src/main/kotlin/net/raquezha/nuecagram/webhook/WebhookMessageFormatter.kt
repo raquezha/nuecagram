@@ -72,7 +72,7 @@ class WebhookMessageFormatter {
             "pending" -> "⏳ "
             "running" -> "\uD83D\uDFE2 "
             "success" -> "✅ "
-            "failed" -> "❎ "
+            "failed" -> "❌ "
             "canceled" -> "⛔ "
             else -> ""
         }
