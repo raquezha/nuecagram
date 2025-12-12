@@ -28,4 +28,8 @@ data class Message(
     @SerialName("message_thread_id")
     @get:JsonProperty("message_thread_id")
     val threadId: String? = null,
+    @JsonInclude(Include.NON_NULL)
+    @SerialName("reply_to_message_id")
+    @get:JsonProperty("reply_to_message_id")
+    val replyToMessageId: String? = null,
 )

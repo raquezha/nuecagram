@@ -103,6 +103,22 @@ class WebhookRequestHandler(
 
             when (status) {
                 in PIPELINE_TERMINAL_STATUSES -> {
+                    // Send reply tagging the author
+                    val username = event.user?.username
+                    if (username != null) {
+                        val replyText = formatPipelineCompletionReply(status, username)
+                        telegramService.sendMessage(
+                            Message(
+                                chatId = chatDetails.chatId,
+                                threadId = chatDetails.topicId,
+                                text = replyText,
+                                parseMode = PARSE_MODE,
+                                replyToMessageId = messageId,
+                            ),
+                        )
+                        logger.debug { "Pipeline #$pipelineId: sent completion reply tagging @$username" }
+                    }
+
                     webhookService.clearPipelineMessageId(pipelineId)
                     logger.debug { "Pipeline #$pipelineId finished ($status), cleared message tracking" }
                 }
@@ -151,6 +167,29 @@ class WebhookRequestHandler(
             val messageId = sendMessageJob.await()
             logger.debug { "Sent message $messageId for ${event.objectKind}" }
         }
+    }
+
+    private fun formatPipelineCompletionReply(
+        status: String,
+        username: String,
+    ): String {
+        val emoji =
+            when (status) {
+                "success" -> "✅"
+                "failed" -> "❌"
+                "canceled" -> "⛔"
+                "skipped" -> "⏭️"
+                else -> "ℹ️"
+            }
+        val statusText =
+            when (status) {
+                "success" -> "passed"
+                "failed" -> "failed"
+                "canceled" -> "was canceled"
+                "skipped" -> "was skipped"
+                else -> "finished"
+            }
+        return "$emoji @$username Pipeline $statusText!"
     }
 
     companion object {
