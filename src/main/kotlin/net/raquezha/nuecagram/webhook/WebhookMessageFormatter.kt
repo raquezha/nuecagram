@@ -307,12 +307,14 @@ class WebhookMessageFormatter {
     }
 
     private fun formatDuration(seconds: Long): String {
-        val minutes = seconds / 60
+        val hours = seconds / 3600
+        val minutes = (seconds % 3600) / 60
         val secs = seconds % 60
-        return if (minutes > 0) {
-            "%02d:%02d".format(minutes, secs)
-        } else {
-            "00:%02d".format(secs)
+
+        return when {
+            hours > 0 -> "${hours}h ${minutes}m ${secs}s"
+            minutes > 0 -> "${minutes}m ${secs}s"
+            else -> "${secs}s"
         }
     }
 
