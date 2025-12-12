@@ -164,6 +164,7 @@ class WebhookMessageFormatter {
         val userName = event.user?.name ?: "Unknown"
         val pipelineUrl = event.getPipelineUrl()
         val projectWebUrl = event.project.webUrl
+        val projectName = event.project.name
 
         val statusEmoji = getPipelineStatusEmoji(status)
         val statusText = getPipelineStatusText(status)
@@ -171,7 +172,7 @@ class WebhookMessageFormatter {
 
         return buildString {
             append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
-            append("Branch: ${ref.bold()} • $commitSha\n\n")
+            append("${projectName.bold()} • ${ref.bold()} • $commitSha\n\n")
 
             val jobs = event.jobs.orEmpty()
             if (jobs.isNotEmpty()) {
