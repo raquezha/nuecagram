@@ -4,6 +4,8 @@ package net.raquezha.nuecagram.webhook
 
 import io.github.oshai.kotlinlogging.KLogger
 import org.gitlab4j.api.GitLabApiException
+import org.gitlab4j.api.models.Build
+import org.gitlab4j.api.models.BuildStatus
 import org.gitlab4j.api.models.Job
 import org.gitlab4j.api.models.JobStatus
 import org.gitlab4j.api.utils.UrlEncoder.urlEncode
@@ -174,25 +176,26 @@ class WebhookMessageFormatter {
             append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
             append("${projectName.bold()} • ${ref.bold()} • $commitSha\n\n")
 
-            val jobs = event.jobs.orEmpty()
-            if (jobs.isNotEmpty()) {
-                val sortedJobs =
-                    jobs.sortedWith(
+            // GitLab sends job data in 'builds' array, not 'jobs'
+            val builds = event.builds.orEmpty()
+            if (builds.isNotEmpty()) {
+                val sortedBuilds =
+                    builds.sortedWith(
                         compareBy(
                             { getStageOrder(it.stage, event.objectAttributes.stages) },
                             { it.id },
                         ),
                     )
 
-                sortedJobs.forEachIndexed { index, job ->
-                    val isLast = index == sortedJobs.size - 1
+                sortedBuilds.forEachIndexed { index, build ->
+                    val isLast = index == sortedBuilds.size - 1
                     val prefix = if (isLast) "└─" else "├─"
-                    val jobEmoji = getJobStatusEmoji(job.status)
-                    val jobName = job.name
-                    val jobUrl = "$projectWebUrl/-/jobs/${job.id}"
+                    val buildEmoji = getBuildStatusEmoji(build.status)
+                    val buildName = build.name
+                    val buildUrl = "$projectWebUrl/-/jobs/${build.id}"
 
-                    val jobStatusText = formatJobStatus(job, jobUrl)
-                    append("$prefix $jobEmoji $jobName$jobStatusText\n")
+                    val buildStatusText = formatBuildStatus(build, buildUrl)
+                    append("$prefix $buildEmoji $buildName$buildStatusText\n")
                 }
                 append("\n")
             }
@@ -244,6 +247,19 @@ class WebhookMessageFormatter {
             else -> "❓"
         }
 
+    private fun getBuildStatusEmoji(status: BuildStatus?): String =
+        when (status) {
+            BuildStatus.CREATED -> "🆕"
+            BuildStatus.PENDING -> "⏳"
+            BuildStatus.RUNNING -> "🔄"
+            BuildStatus.SUCCESS -> "✅"
+            BuildStatus.FAILED -> "❌"
+            BuildStatus.CANCELED -> "⛔"
+            BuildStatus.SKIPPED -> "⏭️"
+            BuildStatus.MANUAL -> "👆"
+            else -> "❓"
+        }
+
     private fun formatJobStatus(
         job: Job,
         jobUrl: String,
@@ -263,6 +279,29 @@ class WebhookMessageFormatter {
             JobStatus.CANCELED -> " canceled"
             JobStatus.SKIPPED -> " skipped"
             JobStatus.MANUAL -> " manual"
+            else -> ""
+        }
+    }
+
+    private fun formatBuildStatus(
+        build: Build,
+        buildUrl: String,
+    ): String {
+        val status = build.status ?: return ""
+        val duration = build.duration
+
+        return when (status) {
+            BuildStatus.SUCCESS -> {
+                if (duration != null) " (${formatDuration(duration.toLong())})" else ""
+            }
+            BuildStatus.FAILED -> {
+                " ${buildUrl.link("View Logs")}"
+            }
+            BuildStatus.RUNNING -> " running..."
+            BuildStatus.PENDING -> " pending"
+            BuildStatus.CANCELED -> " canceled"
+            BuildStatus.SKIPPED -> " skipped"
+            BuildStatus.MANUAL -> " manual"
             else -> ""
         }
     }
