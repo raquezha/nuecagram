@@ -173,24 +173,62 @@ class WebhookRequestHandler(
         status: String,
         username: String,
     ): String {
-        val emoji =
+        val message =
             when (status) {
-                "success" -> "✅"
-                "failed" -> "❌"
-                "canceled" -> "⛔"
-                "skipped" -> "⏭️"
-                else -> "ℹ️"
+                "success" -> getRandomSuccessMessage()
+                "failed" -> getRandomFailedMessage()
+                "canceled" -> getRandomCanceledMessage()
+                "skipped" -> getRandomSkippedMessage()
+                else -> "Pipeline finished!"
             }
-        val statusText =
-            when (status) {
-                "success" -> "passed"
-                "failed" -> "failed"
-                "canceled" -> "was canceled"
-                "skipped" -> "was skipped"
-                else -> "finished"
-            }
-        return "$emoji @$username Pipeline $statusText!"
+        return "@$username $message"
     }
+
+    private fun getRandomSuccessMessage(): String =
+        listOf(
+            "✅ Stop sipping that coffee, pipeline passed!",
+            "✅ The pipeline passed! Time to mass sa chismis.",
+            "✅ Pipeline passed! You're officially a 10x developer today.",
+            "✅ Pipeline passed! Even your code is surprised.",
+            "✅ Success! The CI gods have smiled upon you.",
+            "✅ Pipeline passed! Quick, deploy before someone breaks it!",
+            "✅ It worked?! I mean... of course it worked! ✅",
+            "✅ Pipeline passed! You may now mass peacefully sa may 7/11.",
+            "✅ All green! Your code is chef's kiss today. 👨‍🍳💋",
+            "✅ Pipeline passed! This calls for mass sa beer!",
+        ).random()
+
+    private fun getRandomFailedMessage(): String =
+        listOf(
+            "❌ The pipeline has passed... away. RIP. 💀",
+            "❌ Pipeline failed! Time to mass sa stackoverflow.",
+            "❌ Pipeline failed! But hey, at least you're consistent.",
+            "❌ Build machine said: 'Nah, I don't think so.' ❌",
+            "❌ Pipeline failed! Have you tried turning it off and on again?",
+            "❌ Failed! The code gods demand a sacrifice (your lunch break).",
+            "❌ Pipeline failed! git blame time! 🔍",
+            "❌ Oops! Your code took the day off. Pipeline failed!",
+            "❌ Pipeline failed! May the force rebuild with you.",
+            "❌ Failed! Time to mass sa debug mode. 🐛",
+        ).random()
+
+    private fun getRandomCanceledMessage(): String =
+        listOf(
+            "⛔ Pipeline canceled! Someone got cold feet.",
+            "⛔ Pipeline canceled! Commitment issues detected.",
+            "⛔ Canceled! The pipeline ghosted you. 👻",
+            "⛔ Pipeline canceled! It's not you, it's the code.",
+            "⛔ Abort mission! Pipeline canceled!",
+        ).random()
+
+    private fun getRandomSkippedMessage(): String =
+        listOf(
+            "⏭️ Pipeline skipped! It said 'not today.'",
+            "⏭️ Skipped! The pipeline is feeling lazy.",
+            "⏭️ Pipeline skipped! Maybe tomorrow?",
+            "⏭️ Skipped! Your pipeline is on vacation mode. 🏖️",
+            "⏭️ Pipeline said 'skip' like it's a YouTube ad.",
+        ).random()
 
     companion object {
         const val PARSE_MODE = "HTML"
