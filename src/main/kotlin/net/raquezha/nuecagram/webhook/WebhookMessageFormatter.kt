@@ -25,6 +25,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
 
+@Suppress("LargeClass")
 class WebhookMessageFormatter {
     private val logger by inject<KLogger>(KLogger::class.java)
 
@@ -46,6 +47,30 @@ class WebhookMessageFormatter {
 
         /** Seconds per minute for duration formatting */
         private const val SECONDS_PER_MINUTE = 60L
+
+        /** Maximum length for commit titles */
+        private const val MAX_COMMIT_TITLE_LENGTH = 50
+
+        /** Maximum length for context titles */
+        private const val MAX_CONTEXT_TITLE_LENGTH = 60
+
+        /** Maximum length for note content */
+        private const val MAX_NOTE_LENGTH = 300
+
+        /** Maximum length for short descriptions */
+        private const val MAX_SHORT_DESC_LENGTH = 100
+
+        /** Maximum length for descriptions */
+        private const val MAX_DESC_LENGTH = 150
+
+        /** Maximum length for release descriptions */
+        private const val MAX_RELEASE_DESC_LENGTH = 200
+
+        /** Maximum commits to display */
+        private const val MAX_DISPLAY_COMMITS = 5
+
+        /** Short SHA length */
+        private const val SHORT_SHA_LENGTH = 7
     }
 
     fun formatEventMessage(event: Event): String =
@@ -259,8 +284,6 @@ class WebhookMessageFormatter {
 
     private fun BuildEvent.getPipelineUrl(): String = "${repository.homepage}/-/jobs/$buildId"
 
-    private fun NoteEvent.getUrl(label: String): String = objectAttributes.url.link(label)
-
     private fun Date?.formatFinishedAt(): String =
         this?.let {
             logger.debug { "unformatted date: $it" }
@@ -272,72 +295,85 @@ class WebhookMessageFormatter {
     private fun PipelineEvent.getPipelineUrl(): String = "${project.webUrl}/-/pipelines/${objectAttributes.id}"
 
     private fun formatNoteEvent(event: NoteEvent): String {
-        val randomCommentMessage = RandomCommentMessage()
-        val randomMessage = randomCommentMessage.getRandomComment()
+        val userName = event.user?.name ?: "Unknown"
+        val projectName = event.project?.name ?: "Unknown"
+        val noteUrl = event.objectAttributes?.url ?: ""
+        val noteContent = event.objectAttributes?.note ?: ""
 
-        val noteableType = event.objectAttributes.noteableType
-        val result: String? =
-            when (noteableType) {
-                ISSUE -> {
-                    val issue = event.issue
-                    if (issue == null) {
-                        logger.warn { "NoteEvent for ISSUE but issue object is null, skipping" }
-                        null
-                    } else {
-                        event.generateNoteMessage(
-                            randomMessage = randomMessage,
-                            url = event.getUrl("issue"),
-                            description = "Issue: ${issue.title}",
-                        )
-                    }
-                }
-                MERGE_REQUEST -> {
-                    val mergeRequest = event.mergeRequest
-                    if (mergeRequest == null) {
-                        logger.warn { "NoteEvent for MERGE_REQUEST but mergeRequest object is null, skipping" }
-                        null
-                    } else {
-                        event.generateNoteMessage(
-                            randomMessage = randomMessage,
-                            url = event.getUrl("merge request"),
-                            description = "Merge Request: ${mergeRequest.title}",
-                        )
-                    }
-                }
-                COMMIT -> {
-                    val commit = event.commit
-                    if (commit == null) {
-                        logger.warn { "NoteEvent for COMMIT but commit object is null, skipping" }
-                        null
-                    } else {
-                        event.generateNoteMessage(
-                            randomMessage = randomMessage,
-                            url = event.getUrl("commit"),
-                            description = "Commit Message: ${commit.message}",
-                        )
-                    }
-                }
-                SNIPPET, null -> {
-                    logger.debug { "NoteEvent with noteableType=$noteableType, skipping" }
-                    null
-                }
-                else -> {
-                    logger.warn { "Unknown NoteEvent noteableType: $noteableType, skipping" }
-                    null
-                }
-            }
+        val (contextInfo, contextTitle) = extractNoteContext(event) ?: throw SkipEventException()
+        val clickableNote = noteUrl.link("comment")
 
-        return result ?: throw SkipEventException()
+        return buildString {
+            append("💬 New $clickableNote on $contextInfo\n")
+            append("${projectName.bold()}\n")
+            append("\n")
+
+            // Show the context (issue/MR/commit title)
+            append("📌 ${contextTitle.take(MAX_CONTEXT_TITLE_LENGTH).italic()}")
+            if (contextTitle.length > MAX_CONTEXT_TITLE_LENGTH) append("...")
+            append("\n\n")
+
+            // Show the comment content (truncated)
+            val truncatedNote = noteContent.take(MAX_NOTE_LENGTH).trim()
+            append("\"${truncatedNote.escapeHtml()}\"")
+            if (noteContent.length > MAX_NOTE_LENGTH) append("...")
+            append("\n\n")
+
+            append("By ${userName.bold()}")
+        }
     }
 
-    private fun NoteEvent.generateNoteMessage(
-        randomMessage: String,
-        url: String,
-        description: String,
-    ): String =
-        "${user.name.bold()} $randomMessage $url in ${project.name.bold()}:\n" +
-            "\n${objectAttributes.note}\n" +
-            "\n${description.trim().italic()}"
+    /**
+     * Extracts context information from a NoteEvent based on the noteable type.
+     * @return Pair of (contextInfo, contextTitle) or null if unsupported/invalid
+     */
+    @Suppress("CyclomaticComplexMethod")
+    private fun extractNoteContext(event: NoteEvent): Pair<String, String>? {
+        val noteableType = event.objectAttributes?.noteableType
+
+        return when (noteableType) {
+            ISSUE -> extractIssueNoteContext(event)
+            MERGE_REQUEST -> extractMergeRequestNoteContext(event)
+            COMMIT -> extractCommitNoteContext(event)
+            SNIPPET, null -> {
+                logger.debug { "NoteEvent with noteableType=$noteableType, skipping" }
+                null
+            }
+            else -> {
+                logger.warn { "Unknown NoteEvent noteableType: $noteableType, skipping" }
+                null
+            }
+        }
+    }
+
+    private fun extractIssueNoteContext(event: NoteEvent): Pair<String, String>? {
+        val issue =
+            event.issue ?: run {
+                logger.warn { "NoteEvent for ISSUE but issue object is null, skipping" }
+                return null
+            }
+        return "Issue #${issue.iid}" to (issue.title ?: "Untitled")
+    }
+
+    private fun extractMergeRequestNoteContext(event: NoteEvent): Pair<String, String>? {
+        val mr =
+            event.mergeRequest ?: run {
+                logger.warn { "NoteEvent for MERGE_REQUEST but mergeRequest object is null, skipping" }
+                return null
+            }
+        return "MR !${mr.iid}" to (mr.title ?: "Untitled")
+    }
+
+    private fun extractCommitNoteContext(event: NoteEvent): Pair<String, String>? {
+        val commit =
+            event.commit ?: run {
+                logger.warn { "NoteEvent for COMMIT but commit object is null, skipping" }
+                return null
+            }
+        val shortSha = commit.id?.take(SHORT_SHA_LENGTH) ?: "unknown"
+        val title = commit.title ?: commit.message?.lines()?.firstOrNull() ?: "No message"
+        return "Commit $shortSha" to title
+    }
 
     private fun formatPipelineEvent(event: PipelineEvent): String {
         val status = event.objectAttributes.status
@@ -510,141 +546,363 @@ class WebhookMessageFormatter {
     }
 
     private fun formatTagPushEvent(event: TagPushEvent): String {
-        val (refType, tagName) =
-            Regex("refs/(heads|tags)/(.+)").find(event.ref)?.destructured
-                ?: throw IllegalArgumentException("Invalid ref format")
-        val itemType = if (refType == "heads") "branch" else "tag"
-        val tagUrl = "${event.repository.homepage}/tree/${urlEncode(tagName)}".link(tagName)
+        val userName = event.userName ?: "Unknown"
+        val projectName = event.repository?.name ?: "Unknown"
+        val projectWebUrl = event.repository?.homepage ?: ""
 
-        val beforeSha = event.before
-        val afterSha = event.after
+        // Extract tag name from ref (refs/tags/v1.0.0 -> v1.0.0)
+        val tagName = event.ref?.removePrefix("refs/tags/") ?: "unknown"
 
-        return when {
-            beforeSha.isNullHash() -> "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"
-            afterSha.isNullHash() -> "${event.userName.bold()} deleted $itemType $tagUrl at ${event.repository.name}"
-            else -> "${event.userName.bold()} updated $itemType $tagUrl at ${event.repository.name}"
+        val beforeSha = event.before ?: ""
+        val afterSha = event.after ?: ""
+
+        val (emoji, action) = getTagActionDisplay(beforeSha, afterSha)
+
+        val tagUrl = "$projectWebUrl/-/tags/${urlEncode(tagName)}"
+        val clickableTag = tagUrl.link(tagName)
+
+        return buildString {
+            append("$emoji Tag $clickableTag $action\n")
+            append("${projectName.bold()}\n")
+            appendTagCommitInfo(event, afterSha, projectWebUrl)
+            append("\n")
+            append("By ${userName.bold()}")
         }
     }
 
-    private fun formatIssueEventMessage(event: IssueEvent): String =
-        buildIssueMessage(
-            userMention = event.user.name,
-            issueUrl = event.objectAttributes.url,
-            issueTitle = event.objectAttributes.title,
-            repositoryName = event.repository.name,
-            issueDescription = event.objectAttributes.description,
-            action = getFormattedAction(event.objectAttributes.action),
-        )
+    private fun getTagActionDisplay(
+        beforeSha: String,
+        afterSha: String,
+    ): Pair<String, String> =
+        when {
+            beforeSha.isNullHash() -> "🏷️" to "created"
+            afterSha.isNullHash() -> "🗑️" to "deleted"
+            else -> "🔄" to "updated"
+        }
 
-    private fun buildIssueMessage(
-        userMention: String,
-        issueUrl: String,
-        issueTitle: String,
-        repositoryName: String,
-        issueDescription: String?,
-        action: String,
-    ): String =
-        formatActionWithTitleAndDescription(
-            user = userMention,
-            action = action,
-            link = issueUrl.link("issue#${issueUrl.extractIssueNumber()}"),
-            repositoryName = repositoryName,
-            title = issueTitle,
-            description = issueDescription,
-        )
+    private fun StringBuilder.appendTagCommitInfo(
+        event: TagPushEvent,
+        afterSha: String,
+        projectWebUrl: String,
+    ) {
+        if (afterSha.isNullHash()) return
+
+        val commits = event.commits.orEmpty()
+        val latestCommit = commits.firstOrNull() ?: return
+
+        val shortSha = latestCommit.id?.take(SHORT_SHA_LENGTH) ?: afterSha.take(SHORT_SHA_LENGTH)
+        val commitUrl = latestCommit.url ?: "$projectWebUrl/-/commit/${latestCommit.id}"
+        val commitTitle = latestCommit.title ?: latestCommit.message?.lines()?.firstOrNull() ?: ""
+
+        append("\n")
+        append("📌 ${commitUrl.link(shortSha)}")
+        if (commitTitle.isNotBlank()) {
+            append(" ${commitTitle.take(MAX_COMMIT_TITLE_LENGTH).escapeHtml()}")
+            if (commitTitle.length > MAX_COMMIT_TITLE_LENGTH) append("...")
+        }
+        append("\n")
+    }
+
+    private fun formatIssueEventMessage(event: IssueEvent): String {
+        val userName = event.user?.name ?: "Unknown"
+        val projectName = event.repository?.name ?: event.project?.name ?: "Unknown"
+        val issueUrl = event.objectAttributes?.url ?: ""
+        val issueIid = event.objectAttributes?.iid ?: issueUrl.extractIssueNumber() ?: "?"
+        val issueTitle = event.objectAttributes?.title ?: "Untitled"
+        val issueDescription = event.objectAttributes?.description
+        val action = event.objectAttributes?.action ?: "updated"
+
+        val (emoji, actionText) = getIssueActionDisplay(action)
+        val clickableIssue = issueUrl.link("#$issueIid")
+
+        // Get labels if available
+        val labels = event.labels.orEmpty().mapNotNull { it.title }
+
+        // Get assignees if available
+        val assignees = event.assignees.orEmpty().mapNotNull { it.name }
+
+        return buildString {
+            append("$emoji Issue $clickableIssue $actionText\n")
+            append("${projectName.bold()}\n")
+            append("\n")
+            append("📋 ${issueTitle.bold()}\n")
+
+            appendTruncatedDescription(issueDescription, MAX_DESC_LENGTH)
+            appendLabels(labels)
+            appendAssignees(assignees)
+
+            append("\n\n")
+            append("By ${userName.bold()}")
+        }
+    }
+
+    private fun StringBuilder.appendAssignees(assignees: List<String>) {
+        if (assignees.isNotEmpty()) {
+            append("\n👤 ${assignees.joinToString(", ")}")
+        }
+    }
+
+    private fun getIssueActionDisplay(action: String): Pair<String, String> =
+        when (action.lowercase()) {
+            "open" -> "🆕" to "opened"
+            "close" -> "✅" to "closed"
+            "reopen" -> "🔄" to "reopened"
+            "update" -> "✏️" to "updated"
+            else -> "📝" to action
+        }
 
     private fun String.extractIssueNumber(): String? = Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
 
-    @Suppress("UNUSED_PARAMETER")
     private fun formatPushEventMessage(event: PushEvent): String {
-        // Skip push events - pipeline consolidation handles notifications
-        throw SkipEventException()
-    }
+        val beforeSha = event.before ?: ""
+        val afterSha = event.after ?: ""
 
-    private fun formatWikiPageEvent(event: WikiPageEvent): String =
-        formatAction(
-            user = event.user.name,
-            action = getFormattedAction(event.objectAttributes.action),
-            link = "a <a href='${event.objectAttributes.url}'>Wiki Page</a>",
-            repositoryName = event.project.name,
-        )
+        // Skip if this is a branch create/delete (handled by pipeline or not interesting)
+        if (beforeSha.isNullHash() || afterSha.isNullHash()) {
+            throw SkipEventException()
+        }
 
-    private fun formatDeployEventMessage(event: DeploymentEvent): String {
-        val projectName = event.project.name ?: "Unknown project"
-        val environment = event.environment ?: "unknown environment"
-        val status = event.status ?: "unknown status"
-        val user = event.user.username ?: "unknown user"
-        val commitUrl = event.commitUrl
+        val userName = event.userName ?: "Unknown"
+        val projectName = event.project?.name ?: event.repository?.name ?: "Unknown"
+        val projectWebUrl = event.project?.webUrl ?: event.repository?.homepage ?: ""
+
+        // Extract branch name from ref
+        val ref = event.ref?.removePrefix("refs/heads/") ?: "unknown"
+        val commits = event.commits.orEmpty()
+        val commitCount = event.totalCommitsCount ?: commits.size
+
+        // Skip if no commits (empty push)
+        if (commitCount == 0) {
+            throw SkipEventException()
+        }
+
+        val compareUrl = "$projectWebUrl/-/compare/$beforeSha...$afterSha"
 
         return buildString {
-            append("Deployment to ${environment.bold()} in project ${projectName.bold()} ")
-            append(
-                when (status) {
-                    "success" -> "succeeded.".bold()
-                    "failed" -> "failed.".bold()
-                    "created" -> "created.".bold()
-                    "canceling" -> "is being canceled.".bold()
-                    "canceled" -> "has been canceled.".bold()
-                    else -> "has status $status."
-                },
-            )
-            if (commitUrl != null) {
-                append(" Commit: ${commitUrl.link("link")}")
-            }
-            append(" Deployed by ${user.bold()}.")
+            append("📤 Push to ${ref.bold()}\n")
+            append("${projectName.bold()} • ${compareUrl.link("$commitCount commit(s)")}\n")
+            append("\n")
+            appendPushCommits(commits)
+            append("\n")
+            append("Pushed by ${userName.bold()}")
         }
     }
 
-    private fun formatReleaseEventMessage(event: ReleaseEvent): String =
-        buildString {
-            append("Release ${event.url.link(event.name).bold()}")
-            append(" ${getFormattedAction(event.action)} in project ${event.project.name.bold()}")
+    private fun StringBuilder.appendPushCommits(commits: List<org.gitlab4j.api.webhook.EventCommit>) {
+        val displayCommits = commits.take(MAX_DISPLAY_COMMITS)
+        displayCommits.forEachIndexed { index, commit ->
+            val isLast = index == displayCommits.size - 1 && commits.size <= MAX_DISPLAY_COMMITS
+            val prefix = if (isLast) "└─" else "├─"
+            val shortSha = commit.id?.take(SHORT_SHA_LENGTH) ?: "unknown"
+            val commitUrl = commit.url ?: ""
+            val rawTitle = commit.title ?: commit.message?.lines()?.firstOrNull() ?: "No message"
+            val title = rawTitle.take(MAX_COMMIT_TITLE_LENGTH)
+            val truncatedTitle = if (rawTitle.length > MAX_COMMIT_TITLE_LENGTH) "$title..." else title
+            append("$prefix ${commitUrl.link(shortSha)} ${truncatedTitle.escapeHtml()}\n")
         }
 
-    private fun formatMergeRequestEventMessage(event: MergeRequestEvent): String =
-        formatActionWithTitleAndDescription(
-            user = event.user.name,
-            action = getFormattedAction(event.objectAttributes.action),
-            link = "${event.objectAttributes.url.link("merge request#${event.objectAttributes.id}")}",
-            repositoryName = event.repository.name,
-            title = event.objectAttributes.title,
-            description = event.objectAttributes.description,
+        if (commits.size > MAX_DISPLAY_COMMITS) {
+            append("└─ ... and ${commits.size - MAX_DISPLAY_COMMITS} more\n")
+        }
+    }
+
+    private fun formatWikiPageEvent(event: WikiPageEvent): String {
+        val userName = event.user?.name ?: "Unknown"
+        val projectName = event.project?.name ?: "Unknown"
+        val pageUrl = event.objectAttributes?.url ?: ""
+        val pageTitle = event.objectAttributes?.title ?: "Untitled"
+        val action = event.objectAttributes?.action ?: "updated"
+        val pageMessage = event.objectAttributes?.message
+
+        val (emoji, actionText) = getWikiActionDisplay(action)
+        val clickablePage = pageUrl.link(pageTitle)
+
+        return buildString {
+            append("$emoji Wiki $clickablePage $actionText\n")
+            append("${projectName.bold()}\n")
+
+            if (!pageMessage.isNullOrBlank()) {
+                append("\n")
+                append("💬 ${pageMessage.take(MAX_SHORT_DESC_LENGTH).italic()}")
+                if (pageMessage.length > MAX_SHORT_DESC_LENGTH) append("...")
+                append("\n")
+            }
+
+            append("\n")
+            append("By ${userName.bold()}")
+        }
+    }
+
+    private fun getWikiActionDisplay(action: String): Pair<String, String> =
+        when (action.lowercase()) {
+            "create" -> "📖" to "created"
+            "update" -> "✏️" to "updated"
+            "delete" -> "🗑️" to "deleted"
+            else -> "📄" to action
+        }
+
+    private fun formatDeployEventMessage(event: DeploymentEvent): String {
+        val projectName = event.project?.name ?: "Unknown"
+        val environment = event.environment ?: "unknown"
+        val status = event.status ?: "unknown"
+        val userName = event.user?.username ?: event.user?.name ?: "Unknown"
+        val commitUrl = event.commitUrl
+        val deployableUrl = event.deployableUrl
+
+        val (emoji, statusText) = getDeploymentStatusDisplay(status)
+
+        return buildString {
+            append("$emoji Deployment to ${environment.bold()} $statusText\n")
+            append("${projectName.bold()}\n")
+
+            if (commitUrl != null) {
+                val shortSha = commitUrl.substringAfterLast("/").take(SHORT_SHA_LENGTH)
+                append("\n📌 ${commitUrl.link(shortSha)}")
+            }
+
+            if (deployableUrl != null) {
+                append("\n🔗 ${deployableUrl.link("View Job")}")
+            }
+
+            append("\n\n")
+            append("By ${userName.bold()}")
+        }
+    }
+
+    private fun getDeploymentStatusDisplay(status: String): Pair<String, String> =
+        when (status.lowercase()) {
+            "created" -> "🆕" to "created"
+            "running" -> "🔄" to "running"
+            "success" -> "✅" to "succeeded"
+            "failed" -> "❌" to "failed"
+            "canceled" -> "⛔" to "canceled"
+            "canceling" -> "⏳" to "canceling"
+            else -> "🚀" to status
+        }
+
+    private fun formatReleaseEventMessage(event: ReleaseEvent): String {
+        val projectName = event.project?.name ?: "Unknown"
+        val releaseName = event.name ?: event.tag ?: "Unknown"
+        val releaseUrl = event.url ?: ""
+        val action = event.action ?: "created"
+        val description = event.description
+        val tag = event.tag
+
+        val (emoji, actionText) = getReleaseActionDisplay(action)
+        val clickableRelease = releaseUrl.link(releaseName)
+
+        return buildString {
+            append("$emoji Release $clickableRelease $actionText\n")
+            append("${projectName.bold()}")
+            if (tag != null && tag != releaseName) {
+                append(" • $tag")
+            }
+            append("\n")
+
+            if (!description.isNullOrBlank()) {
+                append("\n")
+                val truncatedDesc = description.take(MAX_RELEASE_DESC_LENGTH).trim()
+                append("${truncatedDesc.italic()}")
+                if (description.length > MAX_RELEASE_DESC_LENGTH) append("...")
+                append("\n")
+            }
+
+            // Show assets count if available
+            val assetsCount = event.assets?.count
+            if (assetsCount != null && assetsCount > 0) {
+                append("\n📦 $assetsCount asset(s)")
+            }
+        }
+    }
+
+    private fun getReleaseActionDisplay(action: String): Pair<String, String> =
+        when (action.lowercase()) {
+            "create" -> "🎉" to "published"
+            "update" -> "✏️" to "updated"
+            "delete" -> "🗑️" to "deleted"
+            else -> "📦" to action
+        }
+
+    private fun formatMergeRequestEventMessage(event: MergeRequestEvent): String {
+        val data = extractMergeRequestData(event)
+        val (emoji, actionText) = getMergeRequestActionDisplay(data.action, data.isDraft)
+        val clickableMR = data.url.link("!${data.iid}")
+
+        return buildString {
+            append("$emoji Merge Request $clickableMR $actionText\n")
+            append("${data.projectName.bold()} • ${data.sourceBranch} → ${data.targetBranch}\n")
+            append("\n")
+
+            if (data.isDraft) append("📝 ")
+            append("${data.title.bold()}\n")
+
+            appendTruncatedDescription(data.description, MAX_DESC_LENGTH)
+            appendLabels(data.labels)
+
+            append("\n\n")
+            append("By ${data.userName.bold()}")
+        }
+    }
+
+    private data class MergeRequestData(
+        val userName: String,
+        val projectName: String,
+        val url: String,
+        val iid: Any,
+        val title: String,
+        val description: String?,
+        val action: String,
+        val sourceBranch: String,
+        val targetBranch: String,
+        val isDraft: Boolean,
+        val labels: List<String>,
+    )
+
+    private fun extractMergeRequestData(event: MergeRequestEvent) =
+        MergeRequestData(
+            userName = event.user?.name ?: "Unknown",
+            projectName = event.repository?.name ?: event.project?.name ?: "Unknown",
+            url = event.objectAttributes?.url ?: "",
+            iid = event.objectAttributes?.iid ?: "?",
+            title = event.objectAttributes?.title ?: "Untitled",
+            description = event.objectAttributes?.description,
+            action = event.objectAttributes?.action ?: "updated",
+            sourceBranch = event.objectAttributes?.sourceBranch ?: "unknown",
+            targetBranch = event.objectAttributes?.targetBranch ?: "unknown",
+            isDraft = event.objectAttributes?.workInProgress == true,
+            labels = event.labels.orEmpty().mapNotNull { it.title },
         )
 
-    private fun formatActionWithTitleAndDescription(
-        user: String,
-        action: String,
-        link: String,
-        repositoryName: String,
-        title: String,
+    private fun StringBuilder.appendTruncatedDescription(
         description: String?,
-    ): String =
-        buildString {
-            append(formatAction(user, action, link, repositoryName))
-            append(title.bold())
-            if (!description.isNullOrEmpty()) append("\n\t\t${description.italic()}")
+        maxLength: Int,
+    ) {
+        if (!description.isNullOrBlank()) {
+            val truncatedDesc = description.take(maxLength).trim()
+            append("${truncatedDesc.italic()}")
+            if (description.length > maxLength) append("...")
+            append("\n")
         }
+    }
 
-    private fun formatAction(
-        user: String,
+    private fun StringBuilder.appendLabels(labels: List<String>) {
+        if (labels.isNotEmpty()) {
+            append("\n🏷️ ${labels.joinToString(" • ")}")
+        }
+    }
+
+    private fun getMergeRequestActionDisplay(
         action: String,
-        link: String,
-        repositoryName: String,
-    ): String = "${user.bold()} ${action.bold()} $link in project ${repositoryName}\n\n"
-
-    private fun getFormattedAction(action: String): String =
+        isDraft: Boolean,
+    ): Pair<String, String> =
         when (action.lowercase()) {
-            "delete" -> "deleted"
-            "create" -> "created"
-            "update" -> "updated"
-            "open" -> "opened"
-            "close" -> "closed"
-            "reopen" -> "reopened"
-            "approved" -> "approved"
-            "unapproved" -> "unapproved"
-            "approval" -> "approval"
-            "unapproval" -> "unapproval"
-            "merge" -> "merged"
-            else -> throw SkipEventException()
+            "open" -> if (isDraft) "📝" to "draft opened" else "🆕" to "opened"
+            "close" -> "🚫" to "closed"
+            "reopen" -> "🔄" to "reopened"
+            "update" -> "✏️" to "updated"
+            "approved" -> "👍" to "approved"
+            "unapproved" -> "👎" to "unapproved"
+            "merge" -> "🎉" to "merged"
+            else -> "🔀" to action
         }
 }
