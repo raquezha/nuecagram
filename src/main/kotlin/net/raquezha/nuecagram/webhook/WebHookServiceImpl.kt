@@ -23,12 +23,18 @@ import org.gitlab4j.api.webhook.PushEvent
 import org.gitlab4j.api.webhook.ReleaseEvent
 import org.gitlab4j.api.webhook.TagPushEvent
 import org.gitlab4j.api.webhook.WikiPageEvent
+import java.util.concurrent.ConcurrentHashMap
 
 class WebHookServiceImpl(
     private var secretToken: String? = null,
     private var logger: KLogger,
 ) : WebHookService {
     private val jacksonJson: JacksonJson = JacksonJson()
+
+    companion object {
+        /** Maximum allowed payload size in bytes (1 MB) to prevent DoS attacks */
+        private const val MAX_PAYLOAD_SIZE = 1_048_576
+    }
 
     private val supportedEvents =
         setOf(
@@ -45,8 +51,17 @@ class WebHookServiceImpl(
             ReleaseEvent.X_GITLAB_EVENT,
         )
 
-    private val runningJobsIdMap = mutableMapOf<Long, String>()
-    private val pipelineMessageIdMap = mutableMapOf<Long, String>()
+    /**
+     * Entry for tracking job/build message IDs with timestamp for cleanup.
+     */
+    private data class JobEntry(
+        val messageId: String,
+        val createdAt: Long = System.currentTimeMillis(),
+    )
+
+    private val runningJobsIdMap = ConcurrentHashMap<Long, JobEntry>()
+    private val pipelineMessageIdMap = ConcurrentHashMap<Long, String>()
+    private val trackedPipelines = ConcurrentHashMap<Long, TrackedPipeline>()
 
     override suspend fun handleRequest(call: ApplicationCall): EventData =
         try {
@@ -65,13 +80,13 @@ class WebHookServiceImpl(
             throw GitLabApiException(errorMessage)
         }
 
-    override fun getMessageIdOfEvent(buildEventId: Long): String? = runningJobsIdMap[buildEventId]
+    override fun getMessageIdOfEvent(buildEventId: Long): String? = runningJobsIdMap[buildEventId]?.messageId
 
     override fun setMessageIdOfEvent(
         buildEventId: Long,
         messageId: String,
     ) {
-        runningJobsIdMap[buildEventId] = messageId
+        runningJobsIdMap[buildEventId] = JobEntry(messageId)
     }
 
     override fun clearMessageIdOfEvent(buildEventId: Long) {
@@ -91,6 +106,109 @@ class WebHookServiceImpl(
         pipelineMessageIdMap.remove(pipelineId)
     }
 
+    // ========== Job-Only Mode Tracking ==========
+
+    override fun getTrackedPipeline(pipelineId: Long): TrackedPipeline? = trackedPipelines[pipelineId]
+
+    override fun addJobToTrackedPipeline(
+        pipelineId: Long,
+        jobInfo: JobInfo,
+        metadata: PipelineMetadata?,
+    ) {
+        val existing = trackedPipelines[pipelineId]
+        if (existing != null) {
+            existing.putJob(jobInfo)
+            // Update metadata if provided
+            if (metadata != null) {
+                existing.updateMetadata(metadata)
+            }
+        } else {
+            val newTracked =
+                TrackedPipeline(
+                    messageId = null,
+                    hasPipelineEvent = false,
+                    projectName = metadata?.projectName,
+                    projectWebUrl = metadata?.projectWebUrl,
+                    ref = metadata?.ref,
+                    commitSha = metadata?.commitSha,
+                    commitMessage = metadata?.commitMessage,
+                    userName = metadata?.userName,
+                )
+            newTracked.putJob(jobInfo)
+            trackedPipelines[pipelineId] = newTracked
+        }
+        logger.debug { "Added job ${jobInfo.id} to tracked pipeline $pipelineId. Total jobs: ${trackedPipelines[pipelineId]?.jobs?.size}" }
+    }
+
+    override fun markPipelineEventReceived(pipelineId: Long) {
+        val existing = trackedPipelines[pipelineId]
+        if (existing != null) {
+            existing.setHasPipelineEvent(true)
+        } else {
+            trackedPipelines[pipelineId] =
+                TrackedPipeline(
+                    messageId = null,
+                    hasPipelineEvent = true,
+                )
+        }
+        logger.debug { "Marked pipeline $pipelineId as having PipelineEvent" }
+    }
+
+    override fun hasPipelineEvent(pipelineId: Long): Boolean = trackedPipelines[pipelineId]?.hasPipelineEvent == true
+
+    override fun updateTrackedPipelineMessageId(
+        pipelineId: Long,
+        messageId: String,
+    ) {
+        val existing = trackedPipelines[pipelineId]
+        if (existing != null) {
+            existing.setMessageId(messageId)
+        }
+        // Also update the simple map for backward compatibility
+        pipelineMessageIdMap[pipelineId] = messageId
+    }
+
+    override fun clearTrackedPipeline(pipelineId: Long) {
+        trackedPipelines.remove(pipelineId)
+        pipelineMessageIdMap.remove(pipelineId)
+        logger.debug { "Cleared tracking for pipeline $pipelineId" }
+    }
+
+    override fun cleanupStaleEntries(maxAgeMs: Long) {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+
+        // Cleanup stale tracked pipelines atomically
+        var pipelinesRemoved = 0
+        trackedPipelines.entries.removeIf { entry ->
+            if (entry.value.createdAt < cutoff) {
+                pipelineMessageIdMap.remove(entry.key)
+                pipelinesRemoved++
+                true
+            } else {
+                false
+            }
+        }
+
+        // Cleanup stale job entries atomically
+        var jobsRemoved = 0
+        runningJobsIdMap.entries.removeIf { entry ->
+            if (entry.value.createdAt < cutoff) {
+                jobsRemoved++
+                true
+            } else {
+                false
+            }
+        }
+
+        val totalCleaned = pipelinesRemoved + jobsRemoved
+        if (totalCleaned > 0) {
+            logger.debug {
+                "Cleaned up $totalCleaned stale entries " +
+                    "($pipelinesRemoved pipelines, $jobsRemoved jobs)"
+            }
+        }
+    }
+
     private fun handleSecretToken(secretToken: String?) {
         if (!isValidSecretToken(secretToken)) {
             val message = "$SECRET_TOKEN mismatch!"
@@ -106,12 +224,15 @@ class WebHookServiceImpl(
     }
 
     private suspend fun ApplicationCall.getWebhookData(): EventData {
-        val event = jacksonJson.unmarshal(Event::class.java, receiveText())
+        val body = receiveText()
+        if (body.length > MAX_PAYLOAD_SIZE) {
+            throw GitLabApiException("Payload too large: ${body.length} bytes (max: $MAX_PAYLOAD_SIZE)")
+        }
+
+        val event = jacksonJson.unmarshal(Event::class.java, body)
         event.requestUrl = request.uri
         event.requestQueryString = request.queryString()
         event.requestSecretToken = secretToken
-
-        runningJobsIdMap.onEach { logger.debug { it } }
 
         return EventData(
             event = event,

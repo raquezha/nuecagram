@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktor)
     alias(libs.plugins.kotlinter)
+    alias(libs.plugins.detekt)
     alias(libs.plugins.ksp)
 }
 
@@ -85,8 +86,28 @@ repositories {
 kotlinter {
     ignoreFailures = false
     reporters = arrayOf("checkstyle", "plain")
-
 }
+
+detekt {
+    buildUponDefaultConfig = true
+    allRules = false
+    config.setFrom("$projectDir/detekt.yml")
+    baseline = file("$projectDir/detekt-baseline.xml")
+    source.setFrom(
+        "src/main/kotlin",
+        "src/test/kotlin"
+    )
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    exclude { it.file.path.contains("generated/") }
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+        sarif.required.set(false)
+    }
+}
+
 dependencies {
     implementation(libs.coroutines)
     implementation(libs.logback.classic)
@@ -98,14 +119,11 @@ dependencies {
     implementation(libs.ktor.server.call.logging)
     implementation(libs.ktor.server.test.host)
     implementation(libs.ktor.serialization.json)
-    implementation(libs.ktor.serialization.gson)
     implementation(libs.ktor.serialization.jackson)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.logging)
     implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.client.json)
-    implementation(libs.logback.classic)
     implementation(libs.gitlab4j.api)
     implementation(libs.koin.ktor)
     implementation(libs.koin.logger)
@@ -115,7 +133,6 @@ dependencies {
     implementation(libs.hoplite)
     implementation(libs.hoplite.json)
     implementation(libs.vendeli.telegram.bot)
-    implementation(libs.tgbot)
     "ksp"(libs.vendeli.ksp)
 
     testImplementation(libs.ktor.server.tests)

@@ -3,11 +3,8 @@ package net.raquezha.nuecagram
 import com.google.common.truth.Truth.assertThat
 import io.ktor.server.testing.testApplication
 import org.junit.Test
-import org.koin.test.KoinTest
 
-class WikiPageEventWebhookTest :
-    BaseEventTestHelper(),
-    KoinTest {
+class WikiPageEventWebhookTest : BaseEventTestHelper() {
     @Test
     fun testWebhookWikiPageEvent() =
         testApplication {

@@ -26,7 +26,11 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Run Gradle Task
-        run: ./gradlew ${{ inputs.gradle-task }}
+        run: |
+          # Mask secrets to prevent accidental exposure in logs
+          echo "::add-mask::$TELEGRAM_BOT_TOKEN"
+          echo "::add-mask::$NUECAGRAM_SECRET_TOKEN"
+          ./gradlew ${{ inputs.gradle-task }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           NUECAGRAM_SECRET_TOKEN: ${{ secrets.NUECAGRAM_SECRET_TOKEN }}

@@ -29,7 +29,6 @@ import net.raquezha.nuecagram.webhook.WebHookServiceImpl
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.dsl.module
-import org.koin.java.KoinJavaComponent.inject
 
 fun appModule() =
     listOf(
@@ -81,19 +80,17 @@ val provideConfigModule =
 
 val provideHttpClient =
     module {
-        val logger: KLogger by inject(KLogger::class.java)
+        single<HttpClient> {
+            val logger: KLogger = get()
 
-        fun logRequestBegin(request: HttpRequestBuilder) {
-            logger.debug { "Starting request ${request.url}" }
-        }
+            fun logRequestBegin(request: HttpRequestBuilder) {
+                logger.debug { "Starting request ${request.url}" }
+            }
 
-        // 2. Define a logging function for just after we receive the response
-        fun logRequestEnd(response: HttpClientCall) {
-            logger.debug { "Finished request ${response.request.url}" }
-        }
+            fun logRequestEnd(response: HttpClientCall) {
+                logger.debug { "Finished request ${response.request.url}" }
+            }
 
-        // 3. Create the client
-        val client =
             HttpClient(CIO) {
                 expectSuccess = true
                 install(Logging) {
@@ -103,26 +100,25 @@ val provideHttpClient =
                 install(ContentNegotiation) {
                     json()
                 }
+            }.also { client ->
+                client.plugin(HttpSend).intercept { request ->
+                    logRequestBegin(request)
+                    val response = execute(request)
+                    logRequestEnd(response)
+                    response
+                }
             }
-
-        // 4. Configure logging on the client
-        client.plugin(HttpSend).intercept { request ->
-            logRequestBegin(request)
-            val response = execute(request)
-            logRequestEnd(response)
-            response
         }
-
-        single<HttpClient> { client }
     }
 
 val provideTokenProvider =
     module {
-        val config: ConfigWithSecrets by inject(ConfigWithSecrets::class.java)
         single {
+            val config: ConfigWithSecrets = get()
             TelegramBotToken(config.botApi)
         }
         single {
+            val config: ConfigWithSecrets = get()
             SecretToken(config.secretToken)
         }
         single<TokenProvider> {
@@ -166,7 +162,7 @@ val provideWebhookModule =
 
         // Define WebHookHandlerImpl as a single instance, injecting the secretToken and WebHookListenerBuilder
         single<WebHookService> {
-            val tokenProvider: TokenProvider by inject()
+            val tokenProvider: TokenProvider = get()
             WebHookServiceImpl(tokenProvider.getSecretToken(), get())
         }
     }

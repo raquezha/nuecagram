@@ -11,20 +11,20 @@ Nuecagram simplifies GitLab webhook handling, delivering notifications directly 
 
 ## Supported GitLab Events
 
-| Event Type | Status |
-|------------|--------|
-| Push Events | ✅ |
-| Tag Push Events | ✅ |
-| Merge Request Events | ✅ |
-| Issue Events | ✅ |
-| Pipeline Events | ✅ (consolidated) |
-| Job Events | ✅ (consolidated) |
-| Comments (Notes) | ✅ |
-| Wiki Page Events | ✅ |
-| Deployment Events | ✅ |
-| Release Events | ✅ |
-| Project/Group Access Token Events | ❌ |
-| Emoji Events | ❌ |
+| Event Type | Status | Notes |
+|------------|--------|-------|
+| Pipeline Events | Supported | **Recommended** - consolidated updating messages |
+| Push Events | Supported | |
+| Tag Push Events | Supported | |
+| Merge Request Events | Supported | |
+| Issue Events | Supported | |
+| Comments (Notes) | Supported | |
+| Wiki Page Events | Supported | |
+| Deployment Events | Supported | |
+| Release Events | Supported | |
+| Job Events | Supported | Not recommended - use Pipeline Events instead |
+| Project/Group Access Token Events | Not supported | |
+| Emoji Events | Not supported | |
 
 ## Getting Started
 
@@ -69,15 +69,24 @@ Set up a webhook in your GitLab repository to trigger events in Nuecagram:
     - **Name and Description:** (Optional) Provide a name and description for your webhook
 
 4. **Select Events to Trigger:**
+
+    > **Tip:** For best pipeline/job notifications, enable **Pipeline Events**. 
+    > Pipeline events contain complete job information and produce consolidated, 
+    > updating messages.
+
+    **Recommended events:**
+    - **Pipeline Events** (recommended for pipeline/job notifications)
+    - Push Events
     - Tag Push Events
     - Comments
     - Issues Events
     - Merge Request Events
-    - Job Events
-    - Pipeline Events
     - Wiki Page Events
     - Deployment Events
     - Releases Events
+    
+    **Not recommended:**
+    - Job Events - Use Pipeline Events instead for better consolidated messages. If both are enabled, Job Events are automatically ignored to prevent duplicates.
 
 5. **Test Your Webhook:**
     - Use the test button to ensure your webhook is correctly configured

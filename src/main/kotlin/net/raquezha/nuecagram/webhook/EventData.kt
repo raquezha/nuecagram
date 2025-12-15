@@ -23,9 +23,9 @@ data class EventData(
         val headerText = "Webhook Headers"
         val values =
             listOf(
-                GITLAB_EVENT to event.objectKind, // Replace with a descriptive name
-                SECRET_TOKEN to headerSecretToken, // Replace with actual header name (if applicable)
-                CHAT_ID to headerChatId, // Replace with actual header name (if applicable)
+                GITLAB_EVENT to event.objectKind,
+                SECRET_TOKEN to headerSecretToken.maskSecret(),
+                CHAT_ID to headerChatId,
                 TOPIC_ID to headerTopicId,
             )
         // Calculate the maximum width needed
@@ -58,5 +58,23 @@ data class EventData(
         val leftPadding = (width - this.length) / 2
         val rightPadding = width - this.length - leftPadding
         return fillChar.toString().repeat(leftPadding) + this + fillChar.toString().repeat(rightPadding)
+    }
+
+    /**
+     * Masks a secret token for safe logging.
+     * Shows first 4 and last 4 characters if long enough, otherwise fully masks.
+     */
+    private fun String.maskSecret(): String =
+        when {
+            length <= MIN_LENGTH_FOR_PARTIAL_MASK -> "*".repeat(length)
+            else -> {
+                val maskedMiddle = "*".repeat(length - MIN_LENGTH_FOR_PARTIAL_MASK)
+                "${take(VISIBLE_CHARS)}$maskedMiddle${takeLast(VISIBLE_CHARS)}"
+            }
+        }
+
+    companion object {
+        private const val MIN_LENGTH_FOR_PARTIAL_MASK = 8
+        private const val VISIBLE_CHARS = 4
     }
 }

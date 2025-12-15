@@ -32,14 +32,20 @@ class TelegramServiceImpl(
             }
 
         if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to send message")
+            throw HttpException("Failed to send message: ${response.status}")
         }
 
-        val responseJson = JacksonJson.toJsonNode(response.bodyAsText())
-        return responseJson
-            .get("result")
-            .get("message_id")
-            .asInt()
-            .toString()
+        val responseBody = response.bodyAsText()
+        val responseJson = JacksonJson.toJsonNode(responseBody)
+
+        val result =
+            responseJson.get("result")
+                ?: throw HttpException("Telegram API response missing 'result' field: $responseBody")
+
+        val messageIdNode =
+            result.get("message_id")
+                ?: throw HttpException("Telegram API response missing 'message_id' field: $responseBody")
+
+        return messageIdNode.asInt().toString()
     }
 }

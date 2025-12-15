@@ -1,15 +1,10 @@
-@file:Suppress("WHEN_ENUM_CAN_BE_NULL_IN_JAVA")
-
 package net.raquezha.nuecagram.webhook
 
 import io.github.oshai.kotlinlogging.KLogger
 import org.gitlab4j.api.GitLabApiException
 import org.gitlab4j.api.models.Build
 import org.gitlab4j.api.models.BuildStatus
-import org.gitlab4j.api.models.Job
-import org.gitlab4j.api.models.JobStatus
 import org.gitlab4j.api.utils.UrlEncoder.urlEncode
-import org.gitlab4j.api.webhook.AbstractPushEvent
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.DeploymentEvent
 import org.gitlab4j.api.webhook.Event
@@ -26,11 +21,32 @@ import org.gitlab4j.api.webhook.ReleaseEvent
 import org.gitlab4j.api.webhook.TagPushEvent
 import org.gitlab4j.api.webhook.WikiPageEvent
 import org.koin.java.KoinJavaComponent.inject
-import java.text.SimpleDateFormat
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.*
 
 class WebhookMessageFormatter {
     private val logger by inject<KLogger>(KLogger::class.java)
+
+    companion object {
+        /** Default timezone for date formatting. Override via system property 'nuecagram.timezone' */
+        private val DEFAULT_TIMEZONE: TimeZone =
+            TimeZone.getTimeZone(
+                System.getProperty("nuecagram.timezone", "Asia/Manila"),
+            )
+
+        /** Thread-safe date formatter for finished timestamps */
+        private val DATE_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter
+                .ofPattern("hh:mm a 'on' MMMM dd, yyyy")
+                .withZone(ZoneId.of(DEFAULT_TIMEZONE.id))
+
+        /** Seconds per hour for duration formatting */
+        private const val SECONDS_PER_HOUR = 3600L
+
+        /** Seconds per minute for duration formatting */
+        private const val SECONDS_PER_MINUTE = 60L
+    }
 
     fun formatEventMessage(event: Event): String =
         when (event) {
@@ -47,13 +63,23 @@ class WebhookMessageFormatter {
             else -> throwUnsupportedEventException(event)
         }
 
-    private fun String.bold() = "<b>$this</b>"
+    /**
+     * Escape HTML special characters to prevent XSS and broken formatting.
+     */
+    private fun String.escapeHtml(): String =
+        this
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
 
-    private fun String.italic() = "<i>$this</i>"
+    private fun String.bold() = "<b>${this.escapeHtml()}</b>"
 
-    private fun String.italicBold() = this.bold().italic()
+    private fun String.italic() = "<i>${this.escapeHtml()}</i>"
 
-    private fun String.link(label: String) = "<a href=\"$this\">$label</a>"
+    private fun String.italicBold() = this.escapeHtml().let { "<b><i>$it</i></b>" }
+
+    private fun String.link(label: String) = "<a href=\"$this\">${label.escapeHtml()}</a>"
 
     private fun String.isNullHash(): Boolean = this == "0000000000000000000000000000000000000000"
 
@@ -63,10 +89,135 @@ class WebhookMessageFormatter {
         throw GitLabApiException(message)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun formatBuildEventMessage(event: BuildEvent): String {
-        // Skip individual build/job events - handled via PipelineEvent consolidation
+        // This method is no longer called directly for job-only mode
+        // Job-only mode uses formatJobOnlyPipelineMessage instead
+        // This is kept for backward compatibility if formatEventMessage is called with BuildEvent
         throw SkipEventException()
     }
+
+    /**
+     * Format a consolidated pipeline message from accumulated job events (job-only webhook mode).
+     * This creates a pipeline-like view from individual BuildEvents.
+     */
+    fun formatJobOnlyPipelineMessage(
+        trackedPipeline: TrackedPipeline,
+        pipelineId: Long,
+    ): String {
+        val projectName = trackedPipeline.projectName ?: "Unknown"
+        val projectWebUrl = trackedPipeline.projectWebUrl ?: ""
+        val ref = trackedPipeline.ref ?: "unknown"
+        val commitSha = trackedPipeline.commitSha?.take(7) ?: "unknown"
+        val commitMessage =
+            trackedPipeline.commitMessage
+                ?.lines()
+                ?.firstOrNull()
+                ?.trim() ?: ""
+        val userName = trackedPipeline.userName ?: "Unknown"
+        val jobs = trackedPipeline.jobs
+
+        // Determine overall pipeline status from jobs
+        val pipelineStatus = derivePipelineStatusFromJobs(jobs.values)
+        val statusEmoji = getPipelineStatusEmoji(pipelineStatus)
+        val statusText = getPipelineStatusText(pipelineStatus)
+
+        val pipelineUrl = "$projectWebUrl/-/pipelines/$pipelineId"
+        val clickablePipeline = pipelineUrl.link("#$pipelineId")
+
+        return buildString {
+            append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
+            append("${projectName.bold()} • ${ref.bold()} • $commitSha\n")
+
+            if (commitMessage.isNotEmpty()) {
+                append("💬 ${commitMessage.italic()}\n")
+            }
+            append("\n")
+
+            // Sort jobs by stage then by id
+            val sortedJobs =
+                jobs.values.sortedWith(
+                    compareBy({ it.stage }, { it.id }),
+                )
+
+            sortedJobs.forEachIndexed { index, job ->
+                val isLast = index == sortedJobs.size - 1
+                val prefix = if (isLast) "└─" else "├─"
+                val jobEmoji = getJobInfoStatusEmoji(job.status)
+                val jobUrl = "$projectWebUrl/-/jobs/${job.id}"
+                val jobStatusText = formatJobInfoStatus(job, jobUrl)
+                append("$prefix $jobEmoji ${job.name}$jobStatusText\n")
+            }
+            append("\n")
+
+            // Show total duration if available and pipeline is in terminal state
+            val totalDuration =
+                jobs.values
+                    .mapNotNull { it.duration }
+                    .sum()
+                    .toLong()
+            if (totalDuration > 0 && pipelineStatus in listOf("success", "failed", "canceled")) {
+                append("Total: ${formatDuration(totalDuration)} • ")
+            }
+            append("Triggered by ${userName.bold()}")
+        }
+    }
+
+    /**
+     * Derive the overall pipeline status from accumulated jobs.
+     */
+    private fun derivePipelineStatusFromJobs(jobs: Collection<JobInfo>): String =
+        when {
+            jobs.isEmpty() -> "pending"
+            jobs.any { it.status == "failed" && !it.allowFailure } -> "failed"
+            jobs.any { it.status == "running" } -> "running"
+            jobs.any { it.status == "pending" || it.status == "created" } -> "pending"
+            jobs.any { it.status == "canceled" } -> "canceled"
+            jobs.all {
+                it.status == "success" ||
+                    it.status == "skipped" ||
+                    (it.status == "failed" && it.allowFailure)
+            } -> "success"
+            else -> "running"
+        }
+
+    /**
+     * Get emoji for JobInfo status (string-based, for job-only mode).
+     */
+    private fun getJobInfoStatusEmoji(status: String): String =
+        when (status.lowercase()) {
+            "created" -> "🆕"
+            "pending" -> "⏳"
+            "running" -> "🔄"
+            "success" -> "✅"
+            "failed" -> "❌"
+            "canceled" -> "⛔"
+            "skipped" -> "⏭️"
+            "manual" -> "👆"
+            else -> "❓"
+        }
+
+    /**
+     * Format status text for JobInfo (job-only mode).
+     */
+    private fun formatJobInfoStatus(
+        job: JobInfo,
+        jobUrl: String,
+    ): String =
+        when (job.status.lowercase()) {
+            "success" -> if (job.duration != null) " (${formatDuration(job.duration.toLong())})" else ""
+            "failed" -> {
+                val reason = if (!job.failureReason.isNullOrBlank()) " (${job.failureReason})" else ""
+                " ${jobUrl.link("View Logs")}$reason"
+            }
+            "running" -> " running..."
+            "pending" -> " pending"
+            "created" -> " created"
+            "canceled" -> " canceled"
+            "skipped" -> " skipped"
+            "manual" -> " manual"
+            else -> ""
+        }
 
     private fun BuildEvent.getBuildStatusEmoji(): String =
         when (buildStatus) {
@@ -113,40 +264,70 @@ class WebhookMessageFormatter {
     private fun Date?.formatFinishedAt(): String =
         this?.let {
             logger.debug { "unformatted date: $it" }
-            val formatter = SimpleDateFormat("hh:mm a 'on' MMMM dd, yyyy")
-            formatter.timeZone = TimeZone.getTimeZone("Asia/Manila")
-
-            formatter.format(it).also { formatted ->
+            DATE_FORMATTER.format(it.toInstant()).also { formatted ->
                 logger.debug { "formatted date: $formatted" }
             }
         } ?: "N/A"
 
-    private fun PipelineEvent.getPipelineUrl(): String = "${project.webUrl}-/pipelines/${objectAttributes.id}"
+    private fun PipelineEvent.getPipelineUrl(): String = "${project.webUrl}/-/pipelines/${objectAttributes.id}"
 
     private fun formatNoteEvent(event: NoteEvent): String {
         val randomCommentMessage = RandomCommentMessage()
         val randomMessage = randomCommentMessage.getRandomComment()
-        return when (event.objectAttributes.noteableType) {
-            SNIPPET -> throw SkipEventException() // won't support snippet for now
-            ISSUE ->
-                event.generateNoteMessage(
-                    randomMessage = randomMessage,
-                    url = event.getUrl("issue"),
-                    description = "Issue: ${event.issue.title}",
-                )
-            MERGE_REQUEST ->
-                event.generateNoteMessage(
-                    randomMessage = randomMessage,
-                    url = event.getUrl("merge request"),
-                    description = "Merge Request: ${event.mergeRequest.title}",
-                )
-            COMMIT ->
-                event.generateNoteMessage(
-                    randomMessage = randomMessage,
-                    url = event.getUrl("commit"),
-                    description = "Commit Message: ${event.commit.message}",
-                )
-        }
+
+        val noteableType = event.objectAttributes.noteableType
+        val result: String? =
+            when (noteableType) {
+                ISSUE -> {
+                    val issue = event.issue
+                    if (issue == null) {
+                        logger.warn { "NoteEvent for ISSUE but issue object is null, skipping" }
+                        null
+                    } else {
+                        event.generateNoteMessage(
+                            randomMessage = randomMessage,
+                            url = event.getUrl("issue"),
+                            description = "Issue: ${issue.title}",
+                        )
+                    }
+                }
+                MERGE_REQUEST -> {
+                    val mergeRequest = event.mergeRequest
+                    if (mergeRequest == null) {
+                        logger.warn { "NoteEvent for MERGE_REQUEST but mergeRequest object is null, skipping" }
+                        null
+                    } else {
+                        event.generateNoteMessage(
+                            randomMessage = randomMessage,
+                            url = event.getUrl("merge request"),
+                            description = "Merge Request: ${mergeRequest.title}",
+                        )
+                    }
+                }
+                COMMIT -> {
+                    val commit = event.commit
+                    if (commit == null) {
+                        logger.warn { "NoteEvent for COMMIT but commit object is null, skipping" }
+                        null
+                    } else {
+                        event.generateNoteMessage(
+                            randomMessage = randomMessage,
+                            url = event.getUrl("commit"),
+                            description = "Commit Message: ${commit.message}",
+                        )
+                    }
+                }
+                SNIPPET, null -> {
+                    logger.debug { "NoteEvent with noteableType=$noteableType, skipping" }
+                    null
+                }
+                else -> {
+                    logger.warn { "Unknown NoteEvent noteableType: $noteableType, skipping" }
+                    null
+                }
+            }
+
+        return result ?: throw SkipEventException()
     }
 
     private fun NoteEvent.generateNoteMessage(
@@ -174,11 +355,12 @@ class WebhookMessageFormatter {
 
         return buildString {
             append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
-            append("${projectName.bold()} • ${ref.bold()} • $commitSha\n\n")
+            append("${projectName.bold()} • ${ref.bold()} • $commitSha\n")
 
             // GitLab sends job data in 'builds' array, not 'jobs'
             val builds = event.builds.orEmpty()
             if (builds.isNotEmpty()) {
+                append("\n")
                 val sortedBuilds =
                     builds.sortedWith(
                         compareBy(
@@ -197,6 +379,42 @@ class WebhookMessageFormatter {
                     val buildStatusText = formatBuildStatus(build, buildUrl)
                     append("$prefix $buildEmoji $buildName$buildStatusText\n")
                 }
+                append("\n")
+            } else {
+                // Enhanced display when no job details available
+                // Show commit message for context
+                val commitTitle =
+                    event.commit?.title ?: event.commit
+                        ?.message
+                        ?.lines()
+                        ?.firstOrNull()
+                        ?.trim()
+                if (!commitTitle.isNullOrBlank()) {
+                    append("💬 ${commitTitle.italic()}\n")
+                }
+
+                // Show stages if available
+                val stages = event.objectAttributes.stages.orEmpty()
+                if (stages.isNotEmpty()) {
+                    append("📋 Stages: ${stages.joinToString(" → ")}\n")
+                }
+
+                // Show pipeline source if not a simple push
+                val source = event.objectAttributes.source
+                if (!source.isNullOrBlank() && source != "push") {
+                    append("🚀 via $source\n")
+                }
+
+                // Show merge request context if available
+                val mergeRequest = event.mergeRequest
+                if (mergeRequest != null) {
+                    val mrTitle = mergeRequest.title
+                    val mrUrl = mergeRequest.url
+                    if (!mrTitle.isNullOrBlank() && !mrUrl.isNullOrBlank()) {
+                        append("🔀 MR: ${mrUrl.link(mrTitle)}\n")
+                    }
+                }
+
                 append("\n")
             }
 
@@ -234,19 +452,6 @@ class WebhookMessageFormatter {
             else -> status
         }
 
-    private fun getJobStatusEmoji(status: JobStatus?): String =
-        when (status) {
-            JobStatus.CREATED -> "🆕"
-            JobStatus.PENDING -> "⏳"
-            JobStatus.RUNNING -> "🔄"
-            JobStatus.SUCCESS -> "✅"
-            JobStatus.FAILED -> "❌"
-            JobStatus.CANCELED -> "⛔"
-            JobStatus.SKIPPED -> "⏭️"
-            JobStatus.MANUAL -> "👆"
-            else -> "❓"
-        }
-
     private fun getBuildStatusEmoji(status: BuildStatus?): String =
         when (status) {
             BuildStatus.CREATED -> "🆕"
@@ -259,29 +464,6 @@ class WebhookMessageFormatter {
             BuildStatus.MANUAL -> "👆"
             else -> "❓"
         }
-
-    private fun formatJobStatus(
-        job: Job,
-        jobUrl: String,
-    ): String {
-        val status = job.status ?: return ""
-        val duration = job.duration
-
-        return when (status) {
-            JobStatus.SUCCESS -> {
-                if (duration != null) " (${formatDuration(duration.toLong())})" else ""
-            }
-            JobStatus.FAILED -> {
-                " ${jobUrl.link("View Logs")}"
-            }
-            JobStatus.RUNNING -> " running..."
-            JobStatus.PENDING -> " pending"
-            JobStatus.CANCELED -> " canceled"
-            JobStatus.SKIPPED -> " skipped"
-            JobStatus.MANUAL -> " manual"
-            else -> ""
-        }
-    }
 
     private fun formatBuildStatus(
         build: Build,
@@ -307,9 +489,9 @@ class WebhookMessageFormatter {
     }
 
     private fun formatDuration(seconds: Long): String {
-        val hours = seconds / 3600
-        val minutes = (seconds % 3600) / 60
-        val secs = seconds % 60
+        val hours = seconds / SECONDS_PER_HOUR
+        val minutes = (seconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE
+        val secs = seconds % SECONDS_PER_MINUTE
 
         return when {
             hours > 0 -> "${hours}h ${minutes}m ${secs}s"
@@ -373,68 +555,7 @@ class WebhookMessageFormatter {
 
     private fun String.extractIssueNumber(): String? = Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
 
-    private fun AbstractPushEvent.mentionBranch(): String {
-        val destStr = project.pathWithNamespace.ifEmpty { repository.name }
-        return "${repository.homepage}/tree/${urlEncode(branch)}".link("$destStr/$branch")
-    }
-
-    private fun getWebPreview(event: PushEvent): String {
-        val fileSummary =
-            buildString {
-                val changes = event.commits.flatMap { listOf(it.added.size, it.removed.size, it.modified.size) }
-                val totalChanges = changes.sum()
-                if (totalChanges > 0) {
-                    append("$totalChanges file${if (totalChanges > 1) "s" else ""} changes. ")
-                    val modified = changes[2]
-                    val added = changes[0]
-                    val removed = changes[1]
-
-                    val parts = mutableListOf<String>()
-                    if (modified > 0) parts.add("$modified modified")
-                    if (added > 0) parts.add("$added added")
-                    if (removed > 0) parts.add("$removed removed")
-
-                    append(parts.joinToString(separator = ", ", prefix = "", postfix = ""))
-                }
-            }
-        val pushedCommitLabel =
-            if (event.commits.isNotEmpty()) {
-                "${event.commits.size} commits"
-            } else {
-                "Commit"
-            }
-        val compareUrl =
-            compareURL(event.repository.homepage, event.before, event.after)
-                .takeIf { event.commits.isNotEmpty() } ?: ""
-
-        return buildString {
-            append("$pushedCommitLabel\n$fileSummary ")
-            append("(${compareUrl.link("${event.before.take(8)}...${event.after.take(8)}")})")
-        }
-    }
-
-    private fun compareURL(
-        homepage: String,
-        before: String,
-        after: String,
-    ): String = "$homepage/compare/$before...$after"
-
-    private fun mention(
-        userName: String?,
-        name: String,
-    ): String = userName?.takeIf { it.isNotEmpty() }?.let { "@${it.bold()}" } ?: name.bold()
-
-    private fun formatCommits(event: PushEvent): String {
-        val otherCommiter =
-            event.commits.any {
-                it.author.email != event.userEmail && it.author.name != event.userName
-            }
-        return event.commits.joinToString("\n") { commit ->
-            val authorPrefix = if (otherCommiter) "${mention(commit.author.username, commit.author.name)}: " else ""
-            "$authorPrefix${commit.url.link(commit.message.trimEnd('\n'))}"
-        } + "\n"
-    }
-
+    @Suppress("UNUSED_PARAMETER")
     private fun formatPushEventMessage(event: PushEvent): String {
         // Skip push events - pipeline consolidation handles notifications
         throw SkipEventException()

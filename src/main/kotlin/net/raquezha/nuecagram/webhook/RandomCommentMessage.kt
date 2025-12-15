@@ -2,7 +2,7 @@ package net.raquezha.nuecagram.webhook
 
 class RandomCommentMessage {
     private val commentMessages =
-        mutableListOf(
+        listOf(
             "dropped a comment on the",
             "commented on the",
             "left a note on the",
@@ -57,15 +57,6 @@ class RandomCommentMessage {
             "requested feedback on the",
             "commented on the",
         )
-    private var currentIndex = 0
 
-    init {
-        commentMessages.shuffle()
-    }
-
-    fun getRandomComment(): String {
-        val comment = commentMessages[currentIndex]
-        currentIndex = (currentIndex + 1) % commentMessages.size
-        return comment
-    }
+    fun getRandomComment(): String = commentMessages.random()
 }

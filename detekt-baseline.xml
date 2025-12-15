@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:WebhookMessageFormatter.kt$WebhookMessageFormatter$private fun formatPipelineEvent(event: PipelineEvent): String</ID>
+    <ID>ImplicitDefaultLocale:WebHookServiceImpl.kt$WebHookServiceImpl$String.format( "Error processing webhook!\n[%s] %s", exception.javaClass.simpleName, exception.message, )</ID>
+    <ID>LongMethod:WebhookMessageFormatter.kt$WebhookMessageFormatter$private fun formatPipelineEvent(event: PipelineEvent): String</ID>
+    <ID>LongMethod:WebhookRequestHandler.kt$WebhookRequestHandler$private suspend fun handleBuildEvent( event: BuildEvent, chatDetails: ChatDetails, webhookService: WebHookService, telegramService: TelegramService, formatter: WebhookMessageFormatter, logger: KLogger, )</ID>
+    <ID>MagicNumber:EventData.kt$EventData$5</ID>
+    <ID>MagicNumber:WebhookMessageFormatter.kt$WebhookMessageFormatter$3600</ID>
+    <ID>MagicNumber:WebhookMessageFormatter.kt$WebhookMessageFormatter$60</ID>
+    <ID>MagicNumber:WebhookMessageFormatter.kt$WebhookMessageFormatter$7</ID>
+    <ID>MaxLineLength:ApplicationTest.kt$ApplicationTest$assertEquals("This application is made to receive webhooks request and send telegram notification", response.bodyAsText())</ID>
+    <ID>MaxLineLength:WebHookServiceImpl.kt$WebHookServiceImpl$logger.debug { "Added job ${jobInfo.id} to tracked pipeline $pipelineId. Total jobs: ${trackedPipelines[pipelineId]?.jobs?.size}" }</ID>
+    <ID>MaxLineLength:WebhookMessageFormatter.kt$WebhookMessageFormatter$beforeSha.isNullHash() -&gt; "${event.userName.bold()} pushed new $itemType $tagUrl at ${event.repository.name}"</ID>
+    <ID>MaxLineLength:WebhookMessageFormatter.kt$WebhookMessageFormatter$private</ID>
+    <ID>MaxLineLength:WebhookMessageFormatter.kt$WebhookMessageFormatter$private fun BuildEvent.canceledStatus(): String</ID>
+    <ID>MaxLineLength:WebhookMessageFormatter.kt$WebhookMessageFormatter$private fun BuildEvent.successStatus(): String</ID>
+    <ID>MaxLineLength:WebhookRequestHandler.kt$WebhookRequestHandler$logger.debug { "Pipeline #$pipelineId (job-only): sent/updated message $messageId with ${trackedPipeline.jobs.size} jobs" }</ID>
+    <ID>SwallowedException:Routing.kt$skipEx: SkipEventException</ID>
+    <ID>SwallowedException:WebhookRequestHandler.kt$WebhookRequestHandler$skipEx: SkipEventException</ID>
+    <ID>ThrowsCount:WebHookServiceImpl.kt$WebHookServiceImpl$private suspend fun ApplicationCall.getWebhookData(): EventData</ID>
+    <ID>TooManyFunctions:WebHookService.kt$WebHookService</ID>
+    <ID>TooManyFunctions:WebHookServiceImpl.kt$WebHookServiceImpl : WebHookService</ID>
+    <ID>TooManyFunctions:WebhookMessageFormatter.kt$WebhookMessageFormatter</ID>
+    <ID>UnusedPrivateMember:WebhookMessageFormatter.kt$WebhookMessageFormatter$private fun BuildEvent.getBuildStatusMessage(): String</ID>
+    <ID>UseCheckOrError:SystemEnvImpl.kt$SystemEnvImpl$throw IllegalStateException("NUECAGRAM_SECRET_TOKEN environment variable is not set")</ID>
+    <ID>UseCheckOrError:SystemEnvImpl.kt$SystemEnvImpl$throw IllegalStateException("TELEGRAM_BOT_TOKEN environment variable is not set")</ID>
+  </CurrentIssues>
+</SmellBaseline>

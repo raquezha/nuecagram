@@ -11,8 +11,10 @@ For long answers, always include a **TLDR;** at the top.
 - **Run tests:** `./gradlew test`
 - **Single test class:** `./gradlew test --tests "net.raquezha.nuecagram.ApplicationTest"`
 - **Single test method:** `./gradlew test --tests "net.raquezha.nuecagram.ApplicationTest.testRoot"`
-- **Lint:** `./gradlew lintKotlinMain lintKotlinTest`
-- **Format:** `./gradlew formatKotlinMain formatKotlinTest`
+- **Lint (ktlint):** `./gradlew lintKotlinMain lintKotlinTest`
+- **Format (ktlint):** `./gradlew formatKotlinMain formatKotlinTest`
+- **Static analysis (detekt):** `./gradlew detekt`
+- **Generate detekt baseline:** `./gradlew detektBaseline`
 - **Run app:** `./gradlew run`
 
 ## Project Structure

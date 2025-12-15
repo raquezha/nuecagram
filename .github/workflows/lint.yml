@@ -5,4 +5,9 @@ jobs:
   lint:
     uses: ./.github/workflows/setup-gradle.yml
     with:
-      gradle-task: lintKotlinMain
+      gradle-task: lintKotlinMain lintKotlinTest
+
+  detekt:
+    uses: ./.github/workflows/setup-gradle.yml
+    with:
+      gradle-task: detekt
