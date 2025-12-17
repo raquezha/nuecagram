@@ -24,6 +24,8 @@ import net.raquezha.nuecagram.telegram.TokenProvider
 import net.raquezha.nuecagram.telegram.TokenProviderImpl
 import net.raquezha.nuecagram.telegram.TokenProviderImpl.SecretToken
 import net.raquezha.nuecagram.telegram.TokenProviderImpl.TelegramBotToken
+import net.raquezha.nuecagram.webhook.RandomMessageProvider
+import net.raquezha.nuecagram.webhook.RandomMessageProviderImpl
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebHookServiceImpl
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
@@ -160,6 +162,10 @@ val provideWebhookModule =
             WebhookMessageFormatter()
         }
 
+        single<RandomMessageProvider> {
+            RandomMessageProviderImpl()
+        }
+
         // Define WebHookHandlerImpl as a single instance, injecting the secretToken and WebHookListenerBuilder
         single<WebHookService> {
             val tokenProvider: TokenProvider = get()
@@ -170,6 +176,9 @@ val provideWebhookModule =
 val provideWebhookRequestHandler =
     module {
         single { params ->
-            WebhookRequestHandler(application = params.get<Application>())
+            WebhookRequestHandler(
+                application = params.get<Application>(),
+                randomMessageProvider = get(),
+            )
         }
     }
