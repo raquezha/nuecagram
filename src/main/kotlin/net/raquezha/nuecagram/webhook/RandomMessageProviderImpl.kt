@@ -55,12 +55,10 @@ class RandomMessageProviderImpl : RandomMessageProvider {
                 "Pipeline passed! Isa ka nang alamat, par!",
                 "Success! Sana all ganito ka-smooth ang build!",
                 "Pipeline passed! Tapos na, uwian na!",
-                "Ayos! Hindi ka naman pala bobo, gumana eh!",
                 "Pipeline passed! Pa-Jollibee ka naman diyan!",
                 "Success! Grabe, first try pa! Baka naman!",
                 "Pipeline passed! Tuloy ang laro, dev!",
                 "Galing mo, idol! Pipeline passed na passed!",
-                "Success! Si boss, happy na naman!",
                 "Pipeline passed! Pang-senior dev ka na niyan!",
             )
 
@@ -109,14 +107,12 @@ class RandomMessageProviderImpl : RandomMessageProvider {
                 "Oops! The pipeline stubbed its toe. Try again!",
                 // 10 Filipino dev meme messages
                 "Pipeline failed! Bahala na si Batman!",
-                "Failed! Sabi na eh, mag-aral ka na lang sana ng nursing!",
                 "Pipeline failed! 'Di bale, marami pang bukas!",
                 "Ay jusko! Sino nag-push nito?!",
                 "Failed! Kape muna tayo, par. Mahaba-habang gabi 'to.",
                 "Pipeline failed! Bawi na lang next sprint!",
                 "Failed! Sana ol may working code!",
                 "Pipeline failed! Eto na naman tayo, debug ulit!",
-                "Failed! Resign na lang kaya ako? Charot!",
                 "Pipeline failed! Tara na sa Stack Overflow!",
             )
 
