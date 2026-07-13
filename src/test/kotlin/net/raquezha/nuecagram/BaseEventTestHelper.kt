@@ -10,6 +10,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
+import io.ktor.server.application.install
 import io.mockk.every
 import io.mockk.mockkObject
 import net.raquezha.nuecagram.di.SystemEnvImpl
@@ -36,11 +37,6 @@ abstract class BaseEventTestHelper : KoinTest {
     fun ApplicationTestBuilder.configureTestApplication() {
         application {
             configureRouting()
-            koin {
-                modules(
-                    testAppModule(),
-                )
-            }
         }
     }
 
