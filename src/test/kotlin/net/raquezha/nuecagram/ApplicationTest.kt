@@ -4,7 +4,6 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
-import io.ktor.server.application.install
 import net.raquezha.nuecagram.plugins.configureRouting
 import io.mockk.every
 import io.mockk.mockkObject
@@ -17,7 +16,6 @@ import org.junit.Test
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.core.context.startKoin
-import org.koin.ktor.plugin.koin
 
 class ApplicationTest {
     @Test

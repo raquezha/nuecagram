@@ -10,7 +10,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
-import io.ktor.server.application.install
 import io.mockk.every
 import io.mockk.mockkObject
 import net.raquezha.nuecagram.di.SystemEnvImpl
@@ -27,7 +26,6 @@ import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
 import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.java.KoinJavaComponent.inject
-import org.koin.ktor.plugin.koin
 import org.koin.test.KoinTest
 
 abstract class BaseEventTestHelper : KoinTest {
