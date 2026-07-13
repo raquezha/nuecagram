@@ -91,7 +91,7 @@ fun Application.module() {
 
     // Close resources when application stops to prevent leaks
     val httpClient by inject<HttpClient>()
-    environment.monitor.subscribe(io.ktor.server.application.ApplicationStopped) {
+    monitor.subscribe(io.ktor.server.application.ApplicationStopped) {
         httpClient.close()
     }
 
@@ -100,7 +100,7 @@ fun Application.module() {
 
     // Close the webhook queue on shutdown (must be after configureRouting creates the handler)
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this@module) }
-    environment.monitor.subscribe(io.ktor.server.application.ApplicationStopped) {
+    monitor.subscribe(io.ktor.server.application.ApplicationStopped) {
         webhookRequestHandler.close()
     }
 }
