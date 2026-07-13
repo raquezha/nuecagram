@@ -145,8 +145,15 @@ tasks.named("prepareKotlinBuildScriptModel") {
 
 // ponytail: GitHub Actions calls these tasks, but the real linters conflict with Kotlin 2.4 metadata.
 // Re-enable detekt and kotlinter when detekt 2.x is stable.
-tasks.register("detekt") {
-    doLast { println("detekt is temporarily disabled due to Kotlin 2.4 conflict.") }
+val detektCli by configurations.creating
+dependencies {
+    detektCli("io.gitlab.arturbosch.detekt:detekt-cli:1.23.8")
+}
+
+tasks.register<JavaExec>("detekt") {
+    mainClass.set("io.gitlab.arturbosch.detekt.cli.Main")
+    classpath = detektCli
+    args("--config", "$projectDir/detekt.yml", "--baseline", "$projectDir/detekt-baseline.xml", "--input", "src/main/kotlin,src/test/kotlin")
 }
 tasks.register("lintKotlinMain") {
     doLast { println("lintKotlinMain is temporarily disabled.") }
