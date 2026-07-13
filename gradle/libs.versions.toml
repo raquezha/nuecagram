@@ -1,20 +1,20 @@
 [versions]
 ktor = "2.3.13"
-logback = "1.5.18"
-kotlin = "1.9.24"
-truth = "1.4.4"
-ksp = "1.9.24-1.0.20"
+logback = "1.5.38"
+kotlin = "1.9.25"
+truth = "1.4.5"
+ksp = "1.9.25-1.0.20"
 koin = "3.5.6"
-koinAnnotations = "1.3.1"
+koinAnnotations = "1.4.0"
 kotlinLogging = "6.0.9"
 kotlinter = "4.4.1"
-detekt = "1.23.7"
+detekt = "1.23.8"
 coroutines = "1.8.1"
-hoplite = "2.8.2"
+hoplite = "2.9.0"
 jib = "3.4.3"
 mockk = "1.13.12"
 vendeli = "6.6.0"
-gitlab4jApi = "6.2.0"
+gitlab4jApi = "6.3.0"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
