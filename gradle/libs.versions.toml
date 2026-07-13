@@ -1,7 +1,7 @@
 [versions]
 ktor = "3.5.1"
 logback = "1.5.38"
-kotlin = "2.3.10"
+kotlin = "2.4.0"
 truth = "1.4.5"
 ksp = "2.3.10"
 koin = "4.2.2"

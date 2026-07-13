@@ -154,3 +154,10 @@ tasks.register("lintKotlinMain") {
 tasks.register("lintKotlinTest") {
     doLast { println("lintKotlinTest is temporarily disabled.") }
 }
+
+kotlin {
+    compilerOptions {
+        // ponytail: avoid KSP crash with Kotlin 2.4.0 containing ':' in module names (https://github.com/google/ksp/issues/2964)
+        moduleName.set("${project.group}_${project.name}")
+    }
+}
