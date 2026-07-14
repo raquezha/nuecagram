@@ -20,14 +20,8 @@ import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
-import net.raquezha.nuecagram.telegram.TokenProvider
-import net.raquezha.nuecagram.telegram.TokenProviderImpl
-import net.raquezha.nuecagram.telegram.TokenProviderImpl.SecretToken
-import net.raquezha.nuecagram.telegram.TokenProviderImpl.TelegramBotToken
 import net.raquezha.nuecagram.webhook.RandomMessageProvider
-import net.raquezha.nuecagram.webhook.RandomMessageProviderImpl
 import net.raquezha.nuecagram.webhook.WebHookService
-import net.raquezha.nuecagram.webhook.WebHookServiceImpl
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.dsl.module
@@ -37,7 +31,6 @@ fun appModule() =
         provideLogger,
         provideTelegramService,
         provideWebhookModule,
-        provideTokenProvider,
         provideHttpClient,
         provideConfigModule,
         provideWebhookRequestHandler,
@@ -48,7 +41,6 @@ fun testAppModule() =
         provideLogger,
         provideTelegramService,
         provideWebhookModule,
-        provideTokenProvider,
         provideHttpClient,
         provideTelegramBot,
         provideWebhookRequestHandler,
@@ -71,14 +63,12 @@ val testModule =
     }
 
 val provideConfigModule =
-    module(createdAtStart = true) {
-        configWithSecrets(
+    module {
+        single { configWithSecrets(
             filename = "/application.json",
-            botApi = SystemEnvImpl.getBotApi(),
-            secretToken = SystemEnvImpl.getSecretToken(),
-        ).also { config ->
-            single { config }
-        }
+            botApi = System.getenv("TELEGRAM_BOT_TOKEN") ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
+            secretToken = System.getenv("NUECAGRAM_SECRET_TOKEN") ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN missing"),
+        ) }
     }
 
 val provideHttpClient =
@@ -114,20 +104,6 @@ val provideHttpClient =
         }
     }
 
-val provideTokenProvider =
-    module {
-        single {
-            val config: ConfigWithSecrets = get()
-            TelegramBotToken(config.botApi)
-        }
-        single {
-            val config: ConfigWithSecrets = get()
-            SecretToken(config.secretToken)
-        }
-        single<TokenProvider> {
-            TokenProviderImpl(get(), get())
-        }
-    }
 
 val provideLogger =
     module {
@@ -164,13 +140,13 @@ val provideWebhookModule =
         }
 
         single<RandomMessageProvider> {
-            RandomMessageProviderImpl()
+            RandomMessageProvider()
         }
 
         // Define WebHookHandlerImpl as a single instance, injecting the secretToken and WebHookListenerBuilder
         single<WebHookService> {
-            val tokenProvider: TokenProvider = get()
-            WebHookServiceImpl(tokenProvider.getSecretToken(), get())
+            val config: net.raquezha.nuecagram.ConfigWithSecrets = get()
+            WebHookService(config.secretToken, get())
         }
     }
 

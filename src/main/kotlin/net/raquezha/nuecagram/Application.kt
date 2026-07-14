@@ -1,15 +1,11 @@
-@file:OptIn(ExperimentalHoplite::class)
-
 package net.raquezha.nuecagram
 
-import com.sksamuel.hoplite.ConfigLoaderBuilder
-import com.sksamuel.hoplite.ExperimentalHoplite
-import com.sksamuel.hoplite.addResourceSource
 import io.ktor.client.HttpClient
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.di.appModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.plugins.configureSerialization
@@ -58,14 +54,11 @@ private fun validateRequiredEnvironmentVariables() {
     }
 }
 
-@OptIn(ExperimentalHoplite::class)
-fun config(filename: String): Config =
-    ConfigLoaderBuilder
-        .default()
-        .addResourceSource(filename)
-        .withExplicitSealedTypes()
-        .build()
-        .loadConfigOrThrow<Config>()
+fun config(filename: String): Config {
+    val resource = object {}.javaClass.getResource(filename)?.readText() 
+        ?: throw IllegalArgumentException("Config file $filename not found in resources")
+    return Json.decodeFromString(resource)
+}
 
 fun configWithSecrets(
     filename: String,

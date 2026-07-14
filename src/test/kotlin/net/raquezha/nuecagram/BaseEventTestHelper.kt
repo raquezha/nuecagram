@@ -12,7 +12,6 @@ import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.mockk.every
 import io.mockk.mockkObject
-import net.raquezha.nuecagram.di.SystemEnvImpl
 import net.raquezha.nuecagram.di.testAppModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.CHAT_ID
@@ -91,9 +90,6 @@ abstract class BaseEventTestHelper : KoinTest {
         @JvmStatic
         fun setUpClass() {
             // Start Koin once per test class
-            mockkObject(SystemEnvImpl)
-            every { SystemEnvImpl.getBotApi() } returns "mock_bot_api"
-            every { SystemEnvImpl.getSecretToken() } returns "mock_secret_token"
 
             if (GlobalContext.getOrNull() == null) {
                 startKoin {

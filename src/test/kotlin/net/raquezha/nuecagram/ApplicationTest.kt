@@ -7,7 +7,6 @@ import io.ktor.server.testing.testApplication
 import net.raquezha.nuecagram.plugins.configureRouting
 import io.mockk.every
 import io.mockk.mockkObject
-import net.raquezha.nuecagram.di.SystemEnvImpl
 import net.raquezha.nuecagram.di.testAppModule
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
@@ -34,9 +33,6 @@ class ApplicationTest {
         @JvmStatic
         fun setUpClass() {
             // Start Koin once per test class
-            mockkObject(SystemEnvImpl)
-            every { SystemEnvImpl.getBotApi() } returns "mock_bot_api"
-            every { SystemEnvImpl.getSecretToken() } returns "mock_secret_token"
 
             if (GlobalContext.getOrNull() == null) {
                 startKoin {
