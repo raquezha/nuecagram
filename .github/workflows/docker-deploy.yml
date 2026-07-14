@@ -104,5 +104,27 @@ jobs:
           asset_name: nuecagram-${{ steps.create_release.outputs.clean_tag }}.jib.tar
           asset_content_type: application/x-tar
 
+  deploy-to-droplet:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to DigitalOcean Droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            docker pull raquezha/nuecagram:latest
+            docker stop nuecagram || true
+            docker rm nuecagram || true
+            # Assuming you created a .env file on the droplet at /root/nuecagram.env 
+            # with TELEGRAM_BOT_TOKEN and NUECAGRAM_SECRET_TOKEN
+            docker run -d --name nuecagram \
+              -p 8080:8080 \
+              --env-file /root/nuecagram.env \
+              --restart unless-stopped \
+              raquezha/nuecagram:latest
+
 
 
