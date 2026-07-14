@@ -1,4 +1,4 @@
-name: Release Please
+name: Release
 
 on:
   push:
@@ -10,21 +10,30 @@ permissions:
   pull-requests: write
 
 jobs:
-  release-please:
+  release:
+    name: Release
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
+      - name: Checkout Repo
+        uses: actions/checkout@v4
         with:
-          release-type: simple
+          fetch-depth: 0
 
-      # If a release was created, it means the PR was merged. We can trigger docker deploy manually here,
-      # or since the action creates a git tag, the docker-deploy workflow (which triggers on tags) will run.
-      # Wait! release-please automatically creates a GitHub Release and pushes a git tag (e.g. v1.0.0).
-      # This tag push will trigger our docker-deploy.yml workflow because it triggers on tags!
-      # However, GitHub actions triggered by GITHUB_TOKEN (which release-please uses) do not trigger other workflows.
-      # To fix this, we should either run the docker deploy steps here, or recommend the user to use a PAT for release-please.
-      # Let's keep it simple: since we already have docker-deploy.yml, we can explain that using a PAT with release-please
-      # will allow the tag to trigger docker-deploy.yml, or we can add docker deploy steps directly here.
-      # Let's check how docker-deploy is configured. It triggers on tag push.
-      # If they use release-please with a PAT, it will trigger docker-deploy automatically.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npm run version
+          publish: npm run release
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
