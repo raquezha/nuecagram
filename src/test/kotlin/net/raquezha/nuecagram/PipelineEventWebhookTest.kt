@@ -2,8 +2,6 @@ package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
 import io.ktor.server.testing.testApplication
-import io.mockk.every
-import io.mockk.mockkObject
 import net.raquezha.nuecagram.di.testAppModule
 import org.junit.AfterClass
 import org.junit.BeforeClass

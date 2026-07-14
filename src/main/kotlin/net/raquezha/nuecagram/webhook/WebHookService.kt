@@ -147,7 +147,10 @@ class WebHookService(
             newTracked.putJob(jobInfo)
             trackedPipelines[pipelineId] = newTracked
         }
-        logger.debug { "Added job ${jobInfo.id} to tracked pipeline $pipelineId. Total jobs: ${trackedPipelines[pipelineId]?.jobs?.size}" }
+        logger.debug {
+            "Added job ${jobInfo.id} to tracked pipeline $pipelineId. " +
+            "Total jobs: ${trackedPipelines[pipelineId]?.jobs?.size}"
+        }
     }
 
     fun markPipelineEventReceived(pipelineId: Long) {
