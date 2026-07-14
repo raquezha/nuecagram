@@ -24,10 +24,11 @@ fun main() {
     validateRequiredEnvironmentVariables()
 
     val config = config("/application.json")
+    val port = System.getenv("PORT")?.toIntOrNull() ?: config.port
     embeddedServer(
         Netty,
         watchPaths = listOf("nuecagram"),
-        port = config.port,
+        port = port,
         module = Application::module,
     ).start(true)
 }
