@@ -10,7 +10,6 @@ kotlinLogging = "8.0.4"
 kotlinter = "4.4.1"
 detekt = "1.23.8"
 coroutines = "1.11.0"
-hoplite = "2.9.0"
 jib = "3.4.3"
 mockk = "1.14.11"
 vendeli = "8.4.1"
@@ -47,8 +46,6 @@ coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version
 
 koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin" }
 koin-test-junit4 = { module = "io.insert-koin:koin-test-junit4", version.ref = "koin" }
-hoplite = { module = "com.sksamuel.hoplite:hoplite-core", version.ref = "hoplite" }
-hoplite-json = { module = "com.sksamuel.hoplite:hoplite-json", version.ref = "hoplite" }
 
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 vendeli-telegram-bot = { module = "eu.vendeli:telegram-bot", version.ref = "vendeli" }

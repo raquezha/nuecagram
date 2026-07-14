@@ -1,153 +1,271 @@
-@file:Suppress("KotlinConstantConditions")
-
 package net.raquezha.nuecagram.webhook
 
+import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.server.application.ApplicationCall
-import java.security.MessageDigest
+import io.ktor.server.request.queryString
+import io.ktor.server.request.receiveText
+import io.ktor.server.request.uri
+import net.raquezha.nuecagram.webhook.NuecagramHeaders.CHAT_ID
+import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
+import net.raquezha.nuecagram.webhook.NuecagramHeaders.SECRET_TOKEN
+import net.raquezha.nuecagram.webhook.NuecagramHeaders.TOPIC_ID
+import org.gitlab4j.api.GitLabApiException
+import org.gitlab4j.api.utils.JacksonJson
+import org.gitlab4j.api.webhook.BuildEvent
+import org.gitlab4j.api.webhook.DeploymentEvent
+import org.gitlab4j.api.webhook.Event
+import org.gitlab4j.api.webhook.IssueEvent
+import org.gitlab4j.api.webhook.JobEvent
+import org.gitlab4j.api.webhook.MergeRequestEvent
+import org.gitlab4j.api.webhook.NoteEvent
+import org.gitlab4j.api.webhook.PipelineEvent
+import org.gitlab4j.api.webhook.PushEvent
+import org.gitlab4j.api.webhook.ReleaseEvent
+import org.gitlab4j.api.webhook.TagPushEvent
+import org.gitlab4j.api.webhook.WikiPageEvent
+import java.util.concurrent.ConcurrentHashMap
 
-interface WebHookService {
-    /**
-     * Get the secret token that received hook events should be validated against.
-     *
-     * @return the secret token that received hook events should be validated against
-     */
-    fun getSecretToken(): String?
+class WebHookService(
+    private var secretToken: String? = null,
+    private var logger: KLogger,
+) {
+    private val jacksonJson: JacksonJson = JacksonJson()
 
-    /**
-     * Set the secret token that received hook events should be validated against.
-     *
-     * @param secretToken the secret token to verify against
-     */
-    fun setSecretToken(secretToken: String?)
-
-    /**
-     * Validate the provided secret token against the reference secret token. Returns true if
-     * the secret token matches, otherwise returns false.
-     * Security: If no reference secret token is configured, validation always fails.
-     * Uses constant-time comparison to prevent timing attacks.
-     *
-     * @param secretToken the token to validate
-     * @return true if the secret token matches the configured token
-     */
-    fun isValidSecretToken(secretToken: String?): Boolean {
-        val ourSecretToken: String? = getSecretToken()
-        // Security: Require a secret token to be configured
-        if (ourSecretToken.isNullOrBlank()) return false
-        if (secretToken == null) return false
-        // Use constant-time comparison to prevent timing attacks
-        return MessageDigest.isEqual(
-            ourSecretToken.toByteArray(Charsets.UTF_8),
-            secretToken.toByteArray(Charsets.UTF_8),
+    fun isValidSecretToken(token: String?): Boolean {
+        val ourToken: String? = getSecretToken()
+        if (ourToken.isNullOrBlank() || token == null) return false
+        return java.security.MessageDigest.isEqual(
+            ourToken.toByteArray(Charsets.UTF_8),
+            token.toByteArray(Charsets.UTF_8),
         )
     }
 
-    suspend fun handleRequest(call: ApplicationCall): EventData
+    companion object {
+        const val DEFAULT_STALE_ENTRY_TTL_MS = 2L * 60 * 60 * 1000
+        /** Maximum allowed payload size in bytes (1 MB) to prevent DoS attacks */
+        private const val MAX_PAYLOAD_SIZE = 1_048_576
+    }
 
-    fun getMessageIdOfEvent(buildEventId: Long): String?
+    private val supportedEvents =
+        setOf(
+            IssueEvent.X_GITLAB_EVENT,
+            JobEvent.JOB_HOOK_X_GITLAB_EVENT,
+            BuildEvent.JOB_HOOK_X_GITLAB_EVENT,
+            MergeRequestEvent.X_GITLAB_EVENT,
+            NoteEvent.X_GITLAB_EVENT,
+            PipelineEvent.X_GITLAB_EVENT,
+            PushEvent.X_GITLAB_EVENT,
+            TagPushEvent.X_GITLAB_EVENT,
+            WikiPageEvent.X_GITLAB_EVENT,
+            DeploymentEvent.X_GITLAB_EVENT,
+            ReleaseEvent.X_GITLAB_EVENT,
+        )
+
+    /**
+     * Entry for tracking job/build message IDs with timestamp for cleanup.
+     */
+    private data class JobEntry(
+        val messageId: String,
+        val createdAt: Long = System.currentTimeMillis(),
+    )
+
+    private val runningJobsIdMap = ConcurrentHashMap<Long, JobEntry>()
+    private val pipelineMessageIdMap = ConcurrentHashMap<Long, String>()
+    private val trackedPipelines = ConcurrentHashMap<Long, TrackedPipeline>()
+
+    suspend fun handleRequest(call: ApplicationCall): EventData =
+        try {
+            val webhookData = call.getWebhookData()
+            handleSecretToken(webhookData.headerSecretToken)
+            handleEvents(webhookData.headerEvent)
+            webhookData
+        } catch (exception: Exception) {
+            val errorMessage =
+                String.format(
+                    "Error processing webhook!\n[%s] %s",
+                    exception.javaClass.simpleName,
+                    exception.message,
+                )
+            logger.error { errorMessage }
+            throw GitLabApiException(errorMessage)
+        }
+
+    fun getMessageIdOfEvent(buildEventId: Long): String? = runningJobsIdMap[buildEventId]?.messageId
 
     fun setMessageIdOfEvent(
         buildEventId: Long,
         messageId: String,
-    )
+    ) {
+        runningJobsIdMap[buildEventId] = JobEntry(messageId)
+    }
 
-    fun clearMessageIdOfEvent(buildEventId: Long)
+    fun clearMessageIdOfEvent(buildEventId: Long) {
+        runningJobsIdMap.remove(buildEventId)
+    }
 
-    /**
-     * Get the Telegram message ID for a pipeline.
-     *
-     * @param pipelineId the pipeline ID
-     * @return the Telegram message ID, or null if not tracked
-     */
-    fun getPipelineMessageId(pipelineId: Long): String?
+    fun getPipelineMessageId(pipelineId: Long): String? = pipelineMessageIdMap[pipelineId]
 
-    /**
-     * Set the Telegram message ID for a pipeline.
-     *
-     * @param pipelineId the pipeline ID
-     * @param messageId the Telegram message ID
-     */
     fun setPipelineMessageId(
         pipelineId: Long,
         messageId: String,
-    )
+    ) {
+        pipelineMessageIdMap[pipelineId] = messageId
+    }
 
-    /**
-     * Clear the tracked message ID for a pipeline (call on completion).
-     *
-     * @param pipelineId the pipeline ID
-     */
-    fun clearPipelineMessageId(pipelineId: Long)
+    fun clearPipelineMessageId(pipelineId: Long) {
+        pipelineMessageIdMap.remove(pipelineId)
+    }
 
     // ========== Job-Only Mode Tracking ==========
 
-    /**
-     * Get the tracked pipeline data for a pipeline ID.
-     * Used in job-only mode to accumulate job data.
-     *
-     * @param pipelineId the pipeline ID
-     * @return the tracked pipeline data, or null if not tracked
-     */
-    fun getTrackedPipeline(pipelineId: Long): TrackedPipeline?
+    fun getTrackedPipeline(pipelineId: Long): TrackedPipeline? = trackedPipelines[pipelineId]
 
-    /**
-     * Add or update a job in the tracked pipeline.
-     * Creates a new TrackedPipeline if one doesn't exist.
-     *
-     * @param pipelineId the pipeline ID
-     * @param jobInfo the job information to add/update
-     * @param metadata optional metadata to update (project name, ref, etc.)
-     */
     fun addJobToTrackedPipeline(
         pipelineId: Long,
         jobInfo: JobInfo,
-        metadata: PipelineMetadata? = null,
-    )
+        metadata: PipelineMetadata?,
+    ) {
+        val existing = trackedPipelines[pipelineId]
+        if (existing != null) {
+            existing.putJob(jobInfo)
+            // Update metadata if provided
+            if (metadata != null) {
+                existing.updateMetadata(metadata)
+            }
+        } else {
+            val newTracked =
+                TrackedPipeline(
+                    messageId = null,
+                    hasPipelineEvent = false,
+                    projectName = metadata?.projectName,
+                    projectWebUrl = metadata?.projectWebUrl,
+                    ref = metadata?.ref,
+                    commitSha = metadata?.commitSha,
+                    commitMessage = metadata?.commitMessage,
+                    userName = metadata?.userName,
+                )
+            newTracked.putJob(jobInfo)
+            trackedPipelines[pipelineId] = newTracked
+        }
+        logger.debug { "Added job ${jobInfo.id} to tracked pipeline $pipelineId. Total jobs: ${trackedPipelines[pipelineId]?.jobs?.size}" }
+    }
 
-    /**
-     * Mark that a PipelineEvent has been received for this pipeline.
-     * When true, BuildEvents should be skipped (both-enabled mode).
-     *
-     * @param pipelineId the pipeline ID
-     */
-    fun markPipelineEventReceived(pipelineId: Long)
+    fun markPipelineEventReceived(pipelineId: Long) {
+        val existing = trackedPipelines[pipelineId]
+        if (existing != null) {
+            existing.setHasPipelineEvent(true)
+        } else {
+            trackedPipelines[pipelineId] =
+                TrackedPipeline(
+                    messageId = null,
+                    hasPipelineEvent = true,
+                )
+        }
+        logger.debug { "Marked pipeline $pipelineId as having PipelineEvent" }
+    }
 
-    /**
-     * Check if a PipelineEvent has been received for this pipeline.
-     *
-     * @param pipelineId the pipeline ID
-     * @return true if PipelineEvent is handling this pipeline
-     */
-    fun hasPipelineEvent(pipelineId: Long): Boolean
+    fun hasPipelineEvent(pipelineId: Long): Boolean = trackedPipelines[pipelineId]?.hasPipelineEvent == true
 
-    /**
-     * Update the message ID for a tracked pipeline.
-     *
-     * @param pipelineId the pipeline ID
-     * @param messageId the Telegram message ID
-     */
     fun updateTrackedPipelineMessageId(
         pipelineId: Long,
         messageId: String,
-    )
+    ) {
+        val existing = trackedPipelines[pipelineId]
+        if (existing != null) {
+            existing.setMessageId(messageId)
+        }
+        // Also update the simple map for backward compatibility
+        pipelineMessageIdMap[pipelineId] = messageId
+    }
 
-    /**
-     * Clear all tracking data for a pipeline.
-     *
-     * @param pipelineId the pipeline ID
-     */
-    fun clearTrackedPipeline(pipelineId: Long)
+    fun clearTrackedPipeline(pipelineId: Long) {
+        trackedPipelines.remove(pipelineId)
+        pipelineMessageIdMap.remove(pipelineId)
+        logger.debug { "Cleared tracking for pipeline $pipelineId" }
+    }
 
-    /**
-     * Cleanup stale pipeline tracking entries.
-     * Called periodically to prevent memory leaks.
-     *
-     * @param maxAgeMs maximum age in milliseconds (default 2 hours)
-     */
-    fun cleanupStaleEntries(maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS)
+    fun cleanupStaleEntries(maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS) {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
 
-    companion object {
-        /** Default TTL for stale entries: 2 hours in milliseconds */
-        const val DEFAULT_STALE_ENTRY_TTL_MS = 2L * 60 * 60 * 1000
+        // Cleanup stale tracked pipelines atomically
+        var pipelinesRemoved = 0
+        trackedPipelines.entries.removeIf { entry ->
+            if (entry.value.createdAt < cutoff) {
+                pipelineMessageIdMap.remove(entry.key)
+                pipelinesRemoved++
+                true
+            } else {
+                false
+            }
+        }
+
+        // Cleanup stale job entries atomically
+        var jobsRemoved = 0
+        runningJobsIdMap.entries.removeIf { entry ->
+            if (entry.value.createdAt < cutoff) {
+                jobsRemoved++
+                true
+            } else {
+                false
+            }
+        }
+
+        val totalCleaned = pipelinesRemoved + jobsRemoved
+        if (totalCleaned > 0) {
+            logger.debug {
+                "Cleaned up $totalCleaned stale entries " +
+                    "($pipelinesRemoved pipelines, $jobsRemoved jobs)"
+            }
+        }
+    }
+
+    private fun handleSecretToken(secretToken: String?) {
+        if (!isValidSecretToken(secretToken)) {
+            val message = "$SECRET_TOKEN mismatch!"
+            logger.error { message }
+            throw GitLabApiException(message)
+        }
+    }
+
+    fun getSecretToken(): String? = this.secretToken
+
+    fun setSecretToken(secretToken: String?) {
+        this.secretToken = secretToken
+    }
+
+    private suspend fun ApplicationCall.getWebhookData(): EventData {
+        val body = receiveText()
+        if (body.length > MAX_PAYLOAD_SIZE) {
+            throw GitLabApiException("Payload too large: ${body.length} bytes (max: $MAX_PAYLOAD_SIZE)")
+        }
+
+        val event = jacksonJson.unmarshal(Event::class.java, body)
+        event.requestUrl = request.uri
+        event.requestQueryString = request.queryString()
+        event.requestSecretToken = secretToken
+
+        return EventData(
+            event = event,
+            headerEvent =
+                request.headers[GITLAB_EVENT]?.trim()
+                    ?: throw GitLabApiException("missing '$GITLAB_EVENT' header!"),
+            headerSecretToken =
+                request.headers[SECRET_TOKEN]?.trim(
+                    ' ',
+                    '[',
+                    ']',
+                ) ?: throw GitLabApiException("missing '$SECRET_TOKEN' header!"),
+            headerChatId = request.headers[CHAT_ID]?.trim() ?: throw GitLabApiException("missing '$CHAT_ID' header!"),
+            headerTopicId = request.headers[TOPIC_ID]?.trim(),
+        )
+    }
+
+    private fun handleEvents(eventName: String?) {
+        if (eventName !in supportedEvents) {
+            val message = "$eventName event is not yet supported."
+            logger.error { message }
+            throw GitLabApiException(message)
+        }
     }
 }
 

@@ -94,8 +94,6 @@ dependencies {
     implementation(libs.koin.core)
     implementation(libs.koin.annotation)
     implementation(libs.kotlin.logging)
-    implementation(libs.hoplite)
-    implementation(libs.hoplite.json)
     implementation(libs.vendeli.telegram.bot)
     "ksp"(libs.vendeli.ksp)
 

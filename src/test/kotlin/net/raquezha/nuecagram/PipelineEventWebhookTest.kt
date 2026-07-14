@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import io.ktor.server.testing.testApplication
 import io.mockk.every
 import io.mockk.mockkObject
-import net.raquezha.nuecagram.di.SystemEnvImpl
 import net.raquezha.nuecagram.di.testAppModule
 import org.junit.AfterClass
 import org.junit.BeforeClass
@@ -36,9 +35,6 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
         @BeforeClass
         @JvmStatic
         fun setUpClass() {
-            mockkObject(SystemEnvImpl)
-            every { SystemEnvImpl.getBotApi() } returns "mock_bot_api"
-            every { SystemEnvImpl.getSecretToken() } returns "mock_secret_token"
 
             if (GlobalContext.getOrNull() == null) {
                 startKoin {

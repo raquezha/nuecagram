@@ -5,26 +5,26 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import net.raquezha.nuecagram.telegram.TokenProviderImpl.TelegramBotToken
+import net.raquezha.nuecagram.ConfigWithSecrets
 import org.apache.http.HttpException
 import org.gitlab4j.api.utils.JacksonJson
 
 class TelegramServiceImpl(
     private val client: HttpClient,
-    private val botToken: TelegramBotToken,
+    private val config: ConfigWithSecrets,
 ) : TelegramService {
     override suspend fun sendMessage(message: Message): String {
         val jsonMessage = JacksonJson.toJsonString(message)
         val response =
             when {
                 message.messageId.isNullOrBlank() -> {
-                    client.post(getURLSendMessage(botToken.value)) {
+                    client.post(getURLSendMessage(config.botApi)) {
                         contentType(ContentType.Application.Json)
                         setBody(jsonMessage)
                     }
                 }
                 else -> {
-                    client.post(getURLEditMessage(botToken.value)) {
+                    client.post(getURLEditMessage(config.botApi)) {
                         contentType(ContentType.Application.Json)
                         setBody(jsonMessage)
                     }

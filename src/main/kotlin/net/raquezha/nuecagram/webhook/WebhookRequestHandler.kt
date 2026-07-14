@@ -233,7 +233,7 @@ class WebhookRequestHandler(
         if (trackedPipeline == null) {
             logger.error {
                 "Bug: TrackedPipeline #$pipelineId is null immediately after addJobToTrackedPipeline(). " +
-                    "This indicates a bug in WebHookServiceImpl.addJobToTrackedPipeline()."
+                    "This indicates a bug in WebHookService.addJobToTrackedPipeline()."
             }
             return
         }
