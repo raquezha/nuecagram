@@ -39,5 +39,4 @@ out/
 /src/test/kotlin/net/raquezha/nuecagram/api/http-client.private.env.json
 /local.properties
 
-### Node ###
 node_modules/
