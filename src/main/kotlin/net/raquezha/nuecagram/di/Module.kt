@@ -66,8 +66,10 @@ val provideConfigModule =
     module {
         single { configWithSecrets(
             filename = "/application.json",
-            botApi = System.getenv("TELEGRAM_BOT_TOKEN") ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
-            secretToken = System.getenv("NUECAGRAM_SECRET_TOKEN") ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN missing"),
+            botApi = System.getenv("TELEGRAM_BOT_TOKEN")
+                ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
+            secretToken = System.getenv("NUECAGRAM_SECRET_TOKEN")
+                ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN missing"),
         ) }
     }
 

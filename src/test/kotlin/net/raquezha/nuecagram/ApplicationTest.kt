@@ -5,8 +5,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import net.raquezha.nuecagram.plugins.configureRouting
-import io.mockk.every
-import io.mockk.mockkObject
 import net.raquezha.nuecagram.di.testAppModule
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals

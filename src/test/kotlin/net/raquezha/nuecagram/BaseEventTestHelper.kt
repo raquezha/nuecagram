@@ -10,8 +10,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
-import io.mockk.every
-import io.mockk.mockkObject
 import net.raquezha.nuecagram.di.testAppModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.CHAT_ID
