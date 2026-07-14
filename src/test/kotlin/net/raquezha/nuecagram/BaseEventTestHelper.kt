@@ -26,7 +26,6 @@ import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
 import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.java.KoinJavaComponent.inject
-import org.koin.ktor.plugin.koin
 import org.koin.test.KoinTest
 
 abstract class BaseEventTestHelper : KoinTest {
@@ -36,11 +35,6 @@ abstract class BaseEventTestHelper : KoinTest {
     fun ApplicationTestBuilder.configureTestApplication() {
         application {
             configureRouting()
-            koin {
-                modules(
-                    testAppModule(),
-                )
-            }
         }
     }
 

@@ -4,6 +4,7 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
+import net.raquezha.nuecagram.plugins.configureRouting
 import io.mockk.every
 import io.mockk.mockkObject
 import net.raquezha.nuecagram.di.SystemEnvImpl
@@ -15,18 +16,13 @@ import org.junit.Test
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.core.context.startKoin
-import org.koin.ktor.plugin.koin
 
 class ApplicationTest {
     @Test
     fun testRoot() =
         testApplication {
             application {
-                koin {
-                    modules(
-                        testAppModule(),
-                    )
-                }
+                configureRouting()
             }
             val response = client.get("/")
             assertEquals(HttpStatusCode.OK, response.status)

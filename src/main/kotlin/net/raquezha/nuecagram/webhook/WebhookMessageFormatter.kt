@@ -339,10 +339,6 @@ class WebhookMessageFormatter {
                 logger.debug { "NoteEvent with noteableType=$noteableType, skipping" }
                 null
             }
-            else -> {
-                logger.warn { "Unknown NoteEvent noteableType: $noteableType, skipping" }
-                null
-            }
         }
     }
 

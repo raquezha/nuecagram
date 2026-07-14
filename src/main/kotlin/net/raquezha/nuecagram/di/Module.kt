@@ -1,7 +1,7 @@
 package net.raquezha.nuecagram.di
 
 import eu.vendeli.tgbot.TelegramBot
-import eu.vendeli.tgbot.types.internal.LogLvl
+import eu.vendeli.tgbot.types.component.LogLvl
 import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
@@ -51,6 +51,7 @@ fun testAppModule() =
         provideTokenProvider,
         provideHttpClient,
         provideTelegramBot,
+        provideWebhookRequestHandler,
         testModule,
     )
 
