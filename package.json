@@ -1,6 +1,6 @@
 {
   "name": "@raquezha/nuecagram",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "Nuecagram simplifies GitLab webhook handling, delivering notifications directly to your Telegram.",
   "main": "index.js",
   "scripts": {
