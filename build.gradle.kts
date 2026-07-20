@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktor)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.testballoon)
 }
 
 group = "net.raquezha"
@@ -109,6 +110,8 @@ dependencies {
     testImplementation(libs.koin.test.junit4)
     testImplementation(libs.mockk)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.testballoon.framework.core)
+    testRuntimeOnly(libs.junit.vintage.engine)
 
 }
 

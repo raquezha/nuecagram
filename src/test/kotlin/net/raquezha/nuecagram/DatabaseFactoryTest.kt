@@ -1,22 +1,27 @@
 package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
+import de.infix.testBalloon.framework.core.TestConfig
+import de.infix.testBalloon.framework.core.disable
+import de.infix.testBalloon.framework.core.testSuite
 import java.sql.DriverManager
-import kotlinx.coroutines.runBlocking
 import net.raquezha.nuecagram.db.DatabaseConfig
 import net.raquezha.nuecagram.db.DatabaseFactory
-import org.junit.Assume.assumeTrue
-import org.junit.Test
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 
-class DatabaseFactoryTest {
-    @Test
-    fun migratesSchemaAndReportsReady() {
-        assumeTrue(
-            "Docker is required for PostgreSQL integration tests",
-            DockerClientFactory.instance().isDockerAvailable,
-        )
+private val dockerAvailable = DockerClientFactory.instance().isDockerAvailable
+
+val DatabaseFactoryTests by testSuite {
+    test("reports unavailable before initialization") {
+        DatabaseFactory.close()
+        assertThat(DatabaseFactory.isReady()).isFalse()
+    }
+
+    test(
+        "migrates schema and reports ready",
+        testConfig = if (dockerAvailable) TestConfig else TestConfig.disable(),
+    ) {
         PostgreSQLContainer<Nothing>("postgres:16-alpine").use { postgres ->
             postgres.start()
             try {
@@ -49,7 +54,7 @@ class DatabaseFactoryTest {
                     "event_summaries",
                     "mute_states",
                 )
-                assertThat(runBlocking { DatabaseFactory.isReady() }).isTrue()
+                assertThat(DatabaseFactory.isReady()).isTrue()
             } finally {
                 DatabaseFactory.close()
             }
