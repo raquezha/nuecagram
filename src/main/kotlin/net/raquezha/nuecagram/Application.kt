@@ -6,6 +6,7 @@ import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import kotlinx.serialization.json.Json
+import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.di.appModule
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.plugins.configureSerialization
@@ -78,6 +79,8 @@ fun configWithSecrets(
 }
 
 fun Application.module() {
+    DatabaseFactory.install(this)
+
     install(Koin) {
         slf4jLogger()
         modules(appModule())

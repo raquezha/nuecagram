@@ -26,6 +26,16 @@ class ApplicationTest {
             assertEquals("This application is made to receive webhooks request and send telegram notification", response.bodyAsText())
         }
 
+    @Test
+    fun testHealthRoutes() =
+        testApplication {
+            application {
+                configureRouting()
+            }
+            assertEquals(HttpStatusCode.OK, client.get("/nuecagram/health/live").status)
+            assertEquals(HttpStatusCode.ServiceUnavailable, client.get("/nuecagram/health/ready").status)
+        }
+
     companion object {
         @BeforeClass
         @JvmStatic

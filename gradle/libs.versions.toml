@@ -14,6 +14,11 @@ jib = "3.4.3"
 mockk = "1.14.11"
 vendeli = "8.4.1"
 gitlab4jApi = "6.3.0"
+exposed = "1.0.0"
+flyway = "11.10.5"
+hikari = "6.3.0"
+postgresql = "42.7.7"
+testcontainers = "1.21.3"
 
 [libraries]
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
@@ -43,6 +48,13 @@ koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
 koin-annotation = { module = "io.insert-koin:koin-annotations", version.ref = "koinAnnotations" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
 coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
+exposed-core = { module = "org.jetbrains.exposed:exposed-core", version.ref = "exposed" }
+exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 
 koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin" }
 koin-test-junit4 = { module = "io.insert-koin:koin-test-junit4", version.ref = "koin" }

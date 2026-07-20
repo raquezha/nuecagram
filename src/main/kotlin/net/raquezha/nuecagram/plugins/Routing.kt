@@ -2,6 +2,7 @@ package net.raquezha.nuecagram.plugins
 
 import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.http.HttpStatusCode.Companion.OK
+import io.ktor.http.HttpStatusCode.Companion.ServiceUnavailable
 import io.ktor.server.application.*
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
@@ -11,6 +12,7 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
@@ -20,12 +22,25 @@ import org.koin.ktor.ext.inject
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 
+private fun healthPath() =
+    (System.getenv("NUECAGRAM_BASE_PATH")?.trim()?.removeSuffix("/") ?: "/nuecagram").also {
+        require(it.startsWith('/')) { "NUECAGRAM_BASE_PATH must start with '/'" }
+    } + "/health"
+
 fun Application.configureRouting() {
     val webhookService by inject<WebHookService>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
 
     routing {
+        get("${healthPath()}/live") {
+            call.respond(OK)
+        }
+
+        get("${healthPath()}/ready") {
+            call.respond(if (DatabaseFactory.isReady()) OK else ServiceUnavailable)
+        }
+
         get("/") {
             call.respondText("This application is made to receive webhooks request and send telegram notification")
         }

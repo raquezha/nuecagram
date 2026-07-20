@@ -95,6 +95,12 @@ dependencies {
     implementation(libs.koin.annotation)
     implementation(libs.kotlin.logging)
     implementation(libs.vendeli.telegram.bot)
+    implementation(libs.hikari)
+    implementation(libs.postgresql)
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.postgresql)
+    implementation(libs.exposed.core)
+    implementation(libs.exposed.jdbc)
     "ksp"(libs.vendeli.ksp)
 
     testImplementation(libs.kotlin.test)
@@ -102,6 +108,7 @@ dependencies {
     testImplementation(libs.koin.test)
     testImplementation(libs.koin.test.junit4)
     testImplementation(libs.mockk)
+    testImplementation(libs.testcontainers.postgresql)
 
 }
 
