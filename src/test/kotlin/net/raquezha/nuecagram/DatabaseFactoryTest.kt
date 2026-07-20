@@ -4,6 +4,9 @@ import com.google.common.truth.Truth.assertThat
 import de.infix.testBalloon.framework.core.TestConfig
 import de.infix.testBalloon.framework.core.disable
 import de.infix.testBalloon.framework.core.testSuite
+import net.raquezha.nuecagram.testing.BehaviorStyle
+import net.raquezha.nuecagram.testing.Scenario
+import net.raquezha.nuecagram.testing.behaviorStyle
 import java.sql.DriverManager
 import net.raquezha.nuecagram.db.DatabaseConfig
 import net.raquezha.nuecagram.db.DatabaseFactory
@@ -12,10 +15,25 @@ import org.testcontainers.containers.PostgreSQLContainer
 
 private val dockerAvailable = DockerClientFactory.instance().isDockerAvailable
 
+private class ReadinessScenario {
+    var ready = false
+}
+
 val DatabaseFactoryTests by testSuite {
-    test("reports unavailable before initialization") {
-        DatabaseFactory.close()
-        assertThat(DatabaseFactory.isReady()).isFalse()
+    Scenario(
+        "database readiness before initialization",
+        context = { ReadinessScenario() },
+        testConfig = TestConfig.behaviorStyle(BehaviorStyle.Hierarchical),
+    ) {
+        Given("the database factory is closed") {
+            DatabaseFactory.close()
+        }
+        When("readiness is checked") {
+            ready = DatabaseFactory.isReady()
+        }
+        Then("it is unavailable") {
+            assertThat(ready).isFalse()
+        }
     }
 
     test(
