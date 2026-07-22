@@ -248,6 +248,13 @@ class WebHookService(
         logger.debug { "Cleared tracking for pipeline $pipelineId in installation $installationId" }
     }
 
+    fun resetRuntimeState() {
+        requestWindows.clear()
+        runningJobsIdMap.clear()
+        pipelineMessageIdMap.clear()
+        trackedPipelines.clear()
+    }
+
     fun cleanupStaleEntries(maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS) {
         val cutoff = System.currentTimeMillis() - maxAgeMs
 

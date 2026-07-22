@@ -22,6 +22,7 @@ import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
+import net.raquezha.nuecagram.webhook.WebHookService
 import org.junit.AfterClass
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -40,6 +41,7 @@ abstract class BaseEventTestHelper : KoinTest {
     protected lateinit var webhookToken: String
 
     private val telegramService: TelegramService by inject(TelegramService::class.java)
+    private val webhookService: WebHookService by inject(WebHookService::class.java)
 
     fun ApplicationTestBuilder.configureTestApplication() {
         application {
@@ -50,20 +52,10 @@ abstract class BaseEventTestHelper : KoinTest {
     @Before
     fun setUp() {
         ensureTestDatabase()
+        webhookService.resetRuntimeState()
         (telegramService as MockTelegramService).reset()
 
         runBlocking {
-            DatabaseFactory.dbQuery { connection ->
-                connection.createStatement().use { statement ->
-                    statement.executeUpdate(
-                        """
-                        TRUNCATE TABLE installations, webhook_secrets, management_links,
-                        audit_events, event_summaries, mute_states CASCADE
-                        """.trimIndent(),
-                    )
-                }
-            }
-
             val repository = InstallationRepository()
             val installationNumber = installationCounter.incrementAndGet()
             installation =
