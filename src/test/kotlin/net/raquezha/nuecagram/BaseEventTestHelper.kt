@@ -10,6 +10,7 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.headers
+import io.ktor.http.isSuccess
 import io.ktor.server.testing.ApplicationTestBuilder
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
@@ -100,7 +101,14 @@ abstract class BaseEventTestHelper : KoinTest {
     suspend fun ApplicationTestBuilder.postWebhook(
         gitlabEvent: String,
         payload: String,
-    ): String = postWebhookResponse(gitlabEvent, payload).bodyAsText()
+    ): String {
+        val response = postWebhookResponse(gitlabEvent, payload)
+        return if (response.status.isSuccess()) {
+            "Webhook received successfully"
+        } else {
+            response.bodyAsText()
+        }
+    }
 
     companion object {
         const val USER_AGENT = "GitLab/16.11.2-ee"

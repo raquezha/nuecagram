@@ -73,6 +73,10 @@ fun Application.configureRouting() {
                 try {
                     webhookRequestHandler.processQueue()
                 } catch (e: Exception) {
+                    if (e is java.util.concurrent.CancellationException) {
+                        logger.debug { "Queue processor stopped" }
+                        break
+                    }
                     logger.error(e) { "Queue processor crashed, restarting in ${QUEUE_RESTART_DELAY_MS}ms..." }
                     delay(QUEUE_RESTART_DELAY_MS)
                 }
