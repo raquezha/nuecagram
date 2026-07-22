@@ -147,19 +147,21 @@ abstract class BaseEventTestHelper : KoinTest {
         private fun ensureTestDatabase() {
             val dockerAvailable = DockerClientFactory.instance().isDockerAvailable
             assumeTrue("Docker is required for webhook tests", dockerAvailable)
-            if (testDatabaseStarted) {
-                return
+            if (!testDatabaseStarted) {
+                postgres.start()
+                testDatabaseStarted = true
             }
-            postgres.start()
             DatabaseFactory.initialize(DatabaseConfig(postgres.jdbcUrl, postgres.username, postgres.password))
-            testDatabaseStarted = true
         }
 
         @AfterClass
         @JvmStatic
         fun tearDownClass() {
             DatabaseFactory.close()
-            postgres.stop()
+            if (testDatabaseStarted) {
+                postgres.stop()
+                testDatabaseStarted = false
+            }
             stopKoin()
         }
     }
