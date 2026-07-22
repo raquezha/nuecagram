@@ -28,9 +28,10 @@ class AuthenticatedWebhookRoutingTest : BaseEventTestHelper() {
                     repository.rotateWebhookSecret(installation.id, Instant.now().minusSeconds(60))
                 }
 
-            val invalidResponse = pipelineResponse("invalid")
+            val invalidToken = "not-a-valid-token"
+            val invalidResponse = pipelineResponse(invalidToken)
             assertThat(invalidResponse.status).isEqualTo(HttpStatusCode.Unauthorized)
-            assertThat(invalidResponse.bodyAsText()).doesNotContain("invalid")
+            assertThat(invalidResponse.bodyAsText()).doesNotContain(invalidToken)
             assertThat(pipelineResponse(expired).status)
                 .isEqualTo(HttpStatusCode.Unauthorized)
             assertThat(pipelineResponse(webhookToken).status)
