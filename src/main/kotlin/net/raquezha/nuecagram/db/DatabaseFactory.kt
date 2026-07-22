@@ -55,6 +55,12 @@ object DatabaseFactory {
         }
     }
 
+    suspend fun <T> dbQuery(block: (java.sql.Connection) -> T): T =
+        withContext(Dispatchers.IO) {
+            val source = dataSource ?: throw IllegalStateException("DatabaseFactory is not initialized")
+            source.connection.use(block)
+        }
+
     suspend fun isReady() =
         withContext(Dispatchers.IO) {
             val source = dataSource ?: return@withContext false
