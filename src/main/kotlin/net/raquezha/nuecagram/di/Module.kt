@@ -57,7 +57,6 @@ val testModule =
                 host = "localhost",
                 port = 8080,
                 botApi = "mock_bot_api",
-                secretToken = "mock_secret_token",
             )
         }
     }

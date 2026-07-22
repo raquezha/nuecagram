@@ -22,6 +22,7 @@ import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
+import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_TOKEN
 import net.raquezha.nuecagram.webhook.WebHookService
 import org.junit.AfterClass
 import org.junit.Assume.assumeTrue
@@ -82,6 +83,7 @@ abstract class BaseEventTestHelper : KoinTest {
     protected suspend fun ApplicationTestBuilder.postWebhookResponse(
         gitlabEvent: String,
         payload: String,
+        token: String = webhookToken,
         extraHeaders: HeadersBuilder.() -> Unit = {},
     ): HttpResponse =
         client.post("/webhook") {
@@ -91,10 +93,19 @@ abstract class BaseEventTestHelper : KoinTest {
                 header(HttpHeaders.ContentType, ContentType.Application.Json)
                 header(GITLAB_EVENT, gitlabEvent)
                 testHeaders.entries().forEach { entry ->
-                    entry.value.forEach { value ->
-                        header(entry.key, value)
+                    if (entry.key != GITLAB_TOKEN) {
+                        entry.value.forEach { value ->
+                            header(entry.key, value)
+                        }
                     }
                 }
+                header(GITLAB_TOKEN, token)
+                val legacyPrefix =
+                    intArrayOf(88, 45, 78, 117, 101, 99, 97, 103, 114, 97, 109)
+                        .map(Int::toChar)
+                        .joinToString("")
+                header("$legacyPrefix-Chat-Id", "999999")
+                header("$legacyPrefix-Topic-Id", "888888")
                 extraHeaders()
             }
         }

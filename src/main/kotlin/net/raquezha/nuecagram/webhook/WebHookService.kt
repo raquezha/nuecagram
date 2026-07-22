@@ -10,6 +10,7 @@ import io.ktor.server.request.uri
 import java.util.UUID
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
+import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_TOKEN
 import org.gitlab4j.api.utils.JacksonJson
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.DeploymentEvent
@@ -100,6 +101,8 @@ class WebHookService(
         val installation =
             installationRepository.resolveWebhookInstallation(webhookData.gitlabToken)
                 ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "invalid X-Gitlab-Token header")
+
+        installationRepository.confirmWebhookSecret(installation.secretId)
 
         if (installation.muted) {
             throw SkipEventException()
@@ -303,7 +306,7 @@ class WebHookService(
             request.headers[GITLAB_EVENT]?.trim()
                 ?: throw WebhookRequestException(HttpStatusCode.BadRequest, "missing '$GITLAB_EVENT' header")
         val gitlabToken =
-            request.headers["X-Gitlab-Token"]?.trim()?.takeIf(String::isNotBlank)
+            request.headers[GITLAB_TOKEN]?.trim()?.takeIf(String::isNotBlank)
                 ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "missing 'X-Gitlab-Token' header")
         val event =
             runCatching { jacksonJson.unmarshal(Event::class.java, body) }.getOrElse {
@@ -320,9 +323,7 @@ class WebHookService(
         }
     }
 
-    private fun ApplicationCall.clientId(): String =
-        request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf(String::isNotBlank)
-            ?: request.origin.remoteHost
+    private fun ApplicationCall.clientId(): String = request.origin.remoteHost
 }
 
 /**

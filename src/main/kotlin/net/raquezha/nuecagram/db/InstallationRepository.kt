@@ -39,6 +39,7 @@ data class ConsumedManagementLink(
 )
 
 data class InstallationContext(
+    val secretId: UUID,
     val installationId: UUID,
     val chatDetails: ChatDetails,
     val muted: Boolean,
@@ -181,6 +182,7 @@ class InstallationRepository {
                         null
                     } else {
                         InstallationContext(
+                            secretId = verified.secretId,
                             installationId = verified.installationId,
                             chatDetails =
                                 ChatDetails(
