@@ -1,6 +1,7 @@
 package net.raquezha.nuecagram.db
 
 import java.sql.PreparedStatement
+import java.sql.Types
 import java.time.Instant
 import java.util.UUID
 
@@ -282,9 +283,9 @@ class InstallationRepository {
 }
 
 private fun PreparedStatement.setNullableInstant(index: Int, value: Instant?) {
-    if (value == null) setObject(index, null) else setObject(index, value)
+    if (value == null) setNull(index, Types.TIMESTAMP_WITH_TIMEZONE) else setObject(index, value)
 }
 
 private fun PreparedStatement.setNullableLong(index: Int, value: Long?) {
-    if (value == null) setObject(index, null) else setLong(index, value)
+    if (value == null) setNull(index, Types.BIGINT) else setLong(index, value)
 }
