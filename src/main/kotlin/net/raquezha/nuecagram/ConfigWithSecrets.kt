@@ -6,5 +6,5 @@ data class ConfigWithSecrets(
     val host: String,
     val port: Int,
     val botApi: String,
-    val secretToken: String,
+    val secretToken: String? = null,
 )

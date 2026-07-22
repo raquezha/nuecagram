@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
+import net.raquezha.nuecagram.webhook.WebhookRequestException
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.core.parameter.parametersOf
 import org.koin.ktor.ext.inject
@@ -56,11 +57,13 @@ fun Application.configureRouting() {
 
                 call.respond(OK, "Webhook received successfully")
             } catch (skipEx: SkipEventException) {
-                // Skipped events are valid - return 200 OK (not an error)
                 call.respond(OK, "Event skipped: not relevant")
+            } catch (e: WebhookRequestException) {
+                logger.warn { "Rejected webhook request: ${e.message}" }
+                call.respond(e.status, e.message)
             } catch (e: Exception) {
                 logger.error(e) { "Failed to process webhook request: ${e.message}" }
-                call.respond(OK, "Webhook received")
+                call.respond(io.ktor.http.HttpStatusCode.InternalServerError, "Webhook processing failed")
             }
         }
 

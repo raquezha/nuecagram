@@ -68,8 +68,6 @@ val provideConfigModule =
             filename = "/application.json",
             botApi = System.getenv("TELEGRAM_BOT_TOKEN")
                 ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
-            secretToken = System.getenv("NUECAGRAM_SECRET_TOKEN")
-                ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN missing"),
         ) }
     }
 
@@ -145,10 +143,8 @@ val provideWebhookModule =
             RandomMessageProvider()
         }
 
-        // Define WebHookHandlerImpl as a single instance, injecting the secretToken and WebHookListenerBuilder
         single<WebHookService> {
-            val config: net.raquezha.nuecagram.ConfigWithSecrets = get()
-            WebHookService(config.secretToken, get())
+            WebHookService(get())
         }
     }
 

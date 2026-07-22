@@ -5,6 +5,7 @@ import java.sql.Types
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
+import net.raquezha.nuecagram.webhook.ChatDetails
 
 private const val PARAM_1 = 1
 private const val PARAM_2 = 2
@@ -35,6 +36,12 @@ data class VerifiedSecret(
 data class ConsumedManagementLink(
     val linkId: UUID,
     val installationId: UUID,
+)
+
+data class InstallationContext(
+    val installationId: UUID,
+    val chatDetails: ChatDetails,
+    val muted: Boolean,
 )
 
 class InstallationRepository {
@@ -153,6 +160,60 @@ class InstallationRepository {
             }
             candidates.firstOrNull()?.let { VerifiedSecret(it.first, it.second) }
         }
+
+    suspend fun resolveWebhookInstallation(
+        raw: String,
+        now: Instant = Instant.now(),
+    ): InstallationContext? {
+        val verified = verifyWebhookSecret(raw, now) ?: return null
+        return DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                SELECT i.telegram_chat_id, i.telegram_topic_id, COALESCE(m.muted, FALSE) AS muted
+                FROM installations i
+                LEFT JOIN mute_states m ON m.installation_id = i.id
+                WHERE i.id = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setObject(PARAM_1, verified.installationId)
+                statement.executeQuery().use { result ->
+                    if (!result.next()) {
+                        null
+                    } else {
+                        InstallationContext(
+                            installationId = verified.installationId,
+                            chatDetails =
+                                ChatDetails(
+                                    chatId = result.getLong("telegram_chat_id").toString(),
+                                    topicId = result.getNullableLong("telegram_topic_id")?.toString(),
+                                ),
+                            muted = result.getBoolean("muted"),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun setMuted(
+        installationId: UUID,
+        muted: Boolean,
+    ) {
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO mute_states (installation_id, muted)
+                VALUES (?, ?)
+                ON CONFLICT (installation_id)
+                DO UPDATE SET muted = EXCLUDED.muted, updated_at = CURRENT_TIMESTAMP
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setObject(PARAM_1, installationId)
+                statement.setBoolean(PARAM_2, muted)
+                statement.executeUpdate()
+            }
+        }
+    }
 
     suspend fun issueManagementLink(
         installationId: UUID,
@@ -298,3 +359,6 @@ private fun PreparedStatement.setInstant(index: Int, value: Instant) {
 private fun PreparedStatement.setNullableLong(index: Int, value: Long?) {
     if (value == null) setNull(index, Types.BIGINT) else setLong(index, value)
 }
+
+private fun java.sql.ResultSet.getNullableLong(columnLabel: String): Long? =
+    getLong(columnLabel).takeUnless { wasNull() }

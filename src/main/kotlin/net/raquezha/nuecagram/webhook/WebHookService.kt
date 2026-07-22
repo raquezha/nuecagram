@@ -1,15 +1,15 @@
 package net.raquezha.nuecagram.webhook
 
 import io.github.oshai.kotlinlogging.KLogger
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.queryString
 import io.ktor.server.request.receiveText
 import io.ktor.server.request.uri
-import net.raquezha.nuecagram.webhook.NuecagramHeaders.CHAT_ID
+import java.util.UUID
+import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
-import net.raquezha.nuecagram.webhook.NuecagramHeaders.SECRET_TOKEN
-import net.raquezha.nuecagram.webhook.NuecagramHeaders.TOPIC_ID
-import org.gitlab4j.api.GitLabApiException
 import org.gitlab4j.api.utils.JacksonJson
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.DeploymentEvent
@@ -26,24 +26,20 @@ import org.gitlab4j.api.webhook.WikiPageEvent
 import java.util.concurrent.ConcurrentHashMap
 
 class WebHookService(
-    private var secretToken: String? = null,
-    private var logger: KLogger,
+    private val logger: KLogger,
+    private val installationRepository: InstallationRepository = InstallationRepository(),
+    private val maxPayloadSizeBytes: Int = DEFAULT_MAX_PAYLOAD_SIZE,
+    private val maxRequestsPerWindow: Int = DEFAULT_MAX_REQUESTS_PER_WINDOW,
+    private val rateLimitWindowMs: Long = DEFAULT_RATE_LIMIT_WINDOW_MS,
 ) {
     private val jacksonJson: JacksonJson = JacksonJson()
-
-    fun isValidSecretToken(token: String?): Boolean {
-        val ourToken: String? = getSecretToken()
-        if (ourToken.isNullOrBlank() || token == null) return false
-        return java.security.MessageDigest.isEqual(
-            ourToken.toByteArray(Charsets.UTF_8),
-            token.toByteArray(Charsets.UTF_8),
-        )
-    }
+    private val requestWindows = ConcurrentHashMap<String, RequestWindow>()
 
     companion object {
         const val DEFAULT_STALE_ENTRY_TTL_MS = 2L * 60 * 60 * 1000
-        /** Maximum allowed payload size in bytes (1 MB) to prevent DoS attacks */
-        private const val MAX_PAYLOAD_SIZE = 1_048_576
+        private const val DEFAULT_MAX_PAYLOAD_SIZE = 1_048_576
+        private const val DEFAULT_MAX_REQUESTS_PER_WINDOW = 60
+        private const val DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000L
     }
 
     private val supportedEvents =
@@ -61,71 +57,127 @@ class WebHookService(
             ReleaseEvent.X_GITLAB_EVENT,
         )
 
-    /**
-     * Entry for tracking job/build message IDs with timestamp for cleanup.
-     */
+    private data class ParsedWebhookData(
+        val event: Event,
+        val headerEvent: String,
+        val gitlabToken: String,
+    )
+
     private data class JobEntry(
         val messageId: String,
         val createdAt: Long = System.currentTimeMillis(),
     )
 
-    private val runningJobsIdMap = ConcurrentHashMap<Long, JobEntry>()
-    private val pipelineMessageIdMap = ConcurrentHashMap<Long, String>()
-    private val trackedPipelines = ConcurrentHashMap<Long, TrackedPipeline>()
+    private data class RequestWindow(
+        var count: Int,
+        val startedAt: Long,
+    )
 
-    suspend fun handleRequest(call: ApplicationCall): EventData =
-        try {
-            val webhookData = call.getWebhookData()
-            handleSecretToken(webhookData.headerSecretToken)
-            handleEvents(webhookData.headerEvent)
-            webhookData
-        } catch (exception: Exception) {
-            val errorMessage =
-                String.format(
-                    "Error processing webhook!\n[%s] %s",
-                    exception.javaClass.simpleName,
-                    exception.message,
-                )
-            logger.error { errorMessage }
-            throw GitLabApiException(errorMessage)
+    private data class InstallationJobKey(
+        val installationId: UUID,
+        val jobId: Long,
+    )
+
+    private data class InstallationPipelineKey(
+        val installationId: UUID,
+        val pipelineId: Long,
+    )
+
+    private val runningJobsIdMap = ConcurrentHashMap<InstallationJobKey, JobEntry>()
+    private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, String>()
+    private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
+
+    suspend fun handleRequest(call: ApplicationCall): EventData {
+        val clientId = call.clientId()
+        if (isRateLimited(clientId)) {
+            logger.warn { "Rate limit exceeded for webhook client $clientId" }
+            throw WebhookRequestException(HttpStatusCode.TooManyRequests, "webhook rate limit exceeded")
         }
 
-    fun getMessageIdOfEvent(buildEventId: Long): String? = runningJobsIdMap[buildEventId]?.messageId
+        val webhookData = call.getWebhookData()
+        handleEvents(webhookData.headerEvent)
+
+        val installation =
+            installationRepository.resolveWebhookInstallation(webhookData.gitlabToken)
+                ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "invalid X-Gitlab-Token header")
+
+        if (installation.muted) {
+            throw SkipEventException()
+        }
+
+        return EventData(
+            installationId = installation.installationId,
+            event = webhookData.event,
+            headerEvent = webhookData.headerEvent,
+            chatDetails = installation.chatDetails,
+        )
+    }
+
+    fun isRateLimited(
+        clientId: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Boolean {
+        val window =
+            requestWindows.compute(clientId) { _, existing ->
+                when {
+                    existing == null || nowMs - existing.startedAt >= rateLimitWindowMs -> RequestWindow(1, nowMs)
+                    else -> {
+                        existing.count += 1
+                        existing
+                    }
+                }
+            } ?: RequestWindow(1, nowMs)
+
+        requestWindows.entries.removeIf { (_, existing) -> nowMs - existing.startedAt >= rateLimitWindowMs }
+        return window.count > maxRequestsPerWindow
+    }
+
+    fun getMessageIdOfEvent(
+        installationId: UUID,
+        buildEventId: Long,
+    ): String? = runningJobsIdMap[InstallationJobKey(installationId, buildEventId)]?.messageId
 
     fun setMessageIdOfEvent(
+        installationId: UUID,
         buildEventId: Long,
         messageId: String,
     ) {
-        runningJobsIdMap[buildEventId] = JobEntry(messageId)
+        runningJobsIdMap[InstallationJobKey(installationId, buildEventId)] = JobEntry(messageId)
     }
 
-    fun clearMessageIdOfEvent(buildEventId: Long) {
-        runningJobsIdMap.remove(buildEventId)
+    fun clearMessageIdOfEvent(
+        installationId: UUID,
+        buildEventId: Long,
+    ) {
+        runningJobsIdMap.remove(InstallationJobKey(installationId, buildEventId))
     }
 
-    fun getPipelineMessageId(pipelineId: Long): String? = pipelineMessageIdMap[pipelineId]
+    fun getPipelineMessageId(
+        installationId: UUID,
+        pipelineId: Long,
+    ): String? = pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)]
 
     fun setPipelineMessageId(
+        installationId: UUID,
         pipelineId: Long,
         messageId: String,
     ) {
-        pipelineMessageIdMap[pipelineId] = messageId
+        pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)] = messageId
     }
 
-    fun clearPipelineMessageId(pipelineId: Long) {
-        pipelineMessageIdMap.remove(pipelineId)
-    }
-
-    // ========== Job-Only Mode Tracking ==========
-
-    fun getTrackedPipeline(pipelineId: Long): TrackedPipeline? = trackedPipelines[pipelineId]
+    fun getTrackedPipeline(
+        installationId: UUID,
+        pipelineId: Long,
+    ): TrackedPipeline? = trackedPipelines[InstallationPipelineKey(installationId, pipelineId)]
 
     fun addJobToTrackedPipeline(
+        installationId: UUID,
         pipelineId: Long,
         jobInfo: JobInfo,
         metadata: PipelineMetadata?,
     ) {
-        val existing = trackedPipelines[pipelineId]
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        val existing = trackedPipelines[key]
         if (existing != null) {
             existing.putJob(jobInfo)
             // Update metadata if provided
@@ -145,46 +197,55 @@ class WebHookService(
                     userName = metadata?.userName,
                 )
             newTracked.putJob(jobInfo)
-            trackedPipelines[pipelineId] = newTracked
+            trackedPipelines[key] = newTracked
         }
         logger.debug {
-            "Added job ${jobInfo.id} to tracked pipeline $pipelineId. " +
-            "Total jobs: ${trackedPipelines[pipelineId]?.jobs?.size}"
+            "Added job ${jobInfo.id} to tracked pipeline $pipelineId for installation $installationId. " +
+                "Total jobs: ${trackedPipelines[key]?.jobs?.size}"
         }
     }
 
-    fun markPipelineEventReceived(pipelineId: Long) {
-        val existing = trackedPipelines[pipelineId]
+    fun markPipelineEventReceived(
+        installationId: UUID,
+        pipelineId: Long,
+    ) {
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        val existing = trackedPipelines[key]
         if (existing != null) {
             existing.setHasPipelineEvent(true)
         } else {
-            trackedPipelines[pipelineId] =
+            trackedPipelines[key] =
                 TrackedPipeline(
                     messageId = null,
                     hasPipelineEvent = true,
                 )
         }
-        logger.debug { "Marked pipeline $pipelineId as having PipelineEvent" }
+        logger.debug { "Marked pipeline $pipelineId for installation $installationId as having PipelineEvent" }
     }
 
-    fun hasPipelineEvent(pipelineId: Long): Boolean = trackedPipelines[pipelineId]?.hasPipelineEvent == true
+    fun hasPipelineEvent(
+        installationId: UUID,
+        pipelineId: Long,
+    ): Boolean = trackedPipelines[InstallationPipelineKey(installationId, pipelineId)]?.hasPipelineEvent == true
 
     fun updateTrackedPipelineMessageId(
+        installationId: UUID,
         pipelineId: Long,
         messageId: String,
     ) {
-        val existing = trackedPipelines[pipelineId]
-        if (existing != null) {
-            existing.setMessageId(messageId)
-        }
-        // Also update the simple map for backward compatibility
-        pipelineMessageIdMap[pipelineId] = messageId
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        trackedPipelines[key]?.setMessageId(messageId)
+        pipelineMessageIdMap[key] = messageId
     }
 
-    fun clearTrackedPipeline(pipelineId: Long) {
-        trackedPipelines.remove(pipelineId)
-        pipelineMessageIdMap.remove(pipelineId)
-        logger.debug { "Cleared tracking for pipeline $pipelineId" }
+    fun clearTrackedPipeline(
+        installationId: UUID,
+        pipelineId: Long,
+    ) {
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        trackedPipelines.remove(key)
+        pipelineMessageIdMap.remove(key)
+        logger.debug { "Cleared tracking for pipeline $pipelineId in installation $installationId" }
     }
 
     fun cleanupStaleEntries(maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS) {
@@ -222,54 +283,39 @@ class WebHookService(
         }
     }
 
-    private fun handleSecretToken(secretToken: String?) {
-        if (!isValidSecretToken(secretToken)) {
-            val message = "$SECRET_TOKEN mismatch!"
-            logger.error { message }
-            throw GitLabApiException(message)
-        }
-    }
-
-    fun getSecretToken(): String? = this.secretToken
-
-    fun setSecretToken(secretToken: String?) {
-        this.secretToken = secretToken
-    }
-
-    private suspend fun ApplicationCall.getWebhookData(): EventData {
+    private suspend fun ApplicationCall.getWebhookData(): ParsedWebhookData {
         val body = receiveText()
-        if (body.length > MAX_PAYLOAD_SIZE) {
-            throw GitLabApiException("Payload too large: ${body.length} bytes (max: $MAX_PAYLOAD_SIZE)")
+        if (body.length > maxPayloadSizeBytes) {
+            throw WebhookRequestException(
+                HttpStatusCode.PayloadTooLarge,
+                "payload too large: ${body.length} bytes (max: $maxPayloadSizeBytes)",
+            )
         }
 
-        val event = jacksonJson.unmarshal(Event::class.java, body)
+        val eventName =
+            request.headers[GITLAB_EVENT]?.trim()
+                ?: throw WebhookRequestException(HttpStatusCode.BadRequest, "missing '$GITLAB_EVENT' header")
+        val gitlabToken =
+            request.headers["X-Gitlab-Token"]?.trim()?.takeIf(String::isNotBlank)
+                ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "missing 'X-Gitlab-Token' header")
+        val event =
+            runCatching { jacksonJson.unmarshal(Event::class.java, body) }.getOrElse {
+                throw WebhookRequestException(HttpStatusCode.BadRequest, "invalid webhook payload")
+            }
         event.requestUrl = request.uri
         event.requestQueryString = request.queryString()
-        event.requestSecretToken = secretToken
-
-        return EventData(
-            event = event,
-            headerEvent =
-                request.headers[GITLAB_EVENT]?.trim()
-                    ?: throw GitLabApiException("missing '$GITLAB_EVENT' header!"),
-            headerSecretToken =
-                request.headers[SECRET_TOKEN]?.trim(
-                    ' ',
-                    '[',
-                    ']',
-                ) ?: throw GitLabApiException("missing '$SECRET_TOKEN' header!"),
-            headerChatId = request.headers[CHAT_ID]?.trim() ?: throw GitLabApiException("missing '$CHAT_ID' header!"),
-            headerTopicId = request.headers[TOPIC_ID]?.trim(),
-        )
+        return ParsedWebhookData(event, eventName, gitlabToken)
     }
 
-    private fun handleEvents(eventName: String?) {
+    private fun handleEvents(eventName: String) {
         if (eventName !in supportedEvents) {
-            val message = "$eventName event is not yet supported."
-            logger.error { message }
-            throw GitLabApiException(message)
+            throw WebhookRequestException(HttpStatusCode.BadRequest, "$eventName event is not yet supported")
         }
     }
+
+    private fun ApplicationCall.clientId(): String =
+        request.headers["X-Forwarded-For"]?.substringBefore(',')?.trim()?.takeIf(String::isNotBlank)
+            ?: request.origin.remoteHost
 }
 
 /**
