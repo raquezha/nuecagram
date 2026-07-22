@@ -3,6 +3,7 @@ package net.raquezha.nuecagram.db
 import java.sql.PreparedStatement
 import java.sql.Types
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
 private const val PARAM_1 = 1
@@ -95,7 +96,7 @@ class InstallationRepository {
                 WHERE installation_id = ? AND id <> ? AND revoked_at IS NULL
                 """.trimIndent(),
             ).use { statement ->
-                statement.setObject(PARAM_1, graceUntil)
+                statement.setInstant(PARAM_1, graceUntil)
                 statement.setObject(PARAM_2, installationId)
                 statement.setObject(PARAM_3, issued.id)
                 statement.executeUpdate()
@@ -112,7 +113,7 @@ class InstallationRepository {
             connection.prepareStatement(
                 "UPDATE webhook_secrets SET confirmed_at = ? WHERE id = ? AND confirmed_at IS NULL",
             ).use { statement ->
-                statement.setObject(PARAM_1, confirmedAt)
+                statement.setInstant(PARAM_1, confirmedAt)
                 statement.setObject(PARAM_2, secretId)
                 statement.executeUpdate() == 1
             }
@@ -133,8 +134,8 @@ class InstallationRepository {
                   AND secret_digest = ?
                 """.trimIndent(),
             ).use { statement ->
-                statement.setObject(PARAM_1, now)
-                statement.setObject(PARAM_2, now)
+                statement.setInstant(PARAM_1, now)
+                statement.setInstant(PARAM_2, now)
                 statement.setBytes(PARAM_3, CredentialCodec.digest(raw))
                 statement.executeQuery().use { result ->
                     while (result.next()) {
@@ -162,7 +163,7 @@ class InstallationRepository {
             INSERT INTO management_links (id, installation_id, token_digest, token_hash, expires_at)
             VALUES (?, ?, ?, ?, ?)
         """.trimIndent(),
-        bindExpiration = { setObject(PARAM_5, expiresAt) },
+        bindExpiration = { setInstant(PARAM_5, expiresAt) },
     )
 
     suspend fun consumeManagementLink(
@@ -184,7 +185,7 @@ class InstallationRepository {
                 WHERE consumed_at IS NULL AND expires_at > ? AND token_digest = ?
                 """.trimIndent(),
             ).use { statement ->
-                statement.setObject(PARAM_1, now)
+                statement.setInstant(PARAM_1, now)
                 statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
                 statement.executeQuery().use { result ->
                     while (result.next()) {
@@ -204,9 +205,9 @@ class InstallationRepository {
             connection.prepareStatement(
                 "UPDATE management_links SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL AND expires_at > ?",
             ).use { statement ->
-                statement.setObject(PARAM_1, now)
+                statement.setInstant(PARAM_1, now)
                 statement.setObject(PARAM_2, match.id)
-                statement.setObject(PARAM_3, now)
+                statement.setInstant(PARAM_3, now)
                 if (statement.executeUpdate() == 1) ConsumedManagementLink(match.id, match.installationId) else null
             }
         }
@@ -216,7 +217,7 @@ class InstallationRepository {
             connection.prepareStatement(
                 "DELETE FROM management_links WHERE expires_at <= ?",
             ).use { statement ->
-                statement.setObject(PARAM_1, now)
+                statement.setInstant(PARAM_1, now)
                 statement.executeUpdate()
             }
         }
@@ -230,8 +231,8 @@ class InstallationRepository {
                    OR (expires_at IS NOT NULL AND expires_at <= ?)
                 """.trimIndent(),
             ).use { statement ->
-                statement.setObject(PARAM_1, now)
-                statement.setObject(PARAM_2, now)
+                statement.setInstant(PARAM_1, now)
+                statement.setInstant(PARAM_2, now)
                 statement.executeUpdate()
             }
         }
@@ -283,7 +284,15 @@ class InstallationRepository {
 }
 
 private fun PreparedStatement.setNullableInstant(index: Int, value: Instant?) {
-    if (value == null) setNull(index, Types.TIMESTAMP_WITH_TIMEZONE) else setObject(index, value)
+    if (value == null) {
+        setNull(index, Types.TIMESTAMP_WITH_TIMEZONE)
+    } else {
+        setInstant(index, value)
+    }
+}
+
+private fun PreparedStatement.setInstant(index: Int, value: Instant) {
+    setObject(index, value.atOffset(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE)
 }
 
 private fun PreparedStatement.setNullableLong(index: Int, value: Long?) {
