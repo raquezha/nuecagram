@@ -55,7 +55,9 @@ data class InstallationAdminContext(
 )
 
 @Suppress("TooManyFunctions")
-class InstallationRepository {
+class InstallationRepository(
+    private val databaseFactory: DatabaseFactory = DatabaseFactory,
+) {
     suspend fun createInstallation(
         gitlabBaseUrl: String,
         gitlabProjectId: Long?,
@@ -70,7 +72,7 @@ class InstallationRepository {
                 telegramChatId = telegramChatId,
                 telegramTopicId = telegramTopicId,
             )
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 INSERT INTO installations (id, gitlab_base_url, gitlab_project_id, telegram_chat_id, telegram_topic_id)
@@ -106,7 +108,7 @@ class InstallationRepository {
         expiresAt: Instant? = null,
     ): IssuedCredential {
         val issued = issueWebhookSecret(installationId, expiresAt)
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 UPDATE webhook_secrets
@@ -127,7 +129,7 @@ class InstallationRepository {
         secretId: UUID,
         confirmedAt: Instant = Instant.now(),
     ): Boolean =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 "UPDATE webhook_secrets SET confirmed_at = ? WHERE id = ? AND confirmed_at IS NULL",
             ).use { statement ->
@@ -141,7 +143,7 @@ class InstallationRepository {
         raw: String,
         now: Instant = Instant.now(),
     ): VerifiedSecret? =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             val candidates = mutableListOf<Triple<UUID, UUID, String>>()
             connection.prepareStatement(
                 """
@@ -177,7 +179,7 @@ class InstallationRepository {
         now: Instant = Instant.now(),
     ): InstallationContext? {
         val verified = verifyWebhookSecret(raw, now) ?: return null
-        return DatabaseFactory.dbQuery { connection ->
+        return databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 SELECT i.telegram_chat_id, i.telegram_topic_id, COALESCE(m.muted, FALSE) AS muted
@@ -208,7 +210,7 @@ class InstallationRepository {
     }
 
     suspend fun recordTelegramUpdate(updateId: Long): Boolean =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 "INSERT INTO telegram_updates (update_id) VALUES (?) ON CONFLICT DO NOTHING",
             ).use { statement ->
@@ -221,7 +223,7 @@ class InstallationRepository {
         userId: Long,
         chatId: Long,
     ) {
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 INSERT INTO telegram_private_chats (telegram_user_id, telegram_chat_id)
@@ -238,7 +240,7 @@ class InstallationRepository {
     }
 
     suspend fun telegramPrivateChatId(userId: Long): Long? =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 "SELECT telegram_chat_id FROM telegram_private_chats WHERE telegram_user_id = ?",
             ).use { statement ->
@@ -250,7 +252,7 @@ class InstallationRepository {
         }
 
     suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id, i.telegram_topic_id,
@@ -282,7 +284,7 @@ class InstallationRepository {
         installationId: UUID,
         muted: Boolean,
     ) {
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 INSERT INTO mute_states (installation_id, muted)
@@ -314,7 +316,7 @@ class InstallationRepository {
         raw: String,
         now: Instant = Instant.now(),
     ): ConsumedManagementLink? =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             data class Candidate(
                 val id: UUID,
                 val installationId: UUID,
@@ -357,7 +359,7 @@ class InstallationRepository {
         }
 
     suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 "DELETE FROM management_links WHERE expires_at <= ?",
             ).use { statement ->
@@ -367,7 +369,7 @@ class InstallationRepository {
         }
 
     suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int =
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 DELETE FROM webhook_secrets
@@ -388,7 +390,7 @@ class InstallationRepository {
         action: String,
         metadataJson: String = "{}",
     ) {
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 """
                 INSERT INTO audit_events (id, installation_id, actor_type, actor_id, action, metadata)
@@ -413,7 +415,7 @@ class InstallationRepository {
     ): IssuedCredential {
         val id = UUID.randomUUID()
         val (raw, stored) = CredentialCodec.issueCredential()
-        DatabaseFactory.dbQuery { connection ->
+        databaseFactory.dbQuery { connection ->
             connection.prepareStatement(insertSql).use { statement ->
                 statement.setObject(PARAM_1, id)
                 statement.setObject(PARAM_2, installationId)

@@ -70,12 +70,13 @@ fun configWithSecrets(
 }
 
 fun Application.module() {
-    DatabaseFactory.install(this)
-
     install(Koin) {
         slf4jLogger()
         modules(appModule())
     }
+
+    val databaseFactory by inject<DatabaseFactory>()
+    databaseFactory.install(this)
 
     val httpClient by inject<HttpClient>()
     monitor.subscribe(io.ktor.server.application.ApplicationStopped) {

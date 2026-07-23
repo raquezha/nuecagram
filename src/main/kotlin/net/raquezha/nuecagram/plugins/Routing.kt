@@ -27,6 +27,7 @@ private fun Application.healthPath() = basePath() + "/health"
 
 @Suppress("LongMethod")
 fun Application.configureRouting() {
+    val databaseFactory by inject<DatabaseFactory>()
     val webhookService by inject<WebHookService>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
@@ -37,7 +38,7 @@ fun Application.configureRouting() {
         }
 
         get("${this@configureRouting.healthPath()}/ready") {
-            call.respond(if (DatabaseFactory.isReady()) OK else ServiceUnavailable)
+            call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
         }
 
         get("/") {

@@ -43,6 +43,7 @@ abstract class BaseEventTestHelper : KoinTest {
 
     private val telegramService: TelegramService by inject(TelegramService::class.java)
     private val webhookService: WebHookService by inject(WebHookService::class.java)
+    protected val installationRepository: InstallationRepository by inject(InstallationRepository::class.java)
 
     fun ApplicationTestBuilder.configureTestApplication() {
         application {
@@ -57,16 +58,15 @@ abstract class BaseEventTestHelper : KoinTest {
         (telegramService as MockTelegramService).reset()
 
         runBlocking {
-            val repository = InstallationRepository()
             val installationNumber = installationCounter.incrementAndGet()
             installation =
-                repository.createInstallation(
+                installationRepository.createInstallation(
                     gitlabBaseUrl = INSTANCE,
                     gitlabProjectId = installationNumber,
                     telegramChatId = 100000 + installationNumber,
                     telegramTopicId = 200000 + installationNumber,
                 )
-            webhookToken = repository.issueWebhookSecret(installation.id).raw
+            webhookToken = installationRepository.issueWebhookSecret(installation.id).raw
         }
         testHeaders =
             HeadersBuilder().apply {

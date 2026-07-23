@@ -16,6 +16,7 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.*
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
@@ -31,6 +32,7 @@ import org.koin.dsl.module
 fun appModule() =
     listOf(
         provideLogger,
+        provideDatabaseModule,
         provideTelegramService,
         provideTelegramUpdateModule,
         provideWebhookModule,
@@ -42,6 +44,7 @@ fun appModule() =
 fun testAppModule() =
     listOf(
         provideLogger,
+        provideDatabaseModule,
         provideTelegramService,
         provideTelegramUpdateModule,
         provideWebhookModule,
@@ -111,6 +114,12 @@ val provideHttpClient =
     }
 
 
+val provideDatabaseModule =
+    module {
+        single { DatabaseFactory }
+        single { InstallationRepository(get()) }
+    }
+
 val provideLogger =
     module {
         single<KLogger> {
@@ -127,7 +136,7 @@ val provideTelegramService =
 
 val provideTelegramUpdateModule =
     module {
-        single { TelegramUpdateHandler(InstallationRepository(), get()) }
+        single { TelegramUpdateHandler(get(), get()) }
     }
 
 val provideTelegramBot =
@@ -155,7 +164,7 @@ val provideWebhookModule =
         }
 
         single<WebHookService> {
-            WebHookService(get())
+            WebHookService(get(), get())
         }
     }
 

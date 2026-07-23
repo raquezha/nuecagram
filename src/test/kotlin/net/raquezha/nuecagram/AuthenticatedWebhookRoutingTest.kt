@@ -9,7 +9,6 @@ import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.WebHookService
 import org.junit.Test
 
@@ -18,14 +17,13 @@ class AuthenticatedWebhookRoutingTest : BaseEventTestHelper() {
     fun rejectsInvalidExpiredAndSupersededTokens() =
         testApplication {
             configureTestApplication()
-            val repository = InstallationRepository()
             val expired =
                 runBlocking {
-                    repository.issueWebhookSecret(installation.id, Instant.now().minusSeconds(60)).raw
+                    installationRepository.issueWebhookSecret(installation.id, Instant.now().minusSeconds(60)).raw
                 }
             val rotated =
                 runBlocking {
-                    repository.rotateWebhookSecret(installation.id, Instant.now().minusSeconds(60))
+                    installationRepository.rotateWebhookSecret(installation.id, Instant.now().minusSeconds(60))
                 }
 
             val invalidToken = "not-a-valid-token"
@@ -44,19 +42,18 @@ class AuthenticatedWebhookRoutingTest : BaseEventTestHelper() {
     fun usesStoredDestinationConfirmsRotationAndSkipsMute() =
         testApplication {
             configureTestApplication()
-            val repository = InstallationRepository()
             val rotated =
                 runBlocking {
-                    repository.rotateWebhookSecret(installation.id, Instant.now().plusSeconds(60))
+                    installationRepository.rotateWebhookSecret(installation.id, Instant.now().plusSeconds(60))
                 }
 
             val response = pipelineResponse(rotated.raw)
             assertThat(response.status).isEqualTo(HttpStatusCode.OK)
             delay(100)
             assertThat(sentMessages().first().chatId).isEqualTo(installation.telegramChatId.toString())
-            assertThat(runBlocking { repository.confirmWebhookSecret(rotated.id) }).isFalse()
+            assertThat(runBlocking { installationRepository.confirmWebhookSecret(rotated.id) }).isFalse()
 
-            runBlocking { repository.setMuted(installation.id, true) }
+            runBlocking { installationRepository.setMuted(installation.id, true) }
             val mutedResponse = pipelineResponse(rotated.raw)
             assertThat(mutedResponse.status).isEqualTo(HttpStatusCode.OK)
             assertThat(mutedResponse.bodyAsText()).isEqualTo("Event skipped: not relevant")
@@ -68,7 +65,7 @@ class AuthenticatedWebhookRoutingTest : BaseEventTestHelper() {
             configureTestApplication()
             val first = UUID.randomUUID()
             val second = UUID.randomUUID()
-            val service = WebHookService(KotlinLogging.logger { })
+            val service = WebHookService(KotlinLogging.logger { }, installationRepository)
             service.setPipelineMessageId(first, 7, "first")
             service.setPipelineMessageId(second, 7, "second")
             assertThat(service.getPipelineMessageId(first, 7)).isEqualTo("first")
@@ -77,7 +74,6 @@ class AuthenticatedWebhookRoutingTest : BaseEventTestHelper() {
             val response = postWebhookResponse(EVENT_PIPELINE, "x".repeat(1_048_577))
             assertThat(response.status).isEqualTo(HttpStatusCode.PayloadTooLarge)
         }
-
 
     private suspend fun io.ktor.server.testing.ApplicationTestBuilder.pipelineResponse(value: String) =
         postWebhookResponse(

@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 class WebHookService(
     private val logger: KLogger,
-    private val installationRepository: InstallationRepository = InstallationRepository(),
+    private val installationRepository: InstallationRepository,
     private val maxPayloadSizeBytes: Int = DEFAULT_MAX_PAYLOAD_SIZE,
     private val maxRequestsPerWindow: Int = DEFAULT_MAX_REQUESTS_PER_WINDOW,
     private val rateLimitWindowMs: Long = DEFAULT_RATE_LIMIT_WINDOW_MS,

@@ -10,7 +10,6 @@ import io.ktor.http.contentType
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
-import net.raquezha.nuecagram.db.InstallationRepository
 import org.junit.Test
 
 class TelegramWebhookTest : BaseEventTestHelper() {
@@ -31,7 +30,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages()).hasSize(1)
-            assertThat(runBlocking { InstallationRepository().telegramPrivateChatId(7) }).isEqualTo(7)
+            assertThat(runBlocking { installationRepository.telegramPrivateChatId(7) }).isEqualTo(7)
         }
 
     @Test
@@ -61,7 +60,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 7, "administrator")
             val other =
                 runBlocking {
-                    InstallationRepository().createInstallation(
+                    installationRepository.createInstallation(
                         gitlabBaseUrl = INSTANCE,
                         gitlabProjectId = 999,
                         telegramChatId = installation.telegramChatId + 1,
@@ -87,7 +86,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
 
     private fun bootstrapPrivateUser(userId: Long) {
         runBlocking {
-            InstallationRepository().upsertTelegramPrivateChat(userId, userId)
+            installationRepository.upsertTelegramPrivateChat(userId, userId)
         }
     }
 
