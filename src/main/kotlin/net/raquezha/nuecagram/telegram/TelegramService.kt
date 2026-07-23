@@ -8,4 +8,9 @@ interface TelegramService {
     fun getURLEditMessage(botToken: String): URL = URL("https://api.telegram.org/bot$botToken/editMessageText")
 
     suspend fun sendMessage(message: Message): String
+
+    suspend fun chatMemberStatus(
+        chatId: Long,
+        userId: Long,
+    ): String?
 }

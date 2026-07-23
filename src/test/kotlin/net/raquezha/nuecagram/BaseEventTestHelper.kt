@@ -78,7 +78,9 @@ abstract class BaseEventTestHelper : KoinTest {
             }
     }
 
-    protected fun sentMessages() = (telegramService as MockTelegramService).sentMessages()
+    protected fun mockTelegramService() = telegramService as MockTelegramService
+
+    protected fun sentMessages() = mockTelegramService().sentMessages()
 
     protected suspend fun ApplicationTestBuilder.postWebhookResponse(
         gitlabEvent: String,

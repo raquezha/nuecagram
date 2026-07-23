@@ -27,13 +27,77 @@ class TelegramWebhookTest : BaseEventTestHelper() {
     fun recordsPrivateStartOnlyOnce() =
         testApplication {
             configureTestApplication()
-            val update =
-                """{"update_id":42,"message":{"text":"/start","chat":{"id":7,"type":"private"},"from":{"id":7}}}"""
+            val update = privateUpdate(42, "/start")
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages()).hasSize(1)
             assertThat(runBlocking { InstallationRepository().telegramPrivateChatId(7) }).isEqualTo(7)
         }
+
+    @Test
+    fun statusRequiresValidInstallationIdAndPrivateBootstrap() =
+        testApplication {
+            configureTestApplication()
+            assertThat(postTelegram(groupUpdate(50, "/status nope")).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Usage: /status <installation-id>")
+
+            assertThat(
+                postTelegram(groupUpdate(51, "/status ${installation.id}")).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                sentMessages().last().text,
+            ).isEqualTo("Use /start in a private chat before using admin commands.")
+        }
+
+    @Test
+    fun statusRequiresTelegramAdministratorAndChatOwnership() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(7)
+
+            assertThat(postTelegram(groupUpdate(52, "/status ${installation.id}")).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
+
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 7, "administrator")
+            val other =
+                runBlocking {
+                    InstallationRepository().createInstallation(
+                        gitlabBaseUrl = INSTANCE,
+                        gitlabProjectId = 999,
+                        telegramChatId = installation.telegramChatId + 1,
+                        telegramTopicId = null,
+                    )
+                }
+            assertThat(postTelegram(groupUpdate(53, "/status ${other.id}")).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Installation not found in this chat.")
+        }
+
+    @Test
+    fun statusAllowsTelegramAdministratorsForOwnedInstallation() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(7)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 7, "creator")
+
+            assertThat(postTelegram(groupUpdate(54, "/status ${installation.id}")).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains(installation.id.toString())
+            assertThat(sentMessages().last().text).contains("Muted: no")
+            assertThat(sentMessages().last().text).contains(installation.gitlabBaseUrl)
+        }
+
+    private fun bootstrapPrivateUser(userId: Long) {
+        runBlocking {
+            InstallationRepository().upsertTelegramPrivateChat(userId, userId)
+        }
+    }
+
+    private fun privateUpdate(updateId: Long, text: String) =
+        """{"update_id":$updateId,"message":{"text":"$text","chat":{"id":7,"type":"private"},"from":{"id":7}}}"""
+
+    private fun groupUpdate(updateId: Long, text: String) =
+        """
+        {"update_id":$updateId,"message":{"text":"$text","chat":{"id":${installation.telegramChatId},"type":"group"},"from":{"id":7}}}
+        """.trimIndent()
 
     private suspend fun ApplicationTestBuilder.postTelegram(
         body: String,

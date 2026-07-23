@@ -45,6 +45,15 @@ data class InstallationContext(
     val muted: Boolean,
 )
 
+data class InstallationAdminContext(
+    val id: UUID,
+    val gitlabBaseUrl: String,
+    val gitlabProjectId: Long?,
+    val telegramChatId: Long,
+    val telegramTopicId: Long?,
+    val muted: Boolean,
+)
+
 @Suppress("TooManyFunctions")
 class InstallationRepository {
     suspend fun createInstallation(
@@ -236,6 +245,35 @@ class InstallationRepository {
                 statement.setLong(PARAM_1, userId)
                 statement.executeQuery().use { result ->
                     result.takeIf { it.next() }?.getLong("telegram_chat_id")
+                }
+            }
+        }
+
+    suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id, i.telegram_topic_id,
+                    COALESCE(m.muted, FALSE) AS muted
+                FROM installations i
+                LEFT JOIN mute_states m ON m.installation_id = i.id
+                WHERE i.id = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setObject(PARAM_1, installationId)
+                statement.executeQuery().use { result ->
+                    if (!result.next()) {
+                        null
+                    } else {
+                        InstallationAdminContext(
+                            id = result.getObject("id", UUID::class.java),
+                            gitlabBaseUrl = result.getString("gitlab_base_url"),
+                            gitlabProjectId = result.getNullableLong("gitlab_project_id"),
+                            telegramChatId = result.getLong("telegram_chat_id"),
+                            telegramTopicId = result.getNullableLong("telegram_topic_id"),
+                            muted = result.getBoolean("muted"),
+                        )
+                    }
                 }
             }
         }
