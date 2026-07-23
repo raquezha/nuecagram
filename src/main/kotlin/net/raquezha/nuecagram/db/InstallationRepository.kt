@@ -45,6 +45,7 @@ data class InstallationContext(
     val muted: Boolean,
 )
 
+@Suppress("TooManyFunctions")
 class InstallationRepository {
     suspend fun createInstallation(
         gitlabBaseUrl: String,
@@ -196,6 +197,48 @@ class InstallationRepository {
             }
         }
     }
+
+    suspend fun recordTelegramUpdate(updateId: Long): Boolean =
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                "INSERT INTO telegram_updates (update_id) VALUES (?) ON CONFLICT DO NOTHING",
+            ).use { statement ->
+                statement.setLong(PARAM_1, updateId)
+                statement.executeUpdate() == 1
+            }
+        }
+
+    suspend fun upsertTelegramPrivateChat(
+        userId: Long,
+        chatId: Long,
+    ) {
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO telegram_private_chats (telegram_user_id, telegram_chat_id)
+                VALUES (?, ?)
+                ON CONFLICT (telegram_user_id)
+                DO UPDATE SET telegram_chat_id = EXCLUDED.telegram_chat_id, started_at = CURRENT_TIMESTAMP
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setLong(PARAM_1, userId)
+                statement.setLong(PARAM_2, chatId)
+                statement.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun telegramPrivateChatId(userId: Long): Long? =
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                "SELECT telegram_chat_id FROM telegram_private_chats WHERE telegram_user_id = ?",
+            ).use { statement ->
+                statement.setLong(PARAM_1, userId)
+                statement.executeQuery().use { result ->
+                    result.takeIf { it.next() }?.getLong("telegram_chat_id")
+                }
+            }
+        }
 
     suspend fun setMuted(
         installationId: UUID,

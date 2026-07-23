@@ -16,10 +16,12 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.*
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
+import net.raquezha.nuecagram.telegram.TelegramUpdateHandler
 import net.raquezha.nuecagram.webhook.RandomMessageProvider
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
@@ -30,6 +32,7 @@ fun appModule() =
     listOf(
         provideLogger,
         provideTelegramService,
+        provideTelegramUpdateModule,
         provideWebhookModule,
         provideHttpClient,
         provideConfigModule,
@@ -40,6 +43,7 @@ fun testAppModule() =
     listOf(
         provideLogger,
         provideTelegramService,
+        provideTelegramUpdateModule,
         provideWebhookModule,
         provideHttpClient,
         provideTelegramBot,
@@ -57,6 +61,7 @@ val testModule =
                 host = "localhost",
                 port = 8080,
                 botApi = "mock_bot_api",
+                telegramWebhookSecret = "test-telegram-webhook-token",
             )
         }
     }
@@ -67,6 +72,8 @@ val provideConfigModule =
             filename = "/application.json",
             botApi = System.getenv("TELEGRAM_BOT_TOKEN")
                 ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
+            telegramWebhookSecret = System.getenv("TELEGRAM_WEBHOOK_SECRET")
+                ?: throw IllegalStateException("TELEGRAM_WEBHOOK_SECRET missing"),
         ) }
     }
 
@@ -116,6 +123,11 @@ val provideTelegramService =
         single<TelegramService> {
             TelegramServiceImpl(get(), get())
         }
+    }
+
+val provideTelegramUpdateModule =
+    module {
+        single { TelegramUpdateHandler(InstallationRepository(), get()) }
     }
 
 val provideTelegramBot =

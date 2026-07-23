@@ -23,28 +23,28 @@ import org.koin.ktor.ext.inject
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 
-private fun healthPath() =
-    (System.getenv("NUECAGRAM_BASE_PATH")?.trim()?.removeSuffix("/") ?: "/nuecagram").also {
-        require(it.startsWith('/')) { "NUECAGRAM_BASE_PATH must start with '/'" }
-    } + "/health"
+private fun Application.healthPath() = basePath() + "/health"
 
+@Suppress("LongMethod")
 fun Application.configureRouting() {
     val webhookService by inject<WebHookService>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
 
     routing {
-        get("${healthPath()}/live") {
+        get("${this@configureRouting.healthPath()}/live") {
             call.respond(OK)
         }
 
-        get("${healthPath()}/ready") {
+        get("${this@configureRouting.healthPath()}/ready") {
             call.respond(if (DatabaseFactory.isReady()) OK else ServiceUnavailable)
         }
 
         get("/") {
             call.respondText("This application is made to receive webhooks request and send telegram notification")
         }
+
+        telegramRouting(this@configureRouting.basePath())
 
         post("/webhook") {
             try {

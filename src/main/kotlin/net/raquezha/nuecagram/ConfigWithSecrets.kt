@@ -6,4 +6,5 @@ data class ConfigWithSecrets(
     val host: String,
     val port: Int,
     val botApi: String,
+    val telegramWebhookSecret: String,
 )
