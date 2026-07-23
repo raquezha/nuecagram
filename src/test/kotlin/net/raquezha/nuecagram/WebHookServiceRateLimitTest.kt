@@ -2,6 +2,7 @@ package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.mockk.mockk
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.WebHookService
 import org.junit.Test
@@ -12,7 +13,7 @@ class WebHookServiceRateLimitTest {
         val service =
             WebHookService(
                 logger = KotlinLogging.logger { },
-                installationRepository = InstallationRepository(),
+                installationRepository = mockk<InstallationRepository>(),
                 maxRequestsPerWindow = 2,
                 rateLimitWindowMs = 1_000,
             )

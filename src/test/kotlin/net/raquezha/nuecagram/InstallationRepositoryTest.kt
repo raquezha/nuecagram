@@ -11,12 +11,15 @@ import kotlinx.coroutines.coroutineScope
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.testing.postgresTest
+import org.koin.core.context.stopKoin
+import org.koin.core.context.startKoin
+import org.koin.dsl.module
 
 val InstallationRepositoryTests by testSuite {
     postgresTest("persists only digests and hashes for issued credentials") { config ->
         try {
             DatabaseFactory.initialize(config)
-            val repository = InstallationRepository()
+            val repository = repository()
             val installation = repository.createInstallation("https://gitlab.example.com", 1, 100, null)
             val secret = repository.issueWebhookSecret(installation.id)
             val link = repository.issueManagementLink(installation.id, Instant.now().plus(30, ChronoUnit.MINUTES))
@@ -51,7 +54,7 @@ val InstallationRepositoryTests by testSuite {
     postgresTest("verifies secrets and consumes one-time links atomically") { config ->
         try {
             DatabaseFactory.initialize(config)
-            val repository = InstallationRepository()
+            val repository = repository()
             val installation = repository.createInstallation("https://gitlab.example.com", 2, 200, null)
             val secret = repository.issueWebhookSecret(installation.id)
             assertThat(repository.verifyWebhookSecret(secret.raw)?.installationId).isEqualTo(installation.id)
@@ -76,7 +79,7 @@ val InstallationRepositoryTests by testSuite {
     ) { config ->
         try {
             DatabaseFactory.initialize(config)
-            val repository = InstallationRepository()
+            val repository = repository()
             val installation =
                 repository.createInstallation("https://gitlab.example.com", 3, 300, 7)
             val expiredLink =
@@ -120,3 +123,13 @@ val InstallationRepositoryTests by testSuite {
         }
     }
 }
+
+private fun repository(): InstallationRepository =
+    startKoin {
+        modules(
+            module {
+                single { DatabaseFactory }
+                single { InstallationRepository(get()) }
+            },
+        )
+    }.koin.get<InstallationRepository>().also { stopKoin() }
