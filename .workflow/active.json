@@ -1,0 +1,14 @@
+{
+  "workflow": "rpiv",
+  "id": "github-49",
+  "taskId": "github-49",
+  "source": "github",
+  "sourceId": "49",
+  "stateFile": ".workflow/tasks/github-49/WORK.md",
+  "taskPath": ".workflow/tasks/github-49",
+  "path": ".workflow/tasks/github-49",
+  "branch": "feat/github-49-hosted-onboarding",
+  "startedAt": "2026-07-15T08:18:56Z",
+  "updatedAt": "2026-07-15T08:18:56Z",
+  "compatPointer": ".workflow/active_task.json"
+}
