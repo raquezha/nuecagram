@@ -8,6 +8,8 @@ class MockTelegramService : TelegramService {
     private val messageCounter = AtomicInteger(0)
     private val sentMessages = CopyOnWriteArrayList<Message>()
     private val memberStatuses = ConcurrentHashMap<Pair<Long, Long>, String>()
+    @Volatile
+    private var failChatMemberLookup = false
 
     override suspend fun sendMessage(message: Message): String {
         sentMessages += message
@@ -17,7 +19,14 @@ class MockTelegramService : TelegramService {
     override suspend fun chatMemberStatus(
         chatId: Long,
         userId: Long,
-    ): String? = memberStatuses[chatId to userId]
+    ): String? {
+        check(!failChatMemberLookup) { "chat member lookup failed" }
+        return memberStatuses[chatId to userId]
+    }
+
+    fun failChatMemberLookups() {
+        failChatMemberLookup = true
+    }
 
     fun setChatMemberStatus(
         chatId: Long,
@@ -32,6 +41,7 @@ class MockTelegramService : TelegramService {
     fun reset() {
         sentMessages.clear()
         memberStatuses.clear()
+        failChatMemberLookup = false
         messageCounter.set(0)
     }
 }

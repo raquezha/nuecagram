@@ -63,7 +63,7 @@ class TelegramUpdateHandler(
             return
         }
 
-        val status = telegramService.chatMemberStatus(message.chat.id, userId)
+        val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
         if (status !in ADMIN_STATUSES) {
             send(message.chat.id, ADMIN_ONLY_MESSAGE)
             return
