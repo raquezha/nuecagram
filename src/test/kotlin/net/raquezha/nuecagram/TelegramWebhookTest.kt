@@ -38,6 +38,8 @@ class TelegramWebhookTest : BaseEventTestHelper() {
     fun statusRequiresValidInstallationIdAndPrivateBootstrap() =
         testApplication {
             configureTestApplication()
+            val initialAuditCount = auditEventCount()
+
             assertThat(postTelegram(groupUpdate(50, "/status nope")).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Usage: /status <installation-id>")
 
@@ -47,7 +49,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(
                 sentMessages().last().text,
             ).isEqualTo("Use /start in a private chat before using admin commands.")
-            assertThat(auditEventCount()).isEqualTo(0)
+            assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
     @Test
@@ -55,6 +57,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(7)
+            val initialAuditCount = auditEventCount()
 
             assertThat(postTelegram(groupUpdate(52, "/status ${installation.id}")).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
@@ -71,7 +74,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
                 }
             assertThat(postTelegram(groupUpdate(53, "/status ${other.id}")).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Installation not found in this chat.")
-            assertThat(auditEventCount()).isEqualTo(0)
+            assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
     @Test
@@ -80,10 +83,11 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             configureTestApplication()
             bootstrapPrivateUser(7)
             mockTelegramService().failChatMemberLookups()
+            val initialAuditCount = auditEventCount()
 
             assertThat(postTelegram(groupUpdate(55, "/status ${installation.id}")).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
-            assertThat(auditEventCount()).isEqualTo(0)
+            assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
     @Test
