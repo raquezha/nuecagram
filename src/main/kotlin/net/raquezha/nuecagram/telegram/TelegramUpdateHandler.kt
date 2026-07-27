@@ -10,8 +10,17 @@ private val ADMIN_STATUSES = setOf("creator", "administrator")
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
 private const val ADMIN_ONLY_MESSAGE = "Only Telegram group administrators can use this command."
 private const val STATUS_USAGE_MESSAGE = "Usage: /status <installation-id>"
+private const val DIGEST_USAGE_MESSAGE = "Usage: /digest <installation-id>"
+private const val TEST_USAGE_MESSAGE = "Usage: /test <installation-id>"
+private const val MUTE_USAGE_MESSAGE = "Usage: /mute <installation-id>"
+private const val UNMUTE_USAGE_MESSAGE = "Usage: /unmute <installation-id>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
 private const val PRIVATE_COMMAND_MESSAGE = "Run this command in the installation group."
+
+private data class AuthorizedInstallationCommand(
+    val installation: InstallationAdminContext,
+    val actorId: Long,
+)
 
 class TelegramUpdateHandler(
     private val installationRepository: InstallationRepository,
@@ -27,6 +36,10 @@ class TelegramUpdateHandler(
             "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.")
             "/help" -> send(message.chat.id, "Use /start in a private chat before group setup.")
             "/status" -> handleStatus(message)
+            "/digest" -> handleDigest(message)
+            "/test" -> handleDeliveryTest(message)
+            "/mute" -> handleMute(message)
+            "/unmute" -> handleUnmute(message)
         }
     }
 
@@ -41,41 +54,94 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleStatus(message: TelegramMessage) {
-        if (message.chat.type == "private") {
-            send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
-            return
+        val authorized = authorizeInstallationCommand(message, STATUS_USAGE_MESSAGE) ?: return
+        send(message.chat.id, authorized.installation.statusText())
+    }
+
+    private suspend fun handleDigest(message: TelegramMessage) {
+        val authorized = authorizeInstallationCommand(message, DIGEST_USAGE_MESSAGE) ?: return
+        send(message.chat.id, authorized.installation.digestText())
+    }
+
+    private suspend fun handleDeliveryTest(message: TelegramMessage) {
+        val authorized = authorizeInstallationCommand(message, TEST_USAGE_MESSAGE) ?: return
+        telegramService.sendMessage(authorized.installation.deliveryTestMessage())
+        installationRepository.writeAuditEvent(
+            installationId = authorized.installation.id,
+            actorType = "telegram",
+            actorId = authorized.actorId.toString(),
+            action = "telegram_delivery_test",
+        )
+    }
+
+    private suspend fun handleMute(message: TelegramMessage) {
+        val authorized = authorizeInstallationCommand(message, MUTE_USAGE_MESSAGE) ?: return
+        installationRepository.setMuted(authorized.installation.id, true)
+        installationRepository.writeAuditEvent(
+            installationId = authorized.installation.id,
+            actorType = "telegram",
+            actorId = authorized.actorId.toString(),
+            action = "telegram_mute",
+        )
+        send(message.chat.id, "Installation muted.")
+    }
+
+    private suspend fun handleUnmute(message: TelegramMessage) {
+        val authorized = authorizeInstallationCommand(message, UNMUTE_USAGE_MESSAGE) ?: return
+        installationRepository.setMuted(authorized.installation.id, false)
+        installationRepository.writeAuditEvent(
+            installationId = authorized.installation.id,
+            actorType = "telegram",
+            actorId = authorized.actorId.toString(),
+            action = "telegram_unmute",
+        )
+        send(message.chat.id, "Installation unmuted.")
+    }
+
+    private suspend fun authorizeInstallationCommand(
+        message: TelegramMessage,
+        usageMessage: String,
+    ): AuthorizedInstallationCommand? {
+        var rejectionMessage = PRIVATE_COMMAND_MESSAGE
+        var authorized: AuthorizedInstallationCommand? = null
+
+        if (message.chat.type != "private") {
+            val installationId =
+                message.text
+                    ?.substringAfter(' ', "")
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { value -> runCatching { UUID.fromString(value) }.getOrNull() }
+
+            if (installationId == null) {
+                rejectionMessage = usageMessage
+            } else {
+                val userId = message.from?.id
+                if (userId == null || installationRepository.telegramPrivateChatId(userId) == null) {
+                    rejectionMessage = PRIVATE_BOOTSTRAP_MESSAGE
+                } else {
+                    val status =
+                        runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
+                    if (status !in ADMIN_STATUSES) {
+                        rejectionMessage = ADMIN_ONLY_MESSAGE
+                    } else {
+                        val installation = installationRepository.installationAdminContext(installationId)
+                        if (installation == null || installation.telegramChatId != message.chat.id) {
+                            rejectionMessage = WRONG_CHAT_MESSAGE
+                        } else {
+                            authorized =
+                                AuthorizedInstallationCommand(
+                                    installation = installation,
+                                    actorId = userId,
+                                )
+                        }
+                    }
+                }
+            }
         }
 
-        val installationId =
-            message.text
-                ?.substringAfter(' ', "")
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
-                ?.let { value -> runCatching { UUID.fromString(value) }.getOrNull() }
-        if (installationId == null) {
-            send(message.chat.id, STATUS_USAGE_MESSAGE)
-            return
-        }
-
-        val userId = message.from?.id
-        if (userId == null || installationRepository.telegramPrivateChatId(userId) == null) {
-            send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE)
-            return
-        }
-
-        val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        if (status !in ADMIN_STATUSES) {
-            send(message.chat.id, ADMIN_ONLY_MESSAGE)
-            return
-        }
-
-        val installation = installationRepository.installationAdminContext(installationId)
-        if (installation == null || installation.telegramChatId != message.chat.id) {
-            send(message.chat.id, WRONG_CHAT_MESSAGE)
-            return
-        }
-
-        send(message.chat.id, installation.statusText())
+        if (authorized == null) send(message.chat.id, rejectionMessage)
+        return authorized
     }
 
     private fun InstallationAdminContext.statusText(): String =
@@ -96,10 +162,32 @@ class TelegramUpdateHandler(
             append(if (muted) "yes" else "no")
         }
 
+    private fun InstallationAdminContext.digestText(): String =
+        buildString {
+            append("Digest for ")
+            append(id)
+            append("\nGitLab: ")
+            append(gitlabBaseUrl)
+            gitlabProjectId?.let {
+                append("\nProject: ")
+                append(it)
+            }
+            append("\nMuted: ")
+            append(if (muted) "yes" else "no")
+        }
+
+    private fun InstallationAdminContext.deliveryTestMessage(): Message =
+        Message(
+            chatId = telegramChatId.toString(),
+            text = "Nuecagram delivery test for installation $id.",
+            threadId = telegramTopicId,
+        )
+
     private suspend fun send(chatId: Long, text: String) {
         telegramService.sendMessage(Message(chatId = chatId.toString(), text = text))
     }
 }
+
 
 @Serializable
 data class TelegramUpdate(
