@@ -163,6 +163,9 @@ Acceptance hints:
 - 2026-07-27 02:54 PM: Switched active implementation to stacked slice branch `feat/github-49-s4b2-commands`, cut from `feat/github-49-hosted-onboarding`, so S4b2 can ship as a smaller review branch while the hosted-onboarding branch remains the integration parent.
 - 2026-07-27 03:10 PM: Task resumed via /triage
 - 2026-07-27 03:38 PM: Implemented S4b2 on stacked branch `feat/github-49-s4b2-commands` by reusing the S4b1 authorization gate for `/digest`, `/test`, `/mute`, and `/unmute`, auditing only successful commands, and adding focused Telegram command coverage for digest, delivery routing, mute persistence, unauthorized no-op, and duplicate-update single-effect behavior. Verification passed `./gradlew test --tests "net.raquezha.nuecagram.TelegramWebhookTest"` and `./gradlew lintKotlinMain lintKotlinTest detekt test build`. Commit `e90c8df`; draft PR https://github.com/raquezha/nuecagram/pull/51.
+- 2026-07-27 04:16 PM: Sync updated the existing Pi-owned GitHub Issue #49 status comment for merged S4b2 completion and S4c readiness: https://github.com/raquezha/nuecagram/issues/49#issuecomment-5041147904.
+- 2026-07-27 04:24 PM: Task resumed via /triage
+- 2026-07-27 04:48 PM: Implemented S4c on stacked branch `feat/github-49-s4c-onboarding` by adding Telegram `/setup`, `/manage`, and `/rotate` flows with private-chat-only credential/link delivery, audit writes for setup/link/rotation, and focused onboarding tests for authorization, duplicate updates, and rotation. Verification passed `./gradlew test --tests "net.raquezha.nuecagram.TelegramOnboardingWebhookTest"` and `./gradlew lintKotlinMain lintKotlinTest detekt test build`. Commit `575fb4a`; draft PR https://github.com/raquezha/nuecagram/pull/52.
 ## [META]
 - Branch: `feat/github-49-s4b2-commands`
 - Status: `active`
