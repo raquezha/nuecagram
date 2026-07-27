@@ -31,7 +31,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages()).hasSize(1)
-            assertThat(runBlocking { installationRepository.telegramPrivateChatId(7) }).isEqualTo(7)
+            assertThat(runBlocking { installationRepository.telegramPrivateChatId(42) }).isEqualTo(42)
         }
 
     @Test

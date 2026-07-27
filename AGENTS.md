@@ -17,6 +17,12 @@ For long answers, always include a **TLDR;** at the top.
 - **Generate detekt baseline:** `./gradlew detektBaseline`
 - **Run app:** `./gradlew run`
 
+## Commit/Push Gate (Required)
+- Before every commit or push, run the full local gate: `./gradlew lintKotlinMain lintKotlinTest detekt test build`.
+- If any part of that gate fails, do not commit, do not push, and fix the failure first.
+- If a change touches one focused test area, you may run that focused test first for speed, but the full gate still must pass before commit/push.
+- Treat CI as confirmation, not first discovery. Catch lint, test, and build failures locally before sending them upstream.
+
 ## Project Structure
 
 ```
