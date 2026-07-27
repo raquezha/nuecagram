@@ -247,12 +247,12 @@ class TelegramUpdateHandler(
         message: TelegramMessage,
         usageMessage: String,
     ): AuthorizedInstallationCommand? {
-        val groupAdmin = authorizeGroupAdmin(message, usageMessage) ?: return null
         val installationId = parseInstallationId(message.text)
         if (installationId == null) {
             send(message.chat.id, usageMessage)
             return null
         }
+        val groupAdmin = authorizeGroupAdmin(message, usageMessage) ?: return null
         val installation = installationRepository.installationAdminContext(installationId)
         if (installation == null || installation.telegramChatId != message.chat.id) {
             send(message.chat.id, WRONG_CHAT_MESSAGE)
