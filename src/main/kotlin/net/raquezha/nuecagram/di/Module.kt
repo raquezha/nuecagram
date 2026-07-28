@@ -136,7 +136,7 @@ val provideTelegramService =
 
 val provideTelegramUpdateModule =
     module {
-        single { TelegramUpdateHandler(get(), get()) }
+        single { TelegramUpdateHandler(get(), get(), get()) }
     }
 
 val provideTelegramBot =
