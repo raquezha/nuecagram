@@ -19,6 +19,8 @@ For long answers, always include a **TLDR;** at the top.
 
 ## Commit/Push Gate (Required)
 - Before every commit or push, run the full local gate: `./gradlew lintKotlinMain lintKotlinTest detekt test build`.
+- Also run the CI-equivalent clean test job: `./gradlew clean test`.
+- If you changed tests, routing, shared fixtures, static/global state, or system-property/env-based config, run `./gradlew clean test` twice before push to catch order-dependent flakes.
 - If any part of that gate fails, do not commit, do not push, and fix the failure first.
 - If a change touches one focused test area, you may run that focused test first for speed, but the full gate still must pass before commit/push.
 - Treat CI as confirmation, not first discovery. Catch lint, test, and build failures locally before sending them upstream.

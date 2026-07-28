@@ -10,6 +10,7 @@ import io.ktor.server.routing.Route
 import java.security.MessageDigest
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.configuredBasePath
 import net.raquezha.nuecagram.telegram.TelegramUpdate
 import net.raquezha.nuecagram.telegram.TelegramUpdateHandler
 import org.koin.ktor.ext.inject
@@ -51,7 +52,4 @@ fun Route.telegramRouting(basePath: String) {
     }
 }
 
-fun Application.basePath(): String =
-    (System.getenv("NUECAGRAM_BASE_PATH")?.trim()?.removeSuffix("/") ?: "/nuecagram").also {
-        require(it.startsWith('/')) { "NUECAGRAM_BASE_PATH must start with '/'" }
-    }
+fun Application.basePath(): String = configuredBasePath()

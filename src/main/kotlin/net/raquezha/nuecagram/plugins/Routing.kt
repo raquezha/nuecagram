@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestException
@@ -29,6 +30,7 @@ private fun Application.healthPath() = basePath() + "/health"
 fun Application.configureRouting() {
     val databaseFactory by inject<DatabaseFactory>()
     val webhookService by inject<WebHookService>()
+    val installationRepository by inject<InstallationRepository>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
 
@@ -46,6 +48,7 @@ fun Application.configureRouting() {
         }
 
         telegramRouting(this@configureRouting.basePath())
+        managementRouting(this@configureRouting.basePath())
 
         post("/webhook") {
             try {
@@ -90,6 +93,8 @@ fun Application.configureRouting() {
                 delay(CLEANUP_INTERVAL_MS)
                 try {
                     webhookService.cleanupStaleEntries()
+                    installationRepository.cleanupExpiredManagementLinks()
+                    installationRepository.cleanupExpiredManagementSessions()
                     logger.debug { "Periodic cleanup completed" }
                 } catch (e: Exception) {
                     logger.error(e) { "Periodic cleanup failed: ${e.message}" }
