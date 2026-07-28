@@ -12,9 +12,21 @@ import io.ktor.server.testing.testApplication
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 class ManagementUiTest : BaseEventTestHelper() {
+    @Before
+    fun resetBasePath() {
+        System.clearProperty("nuecagram.basePath")
+    }
+
+    @After
+    fun clearBasePath() {
+        System.clearProperty("nuecagram.basePath")
+    }
+
     @Test
     fun managementLinkExchangesIntoTokenFreeSession() =
         testApplication {
@@ -28,23 +40,23 @@ class ManagementUiTest : BaseEventTestHelper() {
             val client = client.config { followRedirects = false }
 
             val response =
-                client.get("/nuecagram/manage/$link") {
+                client.get("${basePath()}/manage/$link") {
                     header("X-Forwarded-Proto", "https")
                 }
 
             assertThat(response.status).isEqualTo(HttpStatusCode.Found)
-            assertThat(response.headers[HttpHeaders.Location]).isEqualTo("/nuecagram/manage")
+            assertThat(response.headers[HttpHeaders.Location]).isEqualTo("${basePath()}/manage")
             assertThat(response.headers[HttpHeaders.Location]).doesNotContain(link)
             val setCookie = response.headers[HttpHeaders.SetCookie].orEmpty()
             assertThat(setCookie).contains("nuecagram_manage_session=")
             assertThat(setCookie).contains("HttpOnly")
             assertThat(setCookie).contains("Secure")
             assertThat(setCookie).contains("SameSite=Strict")
-            assertThat(setCookie).contains("Path=/nuecagram/manage")
+            assertThat(setCookie).contains("Path=${basePath()}/manage")
 
             val session = setCookie.substringAfter("nuecagram_manage_session=").substringBefore(';')
             val page =
-                client.get("/nuecagram/manage") {
+                client.get("${basePath()}/manage") {
                     header(HttpHeaders.Cookie, "nuecagram_manage_session=$session")
                     header("X-Forwarded-Proto", "https")
                 }
@@ -61,7 +73,7 @@ class ManagementUiTest : BaseEventTestHelper() {
             val session = exchangeSessionCookie(client.config { followRedirects = false })
 
             val response =
-                client.get("/nuecagram/manage") {
+                client.get("${basePath()}/manage") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
                 }
@@ -86,7 +98,7 @@ class ManagementUiTest : BaseEventTestHelper() {
             val session = exchangeSessionCookie(client.config { followRedirects = false })
 
             val rotate =
-                client.post("/nuecagram/manage/rotate") {
+                client.post("${basePath()}/manage/rotate") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
                 }
@@ -101,7 +113,7 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(runBlocking { installationRepository.verifyWebhookSecret(rotatedCredential) }).isNotNull()
 
             val page =
-                client.get("/nuecagram/manage") {
+                client.get("${basePath()}/manage") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
                 }
@@ -118,7 +130,7 @@ class ManagementUiTest : BaseEventTestHelper() {
         try {
             testApplication {
                 configureTestApplication()
-                assertThat(client.get("/managed/setup").status).isEqualTo(HttpStatusCode.OK)
+                assertThat(client.get("${basePath()}/setup").status).isEqualTo(HttpStatusCode.OK)
                 assertThat(client.get("/nuecagram/setup").status).isEqualTo(HttpStatusCode.NotFound)
             }
         } finally {
@@ -141,7 +153,7 @@ class ManagementUiTest : BaseEventTestHelper() {
         }
         val response =
             runBlocking {
-                noRedirectClient.get("/nuecagram/manage/$link") {
+                noRedirectClient.get("${basePath()}/manage/$link") {
                     header("X-Forwarded-Proto", "https")
                 }
             }
@@ -150,4 +162,6 @@ class ManagementUiTest : BaseEventTestHelper() {
             .substringBefore(';')
         return "nuecagram_manage_session=$session"
     }
+
+    private fun basePath(): String = configuredBasePath()
 }
