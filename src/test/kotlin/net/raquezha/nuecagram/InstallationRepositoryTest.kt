@@ -69,6 +69,26 @@ val InstallationRepositoryTests by testSuite {
             assertThat(successes).hasSize(1)
             assertThat(successes.single().installationId).isEqualTo(installation.id)
             assertThat(repository.consumeManagementLink(link.raw)).isNull()
+
+            val sessionLink =
+                repository.issueManagementLink(
+                    installation.id,
+                    Instant.now().plus(30, ChronoUnit.MINUTES),
+                )
+            val session = repository.exchangeManagementLinkForSession(
+                sessionLink.raw,
+                Instant.now().plus(8, ChronoUnit.HOURS),
+            )
+            assertThat(session).isNotNull()
+            assertThat(
+                repository.verifyManagementSession(session!!.raw)?.installationId,
+            ).isEqualTo(installation.id)
+            assertThat(
+                repository.exchangeManagementLinkForSession(
+                    sessionLink.raw,
+                    Instant.now().plus(8, ChronoUnit.HOURS),
+                ),
+            ).isNull()
         } finally {
             DatabaseFactory.close()
         }
@@ -97,7 +117,18 @@ val InstallationRepositoryTests by testSuite {
             assertThat(repository.verifyWebhookSecret(original.raw)).isNull()
             assertThat(repository.verifyWebhookSecret(rotated.raw)?.secretId).isEqualTo(rotated.id)
             assertThat(repository.confirmWebhookSecret(rotated.id)).isTrue()
+            val expiredSessionLink =
+                repository.issueManagementLink(
+                    installation.id,
+                    Instant.now().plus(30, ChronoUnit.MINUTES),
+                )
+            val session = repository.exchangeManagementLinkForSession(
+                expiredSessionLink.raw,
+                Instant.now().minus(1, ChronoUnit.MINUTES),
+            )
+            assertThat(session).isNotNull()
             assertThat(repository.cleanupExpiredManagementLinks()).isEqualTo(1)
+            assertThat(repository.cleanupExpiredManagementSessions()).isEqualTo(1)
             assertThat(repository.cleanupExpiredWebhookSecrets()).isEqualTo(1)
 
             repository.writeAuditEvent(

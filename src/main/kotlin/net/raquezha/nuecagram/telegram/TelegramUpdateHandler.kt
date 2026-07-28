@@ -6,6 +6,7 @@ import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.configuredBasePath
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
@@ -338,7 +339,8 @@ private fun ConfigWithSecrets.publicBaseUrl(): String {
 
 private fun ConfigWithSecrets.webhookUrl(): String = "${publicBaseUrl()}/webhook"
 
-private fun ConfigWithSecrets.managementUrl(code: String): String = "${publicBaseUrl()}/nuecagram/manage/$code"
+private fun ConfigWithSecrets.managementUrl(code: String): String =
+    "${publicBaseUrl()}${configuredBasePath()}/manage/$code"
 
 private fun setupDetailsText(
     config: ConfigWithSecrets,

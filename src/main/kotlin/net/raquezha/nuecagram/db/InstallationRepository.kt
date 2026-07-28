@@ -38,6 +38,11 @@ data class ConsumedManagementLink(
     val installationId: UUID,
 )
 
+data class ManagementSessionContext(
+    val sessionId: UUID,
+    val installationId: UUID,
+)
+
 data class InstallationContext(
     val secretId: UUID,
     val installationId: UUID,
@@ -354,14 +359,148 @@ class InstallationRepository(
                 statement.setInstant(PARAM_1, now)
                 statement.setObject(PARAM_2, match.id)
                 statement.setInstant(PARAM_3, now)
-                if (statement.executeUpdate() == 1) ConsumedManagementLink(match.id, match.installationId) else null
+                if (statement.executeUpdate() == 1) {
+                    ConsumedManagementLink(match.id, match.installationId)
+                } else {
+                    null
+                }
             }
+        }
+
+    @Suppress("LongMethod")
+    suspend fun exchangeManagementLinkForSession(
+        raw: String,
+        sessionExpiresAt: Instant,
+        now: Instant = Instant.now(),
+    ): IssuedCredential? =
+        databaseFactory.dbQuery { connection ->
+            data class Candidate(
+                val id: UUID,
+                val installationId: UUID,
+                val digest: ByteArray,
+                val hash: String,
+            )
+            val candidates = mutableListOf<Candidate>()
+            connection.prepareStatement(
+                """
+                SELECT id, installation_id, token_digest, token_hash
+                FROM management_links
+                WHERE consumed_at IS NULL AND expires_at > ? AND token_digest = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInstant(PARAM_1, now)
+                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
+                statement.executeQuery().use { result ->
+                    while (result.next()) {
+                        val hash = result.getString("token_hash") ?: continue
+                        candidates += Candidate(
+                            id = result.getObject("id", UUID::class.java),
+                            installationId = result.getObject("installation_id", UUID::class.java),
+                            digest = result.getBytes("token_digest"),
+                            hash = hash,
+                        )
+                    }
+                }
+            }
+            val match =
+                candidates.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
+                    ?: return@dbQuery null
+            val sessionId = UUID.randomUUID()
+            val (sessionRaw, stored) = CredentialCodec.issueCredential()
+            val previousAutoCommit = connection.autoCommit
+            connection.autoCommit = false
+            try {
+                val consumed =
+                    connection.prepareStatement(
+                        """
+                        UPDATE management_links
+                        SET consumed_at = ?
+                        WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setInstant(PARAM_1, now)
+                        statement.setObject(PARAM_2, match.id)
+                        statement.setInstant(PARAM_3, now)
+                        statement.executeUpdate() == 1
+                    }
+                if (!consumed) {
+                    connection.rollback()
+                    return@dbQuery null
+                }
+                connection.prepareStatement(
+                    """
+                    INSERT INTO management_sessions (id, installation_id, token_digest, token_hash, expires_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setObject(PARAM_1, sessionId)
+                    statement.setObject(PARAM_2, match.installationId)
+                    statement.setBytes(PARAM_3, stored.digest)
+                    statement.setString(PARAM_4, stored.hash)
+                    statement.setInstant(PARAM_5, sessionExpiresAt)
+                    statement.executeUpdate()
+                }
+                connection.commit()
+                IssuedCredential(sessionId, match.installationId, sessionRaw)
+            } catch (exception: Exception) {
+                connection.rollback()
+                throw exception
+            } finally {
+                connection.autoCommit = previousAutoCommit
+            }
+        }
+
+    suspend fun verifyManagementSession(
+        raw: String,
+        now: Instant = Instant.now(),
+    ): ManagementSessionContext? =
+        databaseFactory.dbQuery { connection ->
+            data class Candidate(
+                val id: UUID,
+                val installationId: UUID,
+                val digest: ByteArray,
+                val hash: String,
+            )
+            val candidates = mutableListOf<Candidate>()
+            connection.prepareStatement(
+                """
+                SELECT id, installation_id, token_digest, token_hash
+                FROM management_sessions
+                WHERE expires_at > ? AND token_digest = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInstant(PARAM_1, now)
+                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
+                statement.executeQuery().use { result ->
+                    while (result.next()) {
+                        val hash = result.getString("token_hash") ?: continue
+                        candidates += Candidate(
+                            id = result.getObject("id", UUID::class.java),
+                            installationId = result.getObject("installation_id", UUID::class.java),
+                            digest = result.getBytes("token_digest"),
+                            hash = hash,
+                        )
+                    }
+                }
+            }
+            candidates.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
+                ?.let { ManagementSessionContext(it.id, it.installationId) }
         }
 
     suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int =
         databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 "DELETE FROM management_links WHERE expires_at <= ?",
+            ).use { statement ->
+                statement.setInstant(PARAM_1, now)
+                statement.executeUpdate()
+            }
+        }
+
+    suspend fun cleanupExpiredManagementSessions(now: Instant = Instant.now()): Int =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                "DELETE FROM management_sessions WHERE expires_at <= ?",
             ).use { statement ->
                 statement.setInstant(PARAM_1, now)
                 statement.executeUpdate()
