@@ -4,7 +4,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -98,7 +97,6 @@ fun Route.managementRouting(basePath: String) {
     }
 
     post("$basePath/manage/rotate") {
-        call.receiveParameters()
         val session = call.managementSession(installationRepository)
         if (session == null) {
             call.clearManagementSession(basePath)
@@ -137,7 +135,6 @@ fun Route.managementRouting(basePath: String) {
     }
 
     post("$basePath/manage/logout") {
-        call.receiveParameters()
         call.clearManagementSession(basePath)
         call.appendSecurityHeaders()
         call.respondRedirect(basePath)
