@@ -67,6 +67,43 @@ class ManagementUiTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun expiredManagementLinkShowsRecoveryWithoutSessionCookie() =
+        testApplication {
+            configureTestApplication()
+            val expiredLink = runBlocking {
+                installationRepository.issueManagementLink(
+                    installation.id,
+                    Instant.now().minus(1, ChronoUnit.MINUTES),
+                ).raw
+            }
+
+            val response = client.get("${basePath()}/manage/$expiredLink")
+
+            assertThat(response.status).isEqualTo(HttpStatusCode.Gone)
+            assertThat(response.bodyAsText()).contains("Recovery")
+            assertThat(response.headers[HttpHeaders.SetCookie]).isNull()
+        }
+
+    @Test
+    fun manageRequiresValidSessionAndClearsCookie() =
+        testApplication {
+            configureTestApplication()
+
+            val response =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, "nuecagram_manage_session=invalid")
+                    header("X-Forwarded-Proto", "https")
+                }
+
+            assertThat(response.status).isEqualTo(HttpStatusCode.Unauthorized)
+            assertThat(response.bodyAsText()).contains("Recovery")
+            val setCookie = response.headers[HttpHeaders.SetCookie].orEmpty()
+            assertThat(setCookie).contains("Max-Age=0")
+            assertThat(setCookie).contains("HttpOnly")
+            assertThat(setCookie).contains("Secure")
+        }
+
+    @Test
     fun managementPageAddsSecurityHeadersAndRecoveryGuidance() =
         testApplication {
             configureTestApplication()
@@ -121,6 +158,45 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(page.status).isEqualTo(HttpStatusCode.OK)
             assertThat(page.bodyAsText()).doesNotContain(rotatedCredential)
             assertThat(page.bodyAsText()).contains("Rotate credential")
+        }
+
+    @Test
+    fun httpManagementSessionOmitsSecureAndHsts() =
+        testApplication {
+            configureTestApplication()
+            val link = runBlocking {
+                installationRepository.issueManagementLink(
+                    installation.id,
+                    Instant.now().plus(30, ChronoUnit.MINUTES),
+                ).raw
+            }
+            val noRedirectClient = client.config { followRedirects = false }
+
+            val response = noRedirectClient.get("${basePath()}/manage/$link")
+
+            assertThat(response.status).isEqualTo(HttpStatusCode.Found)
+            assertThat(response.headers[HttpHeaders.SetCookie].orEmpty()).doesNotContain("Secure")
+            assertThat(response.headers["Strict-Transport-Security"]).isNull()
+        }
+
+    @Test
+    fun logoutClearsSessionAndRedirectsToSetup() =
+        testApplication {
+            configureTestApplication()
+            val session = exchangeSessionCookie(client.config { followRedirects = false })
+            val noRedirectClient = client.config { followRedirects = false }
+
+            val response =
+                noRedirectClient.post("${basePath()}/manage/logout") {
+                    header(HttpHeaders.Cookie, session)
+                    header("X-Forwarded-Proto", "https")
+                }
+
+            assertThat(response.status).isEqualTo(HttpStatusCode.Found)
+            assertThat(response.headers[HttpHeaders.Location]).isEqualTo(basePath())
+            val setCookie = response.headers[HttpHeaders.SetCookie].orEmpty()
+            assertThat(setCookie).contains("Max-Age=0")
+            assertThat(setCookie).contains("Secure")
         }
 
     @Test
