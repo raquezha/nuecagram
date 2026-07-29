@@ -2,7 +2,7 @@
 
 ## Environment
 
-Use `env.example` as the public template and keep the real `.env` private. Required runtime variables are:
+Copy `env.example` to a private `.env` file and replace every placeholder. Required application variables are:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
@@ -12,95 +12,144 @@ Use `env.example` as the public template and keep the real `.env` private. Requi
 - `DATABASE_USER`
 - `DATABASE_PASSWORD`
 
-`PORT` is optional and defaults to the packaged application port.
+`PORT` is optional and defaults to the packaged application port. `NUECAGRAM_HEALTH_PATH` must match the public URL path followed by `/health/ready`; for example, `/nuecagram/health/ready`. PostgreSQL also requires `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` when it runs through Compose.
 
-## Compose deployment
+Never commit the real environment file.
 
-`compose.yaml` starts the app and PostgreSQL with a persistent `postgres-data` volume. The app health check probes the DB-backed readiness endpoint:
+## Local Compose deployment
+
+`compose.yaml` builds the app locally and starts PostgreSQL with a persistent `postgres-data` volume:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+The app health check uses the DB-backed readiness endpoint:
 
 ```text
 /nuecagram/health/ready
 ```
 
-If `NUECAGRAM_PUBLIC_URL` uses another path, update the compose health path to match it.
+## Reverse proxy and firewall
 
-## Reverse proxy
-
-Forward the complete public path to the app without stripping it:
+Terminate TLS at a reverse proxy and preserve the complete public path:
 
 ```text
 https://example.com/nuecagram -> http://127.0.0.1:8080/nuecagram
 ```
 
-Suppress access logging for token-bearing paths, especially one-time management URLs. If full suppression is not possible, remove query strings and path parameters before logs are written.
+Allow public traffic only to SSH, HTTP, and HTTPS as required. Production Compose binds the app to `127.0.0.1:8080`, so clients must use the reverse proxy.
+
+Suppress access logging for token-bearing paths, especially one-time management URLs. If full suppression is not possible, remove query strings and path parameters before writing logs.
 
 ## Secret handling
 
-- Do not commit `.env`, database dumps, Telegram tokens, GitLab personal access tokens, webhook tokens, management links, or password hashes.
+- Do not commit environment files, database dumps, Telegram tokens, GitLab personal access tokens, webhook tokens, management links, SSH private keys, or password hashes.
 - Do not paste management links into shared chats or tickets.
 - Rotate a webhook secret with `/rotate <installation-id>` when exposure is suspected.
+- Use a dedicated SSH key and unprivileged deploy user for automation; never use a personal key.
+
+## Production server setup
+
+The repository does not create or configure a server automatically. Before enabling automated deployment, provision a server with:
+
+- Docker Engine and the Docker Compose plugin
+- a TLS reverse proxy
+- UFW or an equivalent firewall
+- persistent storage for PostgreSQL
+- scheduled, tested database backups
+- a dedicated unprivileged `deploy` user with its own SSH key
+
+Do not add the deploy user to the `docker` group, because Docker access is effectively root access.
+
+Install the root-owned deployment files at the paths expected by the workflow:
+
+```bash
+sudo install -d -o root -g root -m 755 /opt/nuecagram
+sudo install -d -o root -g root -m 700 /etc/nuecagram /var/lib/nuecagram
+sudo install -o root -g root -m 755 scripts/nuecagram-deploy.sh /usr/local/bin/nuecagram-deploy
+sudo install -o root -g root -m 644 compose.production.yaml /opt/nuecagram/compose.production.yaml
+sudo install -o root -g root -m 600 .env /etc/nuecagram/app.env
+```
+
+Production Compose requires an immutable PostgreSQL image reference. Add `NUECAGRAM_POSTGRES_IMAGE` to `/etc/nuecagram/app.env` using a digest, for example `postgres@sha256:...`, not a mutable tag. Obtain and review the digest before deployment:
+
+```bash
+docker buildx imagetools inspect postgres:16-alpine
+```
+
+Allow the deploy user to run only the root-owned, input-validating deployment entrypoint. Create the rule with `visudo`:
+
+```text
+deploy ALL=(root) NOPASSWD: /usr/local/bin/nuecagram-deploy *
+```
+
+The entrypoint accepts only `deploy` or `rollback` and only immutable `raquezha/nuecagram@sha256:...` image references. All server paths and the readiness URL are fixed inside the root-owned script.
+
+## GitHub production environment
+
+The workflow does not create or protect a GitHub environment. A repository administrator must create and protect it before the first deployment:
+
+1. Open **Settings > Environments > New environment**.
+2. Name it exactly `production`.
+3. Enable required reviewers and select trusted maintainers.
+4. Restrict deployment branches to `main`.
+5. Add environment secrets:
+   - `PRODUCTION_SSH_PRIVATE_KEY`
+   - `PRODUCTION_SSH_KNOWN_HOSTS`
+6. Add environment variables:
+   - `PRODUCTION_SSH_HOST`
+   - `PRODUCTION_SSH_USER`
+   - `PRODUCTION_SSH_PORT` if SSH does not use port 22
+
+Use a dedicated private key in `PRODUCTION_SSH_PRIVATE_KEY`; install only its public key for the deploy user on the server.
+
+`PRODUCTION_SSH_KNOWN_HOSTS` must contain the server's pinned SSH host key. Compare its fingerprint with the key shown through the hosting provider's trusted console before storing it. Do not disable strict host-key checking.
+
+The workflow also refuses to run from any branch except `main`. Environment approval and the main-branch check are separate protections and both should remain enabled.
+
+## Deploy an immutable release
+
+Published release notes include an image digest such as:
+
+```text
+raquezha/nuecagram@sha256:<64 hexadecimal characters>
+```
+
+To deploy it:
+
+1. Open **Actions > Deploy to Production > Run workflow**.
+2. Select the `main` branch.
+3. Choose `deploy`.
+4. Paste the full digest into `image_digest`.
+5. Approve the protected environment deployment when prompted.
+
+The server pulls that exact digest, starts the app, and waits for the container health check backed by the database readiness endpoint. If readiness fails, it attempts to restore the image that was running before the deployment.
+
+## Rollback
+
+Run the same workflow with `action` set to `rollback` and leave `image_digest` empty. The server deploys the previously recorded digest and waits for readiness. To select a specific compatible image instead, provide its full digest.
+
+Flyway down-migrations are not provided. Do not run an older image unless its schema compatibility is known.
+
+Before relying on production automation, perform a deploy and rollback drill on a non-production server configured the same way.
 
 ## Backup and restore
 
-Back up PostgreSQL with native tools:
+Find the production PostgreSQL container and back it up with native tools:
 
 ```bash
-docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > nuecagram.sql
+postgres_container=$(docker ps -q --filter label=com.docker.compose.project=nuecagram --filter label=com.docker.compose.service=postgres)
+docker exec "$postgres_container" sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > nuecagram.sql
 ```
 
-Restore into a fresh database with:
+Test the backup by restoring it into a separate empty database, never over the live database:
 
 ```bash
-docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' < nuecagram.sql
+postgres_container=$(docker ps -q --filter label=com.docker.compose.project=nuecagram --filter label=com.docker.compose.service=postgres)
+docker exec "$postgres_container" sh -c 'createdb -U "$POSTGRES_USER" nuecagram_restore'
+docker exec -i "$postgres_container" sh -c 'psql -U "$POSTGRES_USER" nuecagram_restore' < nuecagram.sql
 ```
 
-Test restores on non-production data before depending on them.
-
-## Production deployment
-
-S9 adds a protected GitHub Actions workflow at `.github/workflows/deploy-production.yml` plus the narrow remote entrypoint `scripts/nuecagram-deploy.sh`.
-
-### Human prerequisites
-
-Before the workflow can deploy safely, a human must provision and verify all of the following on the Droplet:
-
-- Docker Engine and Docker Compose plugin.
-- A checkout of this repo on the server, for example `/opt/nuecagram`, containing `compose.production.yaml`.
-- A private runtime env file, for example `/etc/nuecagram/app.env`.
-- Persistent PostgreSQL storage and tested backups.
-- TLS termination, reverse proxying, and UFW rules.
-- A pinned SSH host key copied into the GitHub Environment secret `PRODUCTION_SSH_KNOWN_HOSTS`.
-- A deploy key copied into the GitHub Environment secret `PRODUCTION_SSH_PRIVATE_KEY`.
-- GitHub Environment `production` variables for `PRODUCTION_SSH_HOST`, `PRODUCTION_SSH_USER`, and any path overrides.
-- A root-owned copy of `scripts/nuecagram-deploy.sh` installed as `/usr/local/bin/nuecagram-deploy` and executable by the deploy user through a narrow sudo rule.
-
-Example sudoers entry:
-
-```text
-deploy ALL=(root) NOPASSWD: /usr/local/bin/nuecagram-deploy
-```
-
-### Production compose file
-
-Use `compose.production.yaml` on the server for immutable image deploys. It expects `NUECAGRAM_IMAGE` to be set by the deploy entrypoint and reuses the same PostgreSQL/data layout as local compose.
-
-### Deploy workflow behavior
-
-The protected workflow only runs by manual dispatch into the `production` environment. It:
-
-- requires either a release tag or explicit image reference for deploys
-- validates the published GitHub Release for tagged deploys
-- connects only with the pinned host key from `PRODUCTION_SSH_KNOWN_HOSTS`
-- calls `sudo /usr/local/bin/nuecagram-deploy`
-- waits for the DB-backed readiness URL before succeeding
-- keeps the previous app image reference in the configured state file for rollback
-
-### Rollback
-
-Roll back by dispatching the production workflow with `action=rollback`. The remote entrypoint uses the previously recorded immutable image unless an explicit `image_ref` override is supplied.
-
-Flyway down-migrations are not provided; do not assume an older image can run safely after newer migrations have changed the schema.
-
-### Required human drill
-
-Before relying on production deployment, a human must run one non-production deploy and one rollback drill against a server with the same provisioning model, then verify app readiness and PostgreSQL restore behavior.
+Delete the test database after validation. For disaster recovery, restore only into a freshly initialized replacement database from the same compatibility window.

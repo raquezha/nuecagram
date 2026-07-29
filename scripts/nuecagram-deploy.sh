@@ -1,37 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
+readonly PROJECT_ROOT=/opt/nuecagram
+readonly ENV_FILE=/etc/nuecagram/app.env
+readonly COMPOSE_FILE=/opt/nuecagram/compose.production.yaml
+readonly STATE_FILE=/var/lib/nuecagram/previous-image
+readonly HEALTH_TIMEOUT_SECONDS=300
+readonly IMAGE_PATTERN='^raquezha/nuecagram@sha256:[0-9a-f]{64}$'
 
 usage() {
-  echo "Usage: $0 --mode <deploy|rollback> --image <image-ref|previous> --project-root <path> --env-file <path> --compose-file <path> --state-file <path> --health-url <url> --timeout-seconds <seconds>" >&2
-}
-
-require_value() {
-  if [ -z "${2:-}" ]; then
-    echo "Missing $1" >&2
-    usage
-    exit 1
-  fi
+  echo "Usage: $0 --mode <deploy|rollback> --image <digest|previous>" >&2
 }
 
 mode=""
 image=""
-project_root=""
-env_file=""
-compose_file=""
-state_file=""
-health_url=""
-timeout_seconds=""
-
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode) mode="${2:-}"; shift 2 ;;
     --image) image="${2:-}"; shift 2 ;;
-    --project-root) project_root="${2:-}"; shift 2 ;;
-    --env-file) env_file="${2:-}"; shift 2 ;;
-    --compose-file) compose_file="${2:-}"; shift 2 ;;
-    --state-file) state_file="${2:-}"; shift 2 ;;
-    --health-url) health_url="${2:-}"; shift 2 ;;
-    --timeout-seconds) timeout_seconds="${2:-}"; shift 2 ;;
     *)
       echo "Unknown argument: $1" >&2
       usage
@@ -40,67 +27,108 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-require_value mode "$mode"
-require_value image "$image"
-require_value project-root "$project_root"
-require_value env-file "$env_file"
-require_value compose-file "$compose_file"
-require_value state-file "$state_file"
-require_value health-url "$health_url"
-require_value timeout-seconds "$timeout_seconds"
-
 if [ "$mode" != deploy ] && [ "$mode" != rollback ]; then
   echo "mode must be deploy or rollback" >&2
   exit 1
 fi
-
-if ! command -v docker >/dev/null 2>&1; then
-  echo "docker missing" >&2
+if [ "$mode" = deploy ] && [[ ! "$image" =~ $IMAGE_PATTERN ]]; then
+  echo "deploy image must be an immutable raquezha/nuecagram digest" >&2
+  exit 1
+fi
+if [ "$mode" = rollback ] && [ "$image" != previous ] && [[ ! "$image" =~ $IMAGE_PATTERN ]]; then
+  echo "rollback image must be previous or an immutable raquezha/nuecagram digest" >&2
   exit 1
 fi
 
-mkdir -p "$(dirname "$state_file")"
+if [ "$(id -u)" -ne 0 ]; then
+  echo "must run as root" >&2
+  exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  echo "docker compose plugin missing" >&2
+  exit 1
+fi
+for file in "$ENV_FILE" "$COMPOSE_FILE"; do
+  if [ ! -f "$file" ] || [ "$(stat -c %u "$file")" -ne 0 ]; then
+    echo "$file must exist and be owned by root" >&2
+    exit 1
+  fi
+done
+if [ "$(stat -c %a "$ENV_FILE")" != 600 ]; then
+  echo "$ENV_FILE must have mode 600" >&2
+  exit 1
+fi
+
+install -d -o root -g root -m 700 "$(dirname "$STATE_FILE")"
+export NUECAGRAM_ENV_FILE="$ENV_FILE"
 
 compose() {
   docker compose \
-    --project-directory "$project_root" \
-    --env-file "$env_file" \
-    -f "$compose_file" \
+    --project-directory "$PROJECT_ROOT" \
+    --env-file "$ENV_FILE" \
+    -f "$COMPOSE_FILE" \
     "$@"
+}
+
+wait_until_ready() {
+  local container health_status start_time
+  start_time="$(date +%s)"
+  while true; do
+    container="$(compose ps -q app || true)"
+    health_status=""
+    if [ -n "$container" ]; then
+      health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container")"
+    fi
+    if [ "$health_status" = healthy ]; then
+      return 0
+    fi
+    if [ $(( $(date +%s) - start_time )) -ge "$HEALTH_TIMEOUT_SECONDS" ]; then
+      return 1
+    fi
+    sleep 5
+  done
 }
 
 current_container="$(compose ps -q app || true)"
 current_image=""
 if [ -n "$current_container" ]; then
   current_image="$(docker inspect --format '{{.Config.Image}}' "$current_container")"
+  if [[ ! "$current_image" =~ $IMAGE_PATTERN ]]; then
+    echo "current app image is not an immutable Nuecagram digest" >&2
+    exit 1
+  fi
 fi
 
 if [ "$mode" = rollback ] && [ "$image" = previous ]; then
-  if [ ! -s "$state_file" ]; then
+  if [ ! -s "$STATE_FILE" ]; then
     echo "No previous image recorded for rollback" >&2
     exit 1
   fi
-  image="$(tr -d '[:space:]' < "$state_file")"
+  image="$(tr -d '[:space:]' < "$STATE_FILE")"
+  if [[ ! "$image" =~ $IMAGE_PATTERN ]]; then
+    echo "Recorded rollback image is invalid" >&2
+    exit 1
+  fi
 fi
 
-if [ "$mode" = deploy ] && [ -n "$current_image" ] && [ "$current_image" != "$image" ]; then
-  printf '%s\n' "$current_image" > "$state_file"
+if [ -n "$current_image" ] && [ "$current_image" != "$image" ]; then
+  printf '%s\n' "$current_image" > "$STATE_FILE.tmp"
+  mv "$STATE_FILE.tmp" "$STATE_FILE"
 fi
 
 export NUECAGRAM_IMAGE="$image"
-compose pull app
-compose up -d app
+if compose pull app && compose up -d app && wait_until_ready; then
+  printf 'Deployed %s\n' "$image"
+  exit 0
+fi
 
-start_time="$(date +%s)"
-while true; do
-  if curl --fail --silent --show-error "$health_url" >/dev/null; then
-    break
+echo "Deployment failed readiness; restoring the previous image" >&2
+if [ -n "$current_image" ]; then
+  export NUECAGRAM_IMAGE="$current_image"
+  if compose up -d app && wait_until_ready; then
+    echo "Restored $current_image" >&2
+  else
+    echo "Automatic restore failed; manual recovery required" >&2
   fi
-  if [ $(( $(date +%s) - start_time )) -ge "$timeout_seconds" ]; then
-    echo "Readiness check failed for $health_url" >&2
-    exit 1
-  fi
-  sleep 5
-done
-
-printf 'Deployed %s\n' "$image"
+fi
+exit 1

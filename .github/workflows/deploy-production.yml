@@ -4,18 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: Deploy a new immutable image or roll back to the previous one
+        description: Deploy an image or roll back to the previously deployed image
         required: true
         type: choice
         options:
           - deploy
           - rollback
-      release_tag:
-        description: Git tag to deploy, for example v1.2.3
-        required: false
-        type: string
-      image_ref:
-        description: Optional full image reference override for deploy or rollback
+      image_digest:
+        description: Full raquezha/nuecagram@sha256:... reference; optional only for rollback
         required: false
         type: string
 
@@ -28,6 +24,7 @@ concurrency:
 
 jobs:
   deploy-production:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -35,70 +32,58 @@ jobs:
       SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
       SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
       SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
-      PROJECT_ROOT: ${{ vars.PRODUCTION_PROJECT_ROOT || '/opt/nuecagram' }}
-      ENV_FILE: ${{ vars.PRODUCTION_ENV_FILE || '/etc/nuecagram/app.env' }}
-      COMPOSE_FILE: ${{ vars.PRODUCTION_COMPOSE_FILE || '/opt/nuecagram/compose.production.yaml' }}
-      STATE_FILE: ${{ vars.PRODUCTION_STATE_FILE || '/var/lib/nuecagram/previous-image' }}
-      HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL || 'http://127.0.0.1:8080/nuecagram/health/ready' }}
-      HEALTH_TIMEOUT_SECONDS: ${{ vars.PRODUCTION_HEALTH_TIMEOUT_SECONDS || '300' }}
     steps:
-      - name: Validate production configuration
+      - name: Validate deployment request
         env:
           ACTION: ${{ inputs.action }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          IMAGE_REF: ${{ inputs.image_ref }}
+          IMAGE: ${{ inputs.image_digest }}
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
         run: |
-          test -n "$SSH_HOST"
-          test -n "$SSH_PORT"
-          test -n "$SSH_USER"
-          test -n "$PROJECT_ROOT"
-          test -n "$ENV_FILE"
-          test -n "$COMPOSE_FILE"
-          test -n "$STATE_FILE"
-          test -n "$HEALTH_URL"
-          test -n "$HEALTH_TIMEOUT_SECONDS"
-          if [ "$ACTION" = deploy ] && [ -z "$RELEASE_TAG" ] && [ -z "$IMAGE_REF" ]; then
-            echo "release_tag or image_ref is required for deploy" >&2
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ]
+          if [ "$ACTION" = deploy ] && [ -z "$IMAGE" ]; then
+            echo "image_digest is required for deploy" >&2
+            exit 1
+          fi
+          if [ -n "$IMAGE" ] && [[ ! "$IMAGE" =~ ^raquezha/nuecagram@sha256:[0-9a-f]{64}$ ]]; then
+            echo "image_digest must be an immutable raquezha/nuecagram digest" >&2
             exit 1
           fi
 
-      - name: Confirm release exists
-        if: inputs.action == 'deploy' && inputs.image_ref == ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release view "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY"
-
-      - name: Install SSH key and pinned known_hosts
+      - name: Install SSH credentials
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh
+          install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-
-      - name: Resolve target image
-        id: image
-        env:
-          ACTION: ${{ inputs.action }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          IMAGE_REF: ${{ inputs.image_ref }}
-        run: |
-          image="$IMAGE_REF"
-          if [ -z "$image" ] && [ "$ACTION" = deploy ]; then
-            image="raquezha/nuecagram:${RELEASE_TAG}"
+          known_host="$SSH_HOST"
+          if [ "$SSH_PORT" != 22 ]; then
+            known_host="[$SSH_HOST]:$SSH_PORT"
           fi
-          if [ -z "$image" ] && [ "$ACTION" = rollback ]; then
-            image="previous"
-          fi
-          echo "image=$image" >> "$GITHUB_OUTPUT"
+          ssh-keygen -F "$known_host" -f ~/.ssh/known_hosts >/dev/null
 
       - name: Run protected deploy entrypoint
         env:
           ACTION: ${{ inputs.action }}
-          IMAGE: ${{ steps.image.outputs.image }}
+          IMAGE: ${{ inputs.image_digest || 'previous' }}
         run: |
-          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
-            "sudo /usr/local/bin/nuecagram-deploy --mode '$ACTION' --image '$IMAGE' --project-root '$PROJECT_ROOT' --env-file '$ENV_FILE' --compose-file '$COMPOSE_FILE' --state-file '$STATE_FILE' --health-url '$HEALTH_URL' --timeout-seconds '$HEALTH_TIMEOUT_SECONDS'"
+          ssh -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo /usr/local/bin/nuecagram-deploy --mode $ACTION --image $IMAGE"
+
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts

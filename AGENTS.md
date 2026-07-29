@@ -123,7 +123,7 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`: PostgreSQL connection
 
 ## Deployment
-Use `compose.yaml` with a private `.env` copied from `env.example`. Release and production deployment changes are tracked in later RPIV slices.
+Use `compose.yaml` with a private `.env` copied from `env.example` for local deployment. Production deployment uses `compose.production.yaml` and the protected workflow documented in `docs/operations.md`.
 
 ## Tech Stack
 - **Language:** Kotlin 1.9.24
