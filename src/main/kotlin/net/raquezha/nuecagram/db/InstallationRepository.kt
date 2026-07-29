@@ -1,20 +1,30 @@
 package net.raquezha.nuecagram.db
 
-import java.sql.PreparedStatement
-import java.sql.Types
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 import net.raquezha.nuecagram.webhook.ChatDetails
-
-private const val PARAM_1 = 1
-private const val PARAM_2 = 2
-private const val PARAM_3 = 3
-private const val PARAM_4 = 4
-private const val PARAM_5 = 5
-private const val PARAM_6 = 6
-private const val PARAM_7 = 7
+import org.jetbrains.exposed.v1.core.JoinType
+import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SortOrder
+import org.jetbrains.exposed.v1.core.Transaction
+import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.greater
+import org.jetbrains.exposed.v1.core.isNotNull
+import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.neq
+import org.jetbrains.exposed.v1.core.or
+import org.jetbrains.exposed.v1.jdbc.Query
+import org.jetbrains.exposed.v1.jdbc.andWhere
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
+import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.update
+import org.jetbrains.exposed.v1.jdbc.upsert
 
 data class InstallationRecord(
     val id: UUID,
@@ -24,21 +34,9 @@ data class InstallationRecord(
     val telegramTopicId: Long?,
 )
 
-data class IssuedCredential(
-    val id: UUID,
-    val installationId: UUID,
-    val raw: String,
-)
-
-data class VerifiedSecret(
-    val secretId: UUID,
-    val installationId: UUID,
-)
-
-data class ConsumedManagementLink(
-    val linkId: UUID,
-    val installationId: UUID,
-)
+data class IssuedCredential(val id: UUID, val installationId: UUID, val raw: String)
+data class VerifiedSecret(val secretId: UUID, val installationId: UUID)
+data class ConsumedManagementLink(val linkId: UUID, val installationId: UUID)
 
 data class IssuedManagementSession(
     val sessionId: UUID,
@@ -54,23 +52,9 @@ data class ManagementSessionContext(
     val csrfHash: String?,
 )
 
-data class IssuedPlatformAdminSession(
-    val id: UUID,
-    val raw: String,
-    val csrf: String,
-)
-
-data class PlatformAdminSessionContext(
-    val id: UUID,
-    val csrfDigest: ByteArray,
-    val csrfHash: String,
-)
-
-data class PlatformAdminAuditRecord(
-    val installationId: UUID?,
-    val action: String,
-    val createdAt: Instant,
-)
+data class IssuedPlatformAdminSession(val id: UUID, val raw: String, val csrf: String)
+data class PlatformAdminSessionContext(val id: UUID, val csrfDigest: ByteArray, val csrfHash: String)
+data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
 
 data class InstallationContext(
     val secretId: UUID,
@@ -88,6 +72,13 @@ data class InstallationAdminContext(
     val muted: Boolean,
 )
 
+private data class StoredCandidate(
+    val id: UUID,
+    val installationId: UUID,
+    val digest: ByteArray,
+    val hash: String,
+)
+
 @Suppress("TooManyFunctions")
 class InstallationRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
@@ -98,27 +89,20 @@ class InstallationRepository(
         telegramChatId: Long,
         telegramTopicId: Long?,
     ): InstallationRecord {
-        val installation =
-            InstallationRecord(
-                id = UUID.randomUUID(),
-                gitlabBaseUrl = gitlabBaseUrl,
-                gitlabProjectId = gitlabProjectId,
-                telegramChatId = telegramChatId,
-                telegramTopicId = telegramTopicId,
-            )
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                INSERT INTO installations (id, gitlab_base_url, gitlab_project_id, telegram_chat_id, telegram_topic_id)
-                VALUES (?, ?, ?, ?, ?)
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setObject(PARAM_1, installation.id)
-                statement.setString(PARAM_2, installation.gitlabBaseUrl)
-                statement.setNullableLong(PARAM_3, installation.gitlabProjectId)
-                statement.setLong(PARAM_4, installation.telegramChatId)
-                statement.setNullableLong(PARAM_5, installation.telegramTopicId)
-                statement.executeUpdate()
+        val installation = InstallationRecord(
+            UUID.randomUUID(),
+            gitlabBaseUrl,
+            gitlabProjectId,
+            telegramChatId,
+            telegramTopicId,
+        )
+        databaseFactory.dbTransaction {
+            Installations.insert {
+                it[id] = installation.id
+                it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
+                it[Installations.gitlabProjectId] = installation.gitlabProjectId
+                it[Installations.telegramChatId] = installation.telegramChatId
+                it[Installations.telegramTopicId] = installation.telegramTopicId
             }
         }
         return installation
@@ -127,209 +111,108 @@ class InstallationRepository(
     suspend fun issueWebhookSecret(
         installationId: UUID,
         expiresAt: Instant? = null,
-    ): IssuedCredential = issueCredential(
-        installationId = installationId,
-        insertSql = """
-            INSERT INTO webhook_secrets (id, installation_id, secret_digest, secret_hash, expires_at)
-            VALUES (?, ?, ?, ?, ?)
-        """.trimIndent(),
-        bindExpiration = { setNullableInstant(PARAM_5, expiresAt) },
-    )
+    ): IssuedCredential = databaseFactory.dbTransaction {
+        issueWebhookSecret(installationId, expiresAt)
+    }
 
     suspend fun rotateWebhookSecret(
         installationId: UUID,
         graceUntil: Instant,
         expiresAt: Instant? = null,
-    ): IssuedCredential {
+    ): IssuedCredential = databaseFactory.dbTransaction {
         val issued = issueWebhookSecret(installationId, expiresAt)
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                UPDATE webhook_secrets
-                SET revoked_at = ?
-                WHERE installation_id = ? AND id <> ? AND revoked_at IS NULL
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, graceUntil)
-                statement.setObject(PARAM_2, installationId)
-                statement.setObject(PARAM_3, issued.id)
-                statement.executeUpdate()
-            }
+        WebhookSecrets.update({
+            (WebhookSecrets.installationId eq installationId) and
+                (WebhookSecrets.id neq issued.id) and WebhookSecrets.revokedAt.isNull()
+        }) {
+            it[revokedAt] = graceUntil.databaseTime()
         }
-        return issued
+        issued
     }
 
     suspend fun confirmWebhookSecret(
         secretId: UUID,
         confirmedAt: Instant = Instant.now(),
-    ): Boolean =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                "UPDATE webhook_secrets SET confirmed_at = ? WHERE id = ? AND confirmed_at IS NULL",
-            ).use { statement ->
-                statement.setInstant(PARAM_1, confirmedAt)
-                statement.setObject(PARAM_2, secretId)
-                statement.executeUpdate() == 1
-            }
-        }
+    ): Boolean = databaseFactory.dbTransaction {
+        WebhookSecrets.update({
+            (WebhookSecrets.id eq secretId) and WebhookSecrets.confirmedAt.isNull()
+        }) {
+            it[WebhookSecrets.confirmedAt] = confirmedAt.databaseTime()
+        } == 1
+    }
 
     suspend fun verifyWebhookSecret(
         raw: String,
         now: Instant = Instant.now(),
-    ): VerifiedSecret? =
-        databaseFactory.dbQuery { connection ->
-            val candidates = mutableListOf<Triple<UUID, UUID, String>>()
-            connection.prepareStatement(
-                """
-                SELECT id, installation_id, secret_hash, secret_digest
-                FROM webhook_secrets
-                WHERE (revoked_at IS NULL OR revoked_at > ?)
-                  AND (expires_at IS NULL OR expires_at > ?)
-                  AND secret_digest = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setInstant(PARAM_2, now)
-                statement.setBytes(PARAM_3, CredentialCodec.digest(raw))
-                statement.executeQuery().use { result ->
-                    while (result.next()) {
-                        val digest = result.getBytes("secret_digest")
-                        val hash = result.getString("secret_hash") ?: continue
-                        if (CredentialCodec.matches(raw, digest, hash)) {
-                            candidates += Triple(
-                                result.getObject("id", UUID::class.java),
-                                result.getObject("installation_id", UUID::class.java),
-                                hash,
-                            )
-                        }
-                    }
-                }
-            }
-            candidates.firstOrNull()?.let { VerifiedSecret(it.first, it.second) }
-        }
+    ): VerifiedSecret? = databaseFactory.dbTransaction {
+        val databaseNow = now.databaseTime()
+        WebhookSecrets.selectAll().where {
+            (WebhookSecrets.secretDigest eq CredentialCodec.digest(raw)) and
+                (WebhookSecrets.revokedAt.isNull() or (WebhookSecrets.revokedAt greater databaseNow)) and
+                (WebhookSecrets.expiresAt.isNull() or (WebhookSecrets.expiresAt greater databaseNow))
+        }.mapNotNull { row ->
+            val hash = row[WebhookSecrets.secretHash] ?: return@mapNotNull null
+            StoredCandidate(
+                row[WebhookSecrets.id],
+                row[WebhookSecrets.installationId],
+                row[WebhookSecrets.secretDigest],
+                hash,
+            )
+        }.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
+            ?.let { VerifiedSecret(it.id, it.installationId) }
+    }
 
     suspend fun resolveWebhookInstallation(
         raw: String,
         now: Instant = Instant.now(),
     ): InstallationContext? {
         val verified = verifyWebhookSecret(raw, now) ?: return null
-        return databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                SELECT i.telegram_chat_id, i.telegram_topic_id, COALESCE(m.muted, FALSE) AS muted
-                FROM installations i
-                LEFT JOIN mute_states m ON m.installation_id = i.id
-                WHERE i.id = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setObject(PARAM_1, verified.installationId)
-                statement.executeQuery().use { result ->
-                    if (!result.next()) {
-                        null
-                    } else {
-                        InstallationContext(
-                            secretId = verified.secretId,
-                            installationId = verified.installationId,
-                            chatDetails =
-                                ChatDetails(
-                                    chatId = result.getLong("telegram_chat_id").toString(),
-                                    topicId = result.getNullableLong("telegram_topic_id")?.toString(),
-                                ),
-                            muted = result.getBoolean("muted"),
-                        )
-                    }
-                }
+        return databaseFactory.dbTransaction {
+            installationWithMuteQuery(verified.installationId).firstOrNull()?.let { row ->
+                InstallationContext(
+                    verified.secretId,
+                    verified.installationId,
+                    ChatDetails(
+                        row[Installations.telegramChatId].toString(),
+                        row[Installations.telegramTopicId]?.toString(),
+                    ),
+                    row.getOrNull(MuteStates.muted) ?: false,
+                )
             }
         }
     }
 
-    suspend fun recordTelegramUpdate(updateId: Long): Boolean =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                "INSERT INTO telegram_updates (update_id) VALUES (?) ON CONFLICT DO NOTHING",
-            ).use { statement ->
-                statement.setLong(PARAM_1, updateId)
-                statement.executeUpdate() == 1
-            }
-        }
+    suspend fun recordTelegramUpdate(updateId: Long): Boolean = databaseFactory.dbTransaction {
+        TelegramUpdates.insertIgnore { it[TelegramUpdates.updateId] = updateId }.insertedCount == 1
+    }
 
-    suspend fun upsertTelegramPrivateChat(
-        userId: Long,
-        chatId: Long,
-    ) {
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                INSERT INTO telegram_private_chats (telegram_user_id, telegram_chat_id)
-                VALUES (?, ?)
-                ON CONFLICT (telegram_user_id)
-                DO UPDATE SET telegram_chat_id = EXCLUDED.telegram_chat_id, started_at = CURRENT_TIMESTAMP
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setLong(PARAM_1, userId)
-                statement.setLong(PARAM_2, chatId)
-                statement.executeUpdate()
+    suspend fun upsertTelegramPrivateChat(userId: Long, chatId: Long) {
+        databaseFactory.dbTransaction {
+            TelegramPrivateChats.upsert(TelegramPrivateChats.telegramUserId) {
+                it[telegramUserId] = userId
+                it[telegramChatId] = chatId
+                it[startedAt] = Instant.now().databaseTime()
             }
         }
     }
 
-    suspend fun telegramPrivateChatId(userId: Long): Long? =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                "SELECT telegram_chat_id FROM telegram_private_chats WHERE telegram_user_id = ?",
-            ).use { statement ->
-                statement.setLong(PARAM_1, userId)
-                statement.executeQuery().use { result ->
-                    result.takeIf { it.next() }?.getLong("telegram_chat_id")
-                }
-            }
-        }
+    suspend fun telegramPrivateChatId(userId: Long): Long? = databaseFactory.dbTransaction {
+        TelegramPrivateChats.selectAll()
+            .where { TelegramPrivateChats.telegramUserId eq userId }
+            .firstOrNull()?.get(TelegramPrivateChats.telegramChatId)
+    }
 
     suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id, i.telegram_topic_id,
-                    COALESCE(m.muted, FALSE) AS muted
-                FROM installations i
-                LEFT JOIN mute_states m ON m.installation_id = i.id
-                WHERE i.id = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setObject(PARAM_1, installationId)
-                statement.executeQuery().use { result ->
-                    if (!result.next()) {
-                        null
-                    } else {
-                        InstallationAdminContext(
-                            id = result.getObject("id", UUID::class.java),
-                            gitlabBaseUrl = result.getString("gitlab_base_url"),
-                            gitlabProjectId = result.getNullableLong("gitlab_project_id"),
-                            telegramChatId = result.getLong("telegram_chat_id"),
-                            telegramTopicId = result.getNullableLong("telegram_topic_id"),
-                            muted = result.getBoolean("muted"),
-                        )
-                    }
-                }
-            }
+        databaseFactory.dbTransaction {
+            installationWithMuteQuery(installationId).firstOrNull()?.toAdminContext()
         }
 
-    suspend fun setMuted(
-        installationId: UUID,
-        muted: Boolean,
-    ) {
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                INSERT INTO mute_states (installation_id, muted)
-                VALUES (?, ?)
-                ON CONFLICT (installation_id)
-                DO UPDATE SET muted = EXCLUDED.muted, updated_at = CURRENT_TIMESTAMP
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setObject(PARAM_1, installationId)
-                statement.setBoolean(PARAM_2, muted)
-                statement.executeUpdate()
+    suspend fun setMuted(installationId: UUID, muted: Boolean) {
+        databaseFactory.dbTransaction {
+            MuteStates.upsert(MuteStates.installationId) {
+                it[MuteStates.installationId] = installationId
+                it[MuteStates.muted] = muted
+                it[updatedAt] = Instant.now().databaseTime()
             }
         }
     }
@@ -337,218 +220,104 @@ class InstallationRepository(
     suspend fun issueManagementLink(
         installationId: UUID,
         expiresAt: Instant,
-    ): IssuedCredential = issueCredential(
-        installationId = installationId,
-        insertSql = """
-            INSERT INTO management_links (id, installation_id, token_digest, token_hash, expires_at)
-            VALUES (?, ?, ?, ?, ?)
-        """.trimIndent(),
-        bindExpiration = { setInstant(PARAM_5, expiresAt) },
-    )
+    ): IssuedCredential = databaseFactory.dbTransaction {
+        val id = UUID.randomUUID()
+        val (raw, stored) = CredentialCodec.issueCredential()
+        ManagementLinks.insert {
+            it[ManagementLinks.id] = id
+            it[ManagementLinks.installationId] = installationId
+            it[tokenDigest] = stored.digest
+            it[tokenHash] = stored.hash
+            it[ManagementLinks.expiresAt] = expiresAt.databaseTime()
+        }
+        IssuedCredential(id, installationId, raw)
+    }
 
     suspend fun consumeManagementLink(
         raw: String,
         now: Instant = Instant.now(),
-    ): ConsumedManagementLink? =
-        databaseFactory.dbQuery { connection ->
-            data class Candidate(
-                val id: UUID,
-                val installationId: UUID,
-                val digest: ByteArray,
-                val hash: String,
-            )
-            val candidates = mutableListOf<Candidate>()
-            connection.prepareStatement(
-                """
-                SELECT id, installation_id, token_digest, token_hash
-                FROM management_links
-                WHERE consumed_at IS NULL AND expires_at > ? AND token_digest = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
-                statement.executeQuery().use { result ->
-                    while (result.next()) {
-                        val hash = result.getString("token_hash") ?: continue
-                        candidates += Candidate(
-                            id = result.getObject("id", UUID::class.java),
-                            installationId = result.getObject("installation_id", UUID::class.java),
-                            digest = result.getBytes("token_digest"),
-                            hash = hash,
-                        )
-                    }
-                }
-            }
-            val match =
-                candidates.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
-                    ?: return@dbQuery null
-            connection.prepareStatement(
-                "UPDATE management_links SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL AND expires_at > ?",
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setObject(PARAM_2, match.id)
-                statement.setInstant(PARAM_3, now)
-                if (statement.executeUpdate() == 1) {
-                    ConsumedManagementLink(match.id, match.installationId)
-                } else {
-                    null
-                }
-            }
-        }
+    ): ConsumedManagementLink? = databaseFactory.dbTransaction {
+        val match = managementLinkCandidate(raw, now) ?: return@dbTransaction null
+        val databaseNow = now.databaseTime()
+        val consumed = ManagementLinks.update({
+            (ManagementLinks.id eq match.id) and ManagementLinks.consumedAt.isNull() and
+                (ManagementLinks.expiresAt greater databaseNow)
+        }) {
+            it[consumedAt] = databaseNow
+        } == 1
+        match.takeIf { consumed }?.let { ConsumedManagementLink(it.id, it.installationId) }
+    }
 
-    @Suppress("LongMethod")
     suspend fun exchangeManagementLinkForSession(
         raw: String,
         sessionExpiresAt: Instant,
         now: Instant = Instant.now(),
-    ): IssuedManagementSession? =
-        databaseFactory.dbQuery { connection ->
-            data class Candidate(
-                val id: UUID,
-                val installationId: UUID,
-                val digest: ByteArray,
-                val hash: String,
-            )
-            val candidates = mutableListOf<Candidate>()
-            connection.prepareStatement(
-                """
-                SELECT id, installation_id, token_digest, token_hash
-                FROM management_links
-                WHERE consumed_at IS NULL AND expires_at > ? AND token_digest = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
-                statement.executeQuery().use { result ->
-                    while (result.next()) {
-                        val hash = result.getString("token_hash") ?: continue
-                        candidates += Candidate(
-                            id = result.getObject("id", UUID::class.java),
-                            installationId = result.getObject("installation_id", UUID::class.java),
-                            digest = result.getBytes("token_digest"),
-                            hash = hash,
-                        )
-                    }
-                }
-            }
-            val match =
-                candidates.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
-                    ?: return@dbQuery null
-            val sessionId = UUID.randomUUID()
-            val (sessionRaw, stored) = CredentialCodec.issueCredential()
-            val (csrf, storedCsrf) = CredentialCodec.issueCredential()
-            val previousAutoCommit = connection.autoCommit
-            connection.autoCommit = false
-            try {
-                val consumed =
-                    connection.prepareStatement(
-                        """
-                        UPDATE management_links
-                        SET consumed_at = ?
-                        WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
-                        """.trimIndent(),
-                    ).use { statement ->
-                        statement.setInstant(PARAM_1, now)
-                        statement.setObject(PARAM_2, match.id)
-                        statement.setInstant(PARAM_3, now)
-                        statement.executeUpdate() == 1
-                    }
-                if (!consumed) {
-                    connection.rollback()
-                    return@dbQuery null
-                }
-                connection.prepareStatement(
-                    """
-                    INSERT INTO management_sessions
-                        (id, installation_id, token_digest, token_hash, expires_at, csrf_digest, csrf_hash)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """.trimIndent(),
-                ).use { statement ->
-                    statement.setObject(PARAM_1, sessionId)
-                    statement.setObject(PARAM_2, match.installationId)
-                    statement.setBytes(PARAM_3, stored.digest)
-                    statement.setString(PARAM_4, stored.hash)
-                    statement.setInstant(PARAM_5, sessionExpiresAt)
-                    statement.setBytes(PARAM_6, storedCsrf.digest)
-                    statement.setString(PARAM_7, storedCsrf.hash)
-                    statement.executeUpdate()
-                }
-                connection.commit()
-                IssuedManagementSession(sessionId, match.installationId, sessionRaw, csrf)
-            } catch (exception: Exception) {
-                connection.rollback()
-                throw exception
-            } finally {
-                connection.autoCommit = previousAutoCommit
-            }
+    ): IssuedManagementSession? = databaseFactory.dbTransaction {
+        val match = managementLinkCandidate(raw, now) ?: return@dbTransaction null
+        val databaseNow = now.databaseTime()
+        val consumed = ManagementLinks.update({
+            (ManagementLinks.id eq match.id) and ManagementLinks.consumedAt.isNull() and
+                (ManagementLinks.expiresAt greater databaseNow)
+        }) {
+            it[consumedAt] = databaseNow
+        } == 1
+        if (!consumed) return@dbTransaction null
+
+        val sessionId = UUID.randomUUID()
+        val (sessionRaw, stored) = CredentialCodec.issueCredential()
+        val (csrf, storedCsrf) = CredentialCodec.issueCredential()
+        ManagementSessions.insert {
+            it[id] = sessionId
+            it[installationId] = match.installationId
+            it[tokenDigest] = stored.digest
+            it[tokenHash] = stored.hash
+            it[expiresAt] = sessionExpiresAt.databaseTime()
+            it[csrfDigest] = storedCsrf.digest
+            it[csrfHash] = storedCsrf.hash
         }
+        IssuedManagementSession(sessionId, match.installationId, sessionRaw, csrf)
+    }
 
     suspend fun verifyManagementSession(
         raw: String,
         now: Instant = Instant.now(),
-    ): ManagementSessionContext? =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                SELECT id, installation_id, token_digest, token_hash, csrf_digest, csrf_hash
-                FROM management_sessions
-                WHERE expires_at > ? AND token_digest = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
-                statement.executeQuery().use { result ->
-                    while (result.next()) {
-                        val hash = result.getString("token_hash") ?: continue
-                        if (CredentialCodec.matches(raw, result.getBytes("token_digest"), hash)) {
-                            return@dbQuery ManagementSessionContext(
-                                sessionId = result.getObject("id", UUID::class.java),
-                                installationId = result.getObject("installation_id", UUID::class.java),
-                                csrfDigest = result.getBytes("csrf_digest"),
-                                csrfHash = result.getString("csrf_hash"),
-                            )
-                        }
-                    }
-                    null
-                }
-            }
+    ): ManagementSessionContext? = databaseFactory.dbTransaction {
+        ManagementSessions.selectAll().where {
+            (ManagementSessions.expiresAt greater now.databaseTime()) and
+                (ManagementSessions.tokenDigest eq CredentialCodec.digest(raw))
+        }.firstOrNull { row ->
+            CredentialCodec.matches(raw, row[ManagementSessions.tokenDigest], row[ManagementSessions.tokenHash])
+        }?.let { row ->
+            ManagementSessionContext(
+                row[ManagementSessions.id],
+                row[ManagementSessions.installationId],
+                row[ManagementSessions.csrfDigest],
+                row[ManagementSessions.csrfHash],
+            )
         }
+    }
 
-    fun verifyManagementCsrf(
-        session: ManagementSessionContext,
-        raw: String,
-    ): Boolean =
+    fun verifyManagementCsrf(session: ManagementSessionContext, raw: String): Boolean =
         session.csrfDigest?.let { digest ->
             session.csrfHash?.let { hash -> CredentialCodec.matches(raw, digest, hash) }
         } ?: false
 
-    suspend fun deleteManagementSession(id: UUID): Boolean =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement("DELETE FROM management_sessions WHERE id = ?").use { statement ->
-                statement.setObject(PARAM_1, id)
-                statement.executeUpdate() == 1
-            }
-        }
+    suspend fun deleteManagementSession(id: UUID): Boolean = databaseFactory.dbTransaction {
+        ManagementSessions.deleteWhere { ManagementSessions.id eq id } == 1
+    }
 
     suspend fun issuePlatformAdminSession(expiresAt: Instant): IssuedPlatformAdminSession {
         val id = UUID.randomUUID()
-        val (raw, token) = CredentialCodec.issueCredential()
+        val (raw, stored) = CredentialCodec.issueCredential()
         val (csrf, storedCsrf) = CredentialCodec.issueCredential()
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                INSERT INTO platform_admin_sessions
-                    (id, token_digest, token_hash, csrf_digest, csrf_hash, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setObject(PARAM_1, id)
-                statement.setBytes(PARAM_2, token.digest)
-                statement.setString(PARAM_3, token.hash)
-                statement.setBytes(PARAM_4, storedCsrf.digest)
-                statement.setString(PARAM_5, storedCsrf.hash)
-                statement.setInstant(PARAM_6, expiresAt)
-                statement.executeUpdate()
+        databaseFactory.dbTransaction {
+            PlatformAdminSessions.insert {
+                it[PlatformAdminSessions.id] = id
+                it[tokenDigest] = stored.digest
+                it[tokenHash] = stored.hash
+                it[csrfDigest] = storedCsrf.digest
+                it[csrfHash] = storedCsrf.hash
+                it[PlatformAdminSessions.expiresAt] = expiresAt.databaseTime()
             }
         }
         return IssuedPlatformAdminSession(id, raw, csrf)
@@ -557,152 +326,72 @@ class InstallationRepository(
     suspend fun verifyPlatformAdminSession(
         raw: String,
         now: Instant = Instant.now(),
-    ): PlatformAdminSessionContext? =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                SELECT id, token_digest, token_hash, csrf_digest, csrf_hash
-                FROM platform_admin_sessions
-                WHERE expires_at > ? AND token_digest = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
-                statement.executeQuery().use { result ->
-                    while (result.next()) {
-                        if (
-                            CredentialCodec.matches(
-                                raw,
-                                result.getBytes("token_digest"),
-                                result.getString("token_hash"),
-                            )
-                        ) {
-                            return@dbQuery PlatformAdminSessionContext(
-                                id = result.getObject("id", UUID::class.java),
-                                csrfDigest = result.getBytes("csrf_digest"),
-                                csrfHash = result.getString("csrf_hash"),
-                            )
-                        }
-                    }
-                    null
-                }
-            }
+    ): PlatformAdminSessionContext? = databaseFactory.dbTransaction {
+        PlatformAdminSessions.selectAll().where {
+            (PlatformAdminSessions.expiresAt greater now.databaseTime()) and
+                (PlatformAdminSessions.tokenDigest eq CredentialCodec.digest(raw))
+        }.firstOrNull { row ->
+            CredentialCodec.matches(
+                raw,
+                row[PlatformAdminSessions.tokenDigest],
+                row[PlatformAdminSessions.tokenHash],
+            )
+        }?.let { row ->
+            PlatformAdminSessionContext(
+                row[PlatformAdminSessions.id],
+                row[PlatformAdminSessions.csrfDigest],
+                row[PlatformAdminSessions.csrfHash],
+            )
         }
+    }
 
-    fun verifyPlatformAdminCsrf(
-        session: PlatformAdminSessionContext,
-        raw: String,
-    ): Boolean = CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
+    fun verifyPlatformAdminCsrf(session: PlatformAdminSessionContext, raw: String): Boolean =
+        CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
 
-    suspend fun deletePlatformAdminSession(id: UUID): Boolean =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement("DELETE FROM platform_admin_sessions WHERE id = ?").use { statement ->
-                statement.setObject(PARAM_1, id)
-                statement.executeUpdate() == 1
-            }
-        }
+    suspend fun deletePlatformAdminSession(id: UUID): Boolean = databaseFactory.dbTransaction {
+        PlatformAdminSessions.deleteWhere { PlatformAdminSessions.id eq id } == 1
+    }
 
-    suspend fun platformAdminInstallations(): List<InstallationAdminContext> =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id, i.telegram_topic_id,
-                    COALESCE(m.muted, FALSE) AS muted
-                FROM installations i
-                LEFT JOIN mute_states m ON m.installation_id = i.id
-                ORDER BY i.created_at DESC
-                """.trimIndent(),
-            ).use { statement ->
-                statement.executeQuery().use { result ->
-                    buildList {
-                        while (result.next()) {
-                            add(
-                                InstallationAdminContext(
-                                    id = result.getObject("id", UUID::class.java),
-                                    gitlabBaseUrl = result.getString("gitlab_base_url"),
-                                    gitlabProjectId = result.getNullableLong("gitlab_project_id"),
-                                    telegramChatId = result.getLong("telegram_chat_id"),
-                                    telegramTopicId = result.getNullableLong("telegram_topic_id"),
-                                    muted = result.getBoolean("muted"),
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        }
+    suspend fun platformAdminInstallations(): List<InstallationAdminContext> = databaseFactory.dbTransaction {
+        installationWithMuteQuery()
+            .orderBy(Installations.createdAt to SortOrder.DESC)
+            .map { it.toAdminContext() }
+    }
 
     suspend fun platformAdminAuditEvents(limit: Int = 200): List<PlatformAdminAuditRecord> =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                SELECT installation_id, action, created_at
-                FROM audit_events
-                ORDER BY created_at DESC
-                LIMIT ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInt(PARAM_1, limit)
-                statement.executeQuery().use { result ->
-                    buildList {
-                        while (result.next()) {
-                            add(
-                                PlatformAdminAuditRecord(
-                                    installationId = result.getObject("installation_id", UUID::class.java),
-                                    action = result.getString("action"),
-                                    createdAt = result.getObject("created_at", OffsetDateTime::class.java).toInstant(),
-                                ),
-                            )
-                        }
-                    }
+        databaseFactory.dbTransaction {
+            AuditEvents.selectAll()
+                .orderBy(AuditEvents.createdAt to SortOrder.DESC)
+                .limit(limit)
+                .map { row ->
+                    PlatformAdminAuditRecord(
+                        row[AuditEvents.installationId],
+                        row[AuditEvents.action],
+                        row[AuditEvents.createdAt].toInstant(),
+                    )
                 }
-            }
         }
 
-    suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                "DELETE FROM management_links WHERE expires_at <= ?",
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.executeUpdate()
-            }
-        }
+    suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
+        ManagementLinks.deleteWhere { ManagementLinks.expiresAt lessEq now.databaseTime() }
+    }
 
-    suspend fun cleanupExpiredManagementSessions(now: Instant = Instant.now()): Int =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                "DELETE FROM management_sessions WHERE expires_at <= ?",
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.executeUpdate()
-            }
-        }
+    suspend fun cleanupExpiredManagementSessions(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
+        ManagementSessions.deleteWhere { ManagementSessions.expiresAt lessEq now.databaseTime() }
+    }
 
     suspend fun cleanupExpiredPlatformAdminSessions(now: Instant = Instant.now()): Int =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                "DELETE FROM platform_admin_sessions WHERE expires_at <= ?",
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.executeUpdate()
-            }
+        databaseFactory.dbTransaction {
+            PlatformAdminSessions.deleteWhere { PlatformAdminSessions.expiresAt lessEq now.databaseTime() }
         }
 
-    suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int =
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                DELETE FROM webhook_secrets
-                WHERE (revoked_at IS NOT NULL AND revoked_at <= ?)
-                   OR (expires_at IS NOT NULL AND expires_at <= ?)
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setInstant(PARAM_1, now)
-                statement.setInstant(PARAM_2, now)
-                statement.executeUpdate()
-            }
+    suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
+        val databaseNow = now.databaseTime()
+        WebhookSecrets.deleteWhere {
+            (WebhookSecrets.revokedAt.isNotNull() and (WebhookSecrets.revokedAt lessEq databaseNow)) or
+                (WebhookSecrets.expiresAt.isNotNull() and (WebhookSecrets.expiresAt lessEq databaseNow))
         }
+    }
 
     suspend fun writeAuditEvent(
         installationId: UUID?,
@@ -711,60 +400,69 @@ class InstallationRepository(
         action: String,
         metadataJson: String = "{}",
     ) {
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(
-                """
-                INSERT INTO audit_events (id, installation_id, actor_type, actor_id, action, metadata)
-                VALUES (?, ?, ?, ?, ?, CAST(? AS JSONB))
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setObject(PARAM_1, UUID.randomUUID())
-                statement.setObject(PARAM_2, installationId)
-                statement.setString(PARAM_3, actorType)
-                statement.setString(PARAM_4, actorId)
-                statement.setString(PARAM_5, action)
-                statement.setString(PARAM_6, metadataJson)
-                statement.executeUpdate()
+        databaseFactory.dbTransaction {
+            AuditEvents.insert {
+                it[id] = UUID.randomUUID()
+                it[AuditEvents.installationId] = installationId
+                it[AuditEvents.actorType] = actorType
+                it[AuditEvents.actorId] = actorId
+                it[AuditEvents.action] = action
+                it[metadata] = metadataJson
             }
         }
     }
 
-    private suspend fun issueCredential(
+    private fun Transaction.issueWebhookSecret(
         installationId: UUID,
-        insertSql: String,
-        bindExpiration: PreparedStatement.() -> Unit,
+        expiresAt: Instant?,
     ): IssuedCredential {
         val id = UUID.randomUUID()
         val (raw, stored) = CredentialCodec.issueCredential()
-        databaseFactory.dbQuery { connection ->
-            connection.prepareStatement(insertSql).use { statement ->
-                statement.setObject(PARAM_1, id)
-                statement.setObject(PARAM_2, installationId)
-                statement.setBytes(PARAM_3, stored.digest)
-                statement.setString(PARAM_4, stored.hash)
-                statement.bindExpiration()
-                statement.executeUpdate()
-            }
+        WebhookSecrets.insert {
+            it[WebhookSecrets.id] = id
+            it[WebhookSecrets.installationId] = installationId
+            it[secretDigest] = stored.digest
+            it[secretHash] = stored.hash
+            it[WebhookSecrets.expiresAt] = expiresAt?.databaseTime()
         }
         return IssuedCredential(id, installationId, raw)
     }
-}
 
-private fun PreparedStatement.setNullableInstant(index: Int, value: Instant?) {
-    if (value == null) {
-        setNull(index, Types.TIMESTAMP_WITH_TIMEZONE)
-    } else {
-        setInstant(index, value)
+    private fun managementLinkCandidate(raw: String, now: Instant): StoredCandidate? =
+        ManagementLinks.selectAll().where {
+            ManagementLinks.consumedAt.isNull() and
+                (ManagementLinks.expiresAt greater now.databaseTime()) and
+                (ManagementLinks.tokenDigest eq CredentialCodec.digest(raw))
+        }.mapNotNull { row ->
+            val hash = row[ManagementLinks.tokenHash] ?: return@mapNotNull null
+            StoredCandidate(
+                row[ManagementLinks.id],
+                row[ManagementLinks.installationId],
+                row[ManagementLinks.tokenDigest],
+                hash,
+            )
+        }.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
+
+    private fun installationWithMuteQuery(installationId: UUID? = null): Query {
+        val join = Installations.join(
+            MuteStates,
+            JoinType.LEFT,
+            Installations.id,
+            MuteStates.installationId,
+        )
+        val query = join.selectAll()
+        if (installationId != null) query.andWhere { Installations.id eq installationId }
+        return query
     }
+
+    private fun ResultRow.toAdminContext() = InstallationAdminContext(
+        id = this[Installations.id],
+        gitlabBaseUrl = this[Installations.gitlabBaseUrl],
+        gitlabProjectId = this[Installations.gitlabProjectId],
+        telegramChatId = this[Installations.telegramChatId],
+        telegramTopicId = this[Installations.telegramTopicId],
+        muted = getOrNull(MuteStates.muted) ?: false,
+    )
 }
 
-private fun PreparedStatement.setInstant(index: Int, value: Instant) {
-    setObject(index, value.atOffset(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE)
-}
-
-private fun PreparedStatement.setNullableLong(index: Int, value: Long?) {
-    if (value == null) setNull(index, Types.BIGINT) else setLong(index, value)
-}
-
-private fun java.sql.ResultSet.getNullableLong(columnLabel: String): Long? =
-    getLong(columnLabel).takeUnless { wasNull() }
+private fun Instant.databaseTime(): OffsetDateTime = atOffset(ZoneOffset.UTC)

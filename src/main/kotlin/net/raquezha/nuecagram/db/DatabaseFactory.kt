@@ -6,7 +6,9 @@ import io.ktor.server.application.Application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.flywaydb.core.Flyway
+import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 
 data class DatabaseConfig(
     val url: String,
@@ -31,6 +33,9 @@ object DatabaseFactory {
     @Volatile
     private var dataSource: HikariDataSource? = null
 
+    @Volatile
+    private var database: Database? = null
+
     fun initialize(config: DatabaseConfig = DatabaseConfig.fromEnvironment()) {
         synchronized(this) {
             if (dataSource != null) return
@@ -46,7 +51,7 @@ object DatabaseFactory {
                 )
             try {
                 Flyway.configure().dataSource(source).load().migrate()
-                Database.connect(source)
+                database = Database.connect(source)
                 dataSource = source
             } catch (exception: Exception) {
                 source.close()
@@ -59,6 +64,14 @@ object DatabaseFactory {
         withContext(Dispatchers.IO) {
             val source = dataSource ?: throw IllegalStateException("DatabaseFactory is not initialized")
             source.connection.use(block)
+        }
+
+    suspend fun <T> dbTransaction(block: Transaction.() -> T): T =
+        withContext(Dispatchers.IO) {
+            transaction(
+                db = database ?: throw IllegalStateException("DatabaseFactory is not initialized"),
+                statement = block,
+            )
         }
 
     suspend fun isReady() =
@@ -74,6 +87,7 @@ object DatabaseFactory {
     fun close() = synchronized(this) {
         dataSource?.close()
         dataSource = null
+        database = null
     }
 
     fun install(application: Application) {
