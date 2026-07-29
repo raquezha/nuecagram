@@ -88,7 +88,7 @@ abstract class BaseEventTestHelper : KoinTest {
         token: String = webhookToken,
         extraHeaders: HeadersBuilder.() -> Unit = {},
     ): HttpResponse =
-        client.post("/webhook") {
+        client.post(configuredRoute("/webhook")) {
             setBody(payload)
             contentType(ContentType.Application.Json)
             headers {

@@ -32,7 +32,8 @@ fun main() {
 private fun validateRequiredEnvironmentVariables() {
     if (System.getenv("TELEGRAM_BOT_TOKEN").isNullOrBlank() ||
         System.getenv("TELEGRAM_WEBHOOK_SECRET").isNullOrBlank() ||
-        System.getenv("PLATFORM_ADMIN_PASSWORD_HASH").isNullOrBlank()
+        System.getenv("PLATFORM_ADMIN_PASSWORD_HASH").isNullOrBlank() ||
+        System.getenv("NUECAGRAM_PUBLIC_URL").isNullOrBlank()
     ) {
         throw IllegalStateException(
             """
@@ -40,6 +41,7 @@ private fun validateRequiredEnvironmentVariables() {
               - TELEGRAM_BOT_TOKEN
               - TELEGRAM_WEBHOOK_SECRET
               - PLATFORM_ADMIN_PASSWORD_HASH
+              - NUECAGRAM_PUBLIC_URL
 
             Please set these variables before starting the application.
             """.trimIndent(),
