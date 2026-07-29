@@ -1,0 +1,104 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deploy a new immutable image or roll back to the previous one
+        required: true
+        type: choice
+        options:
+          - deploy
+          - rollback
+      release_tag:
+        description: Git tag to deploy, for example v1.2.3
+        required: false
+        type: string
+      image_ref:
+        description: Optional full image reference override for deploy or rollback
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+      SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
+      SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
+      PROJECT_ROOT: ${{ vars.PRODUCTION_PROJECT_ROOT || '/opt/nuecagram' }}
+      ENV_FILE: ${{ vars.PRODUCTION_ENV_FILE || '/etc/nuecagram/app.env' }}
+      COMPOSE_FILE: ${{ vars.PRODUCTION_COMPOSE_FILE || '/opt/nuecagram/compose.production.yaml' }}
+      STATE_FILE: ${{ vars.PRODUCTION_STATE_FILE || '/var/lib/nuecagram/previous-image' }}
+      HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL || 'http://127.0.0.1:8080/nuecagram/health/ready' }}
+      HEALTH_TIMEOUT_SECONDS: ${{ vars.PRODUCTION_HEALTH_TIMEOUT_SECONDS || '300' }}
+    steps:
+      - name: Validate production configuration
+        env:
+          ACTION: ${{ inputs.action }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+        run: |
+          test -n "$SSH_HOST"
+          test -n "$SSH_PORT"
+          test -n "$SSH_USER"
+          test -n "$PROJECT_ROOT"
+          test -n "$ENV_FILE"
+          test -n "$COMPOSE_FILE"
+          test -n "$STATE_FILE"
+          test -n "$HEALTH_URL"
+          test -n "$HEALTH_TIMEOUT_SECONDS"
+          if [ "$ACTION" = deploy ] && [ -z "$RELEASE_TAG" ] && [ -z "$IMAGE_REF" ]; then
+            echo "release_tag or image_ref is required for deploy" >&2
+            exit 1
+          fi
+
+      - name: Confirm release exists
+        if: inputs.action == 'deploy' && inputs.image_ref == ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release view "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY"
+
+      - name: Install SSH key and pinned known_hosts
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Resolve target image
+        id: image
+        env:
+          ACTION: ${{ inputs.action }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+        run: |
+          image="$IMAGE_REF"
+          if [ -z "$image" ] && [ "$ACTION" = deploy ]; then
+            image="raquezha/nuecagram:${RELEASE_TAG}"
+          fi
+          if [ -z "$image" ] && [ "$ACTION" = rollback ]; then
+            image="previous"
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Run protected deploy entrypoint
+        env:
+          ACTION: ${{ inputs.action }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "sudo /usr/local/bin/nuecagram-deploy --mode '$ACTION' --image '$IMAGE' --project-root '$PROJECT_ROOT' --env-file '$ENV_FILE' --compose-file '$COMPOSE_FILE' --state-file '$STATE_FILE' --health-url '$HEALTH_URL' --timeout-seconds '$HEALTH_TIMEOUT_SECONDS'"
