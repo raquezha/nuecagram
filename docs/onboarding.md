@@ -12,8 +12,10 @@
 In the destination Telegram group, a group administrator runs:
 
 ```text
-/setup https://gitlab.com <project-id> [topic-id]
+/setup https://gitlab.com <project-id>
 ```
+
+For a normal group or main chat, Nuecagram stores the chat as the notification destination. For a topic-enabled supergroup, run the command inside the topic that should receive notifications; Nuecagram stores Telegram's message thread automatically.
 
 Nuecagram sends all credential material only to the administrator's private chat. The group response contains no webhook secret and no management link.
 

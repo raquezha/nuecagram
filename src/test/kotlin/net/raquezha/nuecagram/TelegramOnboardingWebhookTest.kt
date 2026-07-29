@@ -49,9 +49,10 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     postTelegram(
                         groupUpdate(
                             71,
-                            "/setup https://gitlab.example.com 321 777",
+                            "/setup https://gitlab.example.com 321",
                             installation.telegramChatId,
                             userId = 71,
+                            messageThreadId = 777,
                         ),
                     ).status,
                 ).isEqualTo(HttpStatusCode.OK)
@@ -67,6 +68,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 assertThat(groupMessage.text).doesNotContain("GitLab credential:")
                 assertThat(groupMessage.text).doesNotContain("Management URL:")
                 assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(1)
+                assertThat(installationTopicId("https://gitlab.example.com", 321L)).isEqualTo(777)
                 assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount + 1)
                 assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
             }
@@ -167,16 +169,26 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     private fun installationCount(gitlabBaseUrl: String, projectId: Long): Long =
+        installationValue(gitlabBaseUrl, projectId, "COUNT(*)") as Long
+
+    private fun installationTopicId(gitlabBaseUrl: String, projectId: Long): Long? =
+        installationValue(gitlabBaseUrl, projectId, "telegram_topic_id") as Long?
+
+    private fun installationValue(
+        gitlabBaseUrl: String,
+        projectId: Long,
+        column: String,
+    ): Any? =
         runBlocking {
             DatabaseFactory.dbQuery { connection ->
                 connection.prepareStatement(
-                    "SELECT COUNT(*) FROM installations WHERE gitlab_base_url = ? AND gitlab_project_id = ?",
+                    "SELECT $column FROM installations WHERE gitlab_base_url = ? AND gitlab_project_id = ?",
                 ).use { statement ->
                     statement.setString(1, gitlabBaseUrl)
                     statement.setLong(2, projectId)
                     statement.executeQuery().use { result ->
                         result.next()
-                        result.getLong(1)
+                        result.getObject(1)
                     }
                 }
             }
@@ -188,10 +200,13 @@ private fun groupUpdate(
     text: String,
     chatId: Long,
     userId: Long = updateId,
-) =
-    """
-    {"update_id":$updateId,"message":{"text":"$text","chat":{"id":$chatId,"type":"group"},"from":{"id":$userId}}}
+    messageThreadId: Long? = null,
+): String {
+    val thread = messageThreadId?.let { ",\"message_thread_id\":$it" }.orEmpty()
+    return """
+    {"update_id":$updateId,"message":{"text":"$text","chat":{"id":$chatId,"type":"group"},"from":{"id":$userId}$thread}}
     """.trimIndent()
+}
 
 private suspend fun ApplicationTestBuilder.postTelegram(
     body: String,

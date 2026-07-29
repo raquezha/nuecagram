@@ -33,13 +33,13 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted i
 
 4. Add your Telegram bot to the target group, make it an administrator, then send the bot a private `/start`.
 
-5. In the Telegram group, an administrator runs:
+5. In the destination Telegram group, an administrator runs:
 
    ```text
-   /setup https://gitlab.com <project-id> [topic-id]
+   /setup https://gitlab.com <project-id>
    ```
 
-   Nuecagram replies in the group without secrets and sends the webhook URL, GitLab native secret token, and one-time management link to the admin's private chat.
+   For topic-enabled supergroups, run the command inside the topic that should receive notifications. Nuecagram replies in the group without secrets and sends the webhook URL, GitLab native secret token, and one-time management link to the admin's private chat.
 
 6. In GitLab, create a project webhook using the URL and secret token from the private message. GitLab sends the token as `X-Gitlab-Token`; do not add custom Nuecagram headers.
 
