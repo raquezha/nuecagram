@@ -40,3 +40,6 @@ out/
 /local.properties
 
 node_modules/
+
+# RepoScry local cache
+.reposcry/

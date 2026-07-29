@@ -1,12 +1,15 @@
 package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import java.time.Instant
@@ -54,10 +57,12 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(setCookie).contains("SameSite=Strict")
             assertThat(setCookie).contains("Path=${basePath()}/manage")
 
-            val session = setCookie.substringAfter("nuecagram_manage_session=").substringBefore(';')
+            val cookies =
+                response.headers.getAll(HttpHeaders.SetCookie).orEmpty()
+                    .joinToString("; ") { it.substringBefore(';') }
             val page =
                 client.get("${basePath()}/manage") {
-                    header(HttpHeaders.Cookie, "nuecagram_manage_session=$session")
+                    header(HttpHeaders.Cookie, cookies)
                     header("X-Forwarded-Proto", "https")
                 }
 
@@ -134,10 +139,16 @@ class ManagementUiTest : BaseEventTestHelper() {
             val oldCredential = runBlocking { installationRepository.issueWebhookSecret(installation.id).raw }
             val session = exchangeSessionCookie(client.config { followRedirects = false })
 
+            val managePage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+            val csrf = hiddenValue(managePage.bodyAsText(), "csrf")
             val rotate =
                 client.post("${basePath()}/manage/rotate") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
+                    setBody(FormDataContent(Parameters.build { append("csrf", csrf) }))
                 }
 
             assertThat(rotate.status).isEqualTo(HttpStatusCode.OK)
@@ -186,10 +197,23 @@ class ManagementUiTest : BaseEventTestHelper() {
             val session = exchangeSessionCookie(client.config { followRedirects = false })
             val noRedirectClient = client.config { followRedirects = false }
 
+            val page =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+            val csrf = hiddenValue(page.bodyAsText(), "csrf")
+            val rejected =
+                noRedirectClient.post("${basePath()}/manage/logout") {
+                    header(HttpHeaders.Cookie, session)
+                    setBody(FormDataContent(Parameters.build { append("csrf", "invalid") }))
+                }
+            assertThat(rejected.status).isEqualTo(HttpStatusCode.Forbidden)
+
             val response =
                 noRedirectClient.post("${basePath()}/manage/logout") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
+                    setBody(FormDataContent(Parameters.build { append("csrf", csrf) }))
                 }
 
             assertThat(response.status).isEqualTo(HttpStatusCode.Found)
@@ -233,11 +257,12 @@ class ManagementUiTest : BaseEventTestHelper() {
                     header("X-Forwarded-Proto", "https")
                 }
             }
-        val session = response.headers[HttpHeaders.SetCookie].orEmpty()
-            .substringAfter("nuecagram_manage_session=")
-            .substringBefore(';')
-        return "nuecagram_manage_session=$session"
+        return response.headers.getAll(HttpHeaders.SetCookie).orEmpty()
+            .joinToString("; ") { it.substringBefore(';') }
     }
+
+    private fun hiddenValue(body: String, name: String): String =
+        body.substringAfter("name=\"$name\" value=\"").substringBefore('"')
 
     private fun basePath(): String = configuredBasePath()
 }

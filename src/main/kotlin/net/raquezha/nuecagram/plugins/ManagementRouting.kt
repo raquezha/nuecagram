@@ -4,6 +4,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.receiveParameters
 import io.ktor.server.response.respondRedirect
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
@@ -16,6 +17,7 @@ import net.raquezha.nuecagram.db.InstallationRepository
 import org.koin.ktor.ext.inject
 
 private const val SESSION_COOKIE_NAME = "nuecagram_manage_session"
+private const val CSRF_COOKIE_NAME = "nuecagram_manage_csrf"
 private const val SESSION_TTL_HOURS = 8L
 private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
 private const val ROTATION_GRACE_MINUTES = 0L
@@ -65,6 +67,10 @@ fun Route.managementRouting(basePath: String) {
             HttpHeaders.SetCookie,
             buildSessionCookie(basePath, session.raw, call.isHttps()),
         )
+        call.response.headers.append(
+            HttpHeaders.SetCookie,
+            buildCsrfCookie(basePath, session.csrf, call.isHttps()),
+        )
         call.appendSecurityHeaders()
         call.respondRedirect("$basePath/manage")
     }
@@ -72,6 +78,16 @@ fun Route.managementRouting(basePath: String) {
     get("$basePath/manage") {
         val session = call.managementSession(installationRepository)
         if (session == null) {
+            call.clearManagementSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.Unauthorized,
+                title = "Session required",
+                body = recoveryHtml(basePath),
+            )
+            return@get
+        }
+        val csrf = call.request.cookies[CSRF_COOKIE_NAME].orEmpty()
+        if (!installationRepository.verifyManagementCsrf(session, csrf)) {
             call.clearManagementSession(basePath)
             call.respondManagementHtml(
                 status = HttpStatusCode.Unauthorized,
@@ -92,7 +108,7 @@ fun Route.managementRouting(basePath: String) {
         }
         call.respondManagementHtml(
             title = "Manage installation",
-            body = manageHtml(basePath, installation),
+            body = manageHtml(basePath, installation, csrf),
         )
     }
 
@@ -104,6 +120,15 @@ fun Route.managementRouting(basePath: String) {
                 status = HttpStatusCode.Unauthorized,
                 title = "Session required",
                 body = recoveryHtml(basePath),
+            )
+            return@post
+        }
+        val csrf = call.receiveParameters()["csrf"].orEmpty()
+        if (!installationRepository.verifyManagementCsrf(session, csrf)) {
+            call.respondManagementHtml(
+                status = HttpStatusCode.Forbidden,
+                title = "Request rejected",
+                body = "<h1>Request rejected</h1><p>The CSRF token is invalid.</p>",
             )
             return@post
         }
@@ -135,6 +160,17 @@ fun Route.managementRouting(basePath: String) {
     }
 
     post("$basePath/manage/logout") {
+        val session = call.managementSession(installationRepository)
+        val csrf = call.receiveParameters()["csrf"].orEmpty()
+        if (session == null || !installationRepository.verifyManagementCsrf(session, csrf)) {
+            call.respondManagementHtml(
+                status = HttpStatusCode.Forbidden,
+                title = "Request rejected",
+                body = "<h1>Request rejected</h1><p>The session or CSRF token is invalid.</p>",
+            )
+            return@post
+        }
+        installationRepository.deleteManagementSession(session.sessionId)
         call.clearManagementSession(basePath)
         call.appendSecurityHeaders()
         call.respondRedirect(basePath)
@@ -150,9 +186,10 @@ private suspend fun ApplicationCall.managementSession(
 
 private fun ApplicationCall.clearManagementSession(basePath: String) {
     response.headers.append(HttpHeaders.SetCookie, buildExpiredSessionCookie(basePath, isHttps()))
+    response.headers.append(HttpHeaders.SetCookie, buildExpiredCsrfCookie(basePath, isHttps()))
 }
 
-private suspend fun ApplicationCall.respondManagementHtml(
+internal suspend fun ApplicationCall.respondManagementHtml(
     title: String,
     body: String,
     status: HttpStatusCode = HttpStatusCode.OK,
@@ -165,7 +202,7 @@ private suspend fun ApplicationCall.respondManagementHtml(
     )
 }
 
-private fun ApplicationCall.appendSecurityHeaders() {
+internal fun ApplicationCall.appendSecurityHeaders() {
     response.headers.append("Cache-Control", "no-store")
     response.headers.append("Pragma", "no-cache")
     response.headers.append("Referrer-Policy", "no-referrer")
@@ -183,7 +220,7 @@ private fun ApplicationCall.appendSecurityHeaders() {
     }
 }
 
-private fun ApplicationCall.isHttps(): Boolean =
+internal fun ApplicationCall.isHttps(): Boolean =
     request.headers["X-Forwarded-Proto"]?.substringBefore(',')?.trim().equals("https", ignoreCase = true)
 
 private fun buildSessionCookie(
@@ -200,6 +237,27 @@ private fun buildSessionCookie(
         append("/manage; Max-Age=")
         append(SESSION_TTL_SECONDS)
         append("; HttpOnly; SameSite=Strict")
+        if (secure) append("; Secure")
+    }
+
+private fun buildCsrfCookie(
+    basePath: String,
+    value: String,
+    secure: Boolean,
+): String = buildCookie(CSRF_COOKIE_NAME, value, basePath, SESSION_TTL_SECONDS, secure)
+
+private fun buildExpiredCsrfCookie(basePath: String, secure: Boolean): String =
+    buildCookie(CSRF_COOKIE_NAME, "", basePath, 0, secure)
+
+private fun buildCookie(
+    name: String,
+    value: String,
+    basePath: String,
+    maxAge: Long,
+    secure: Boolean,
+): String =
+    buildString {
+        append("$name=$value; Path=$basePath/manage; Max-Age=$maxAge; HttpOnly; SameSite=Strict")
         if (secure) append("; Secure")
     }
 
@@ -235,6 +293,7 @@ private fun recoveryHtml(basePath: String): String =
 private fun manageHtml(
     basePath: String,
     installation: InstallationAdminContext,
+    csrf: String,
 ): String =
     buildString {
         append("<h1>Manage installation</h1>")
@@ -251,6 +310,7 @@ private fun manageHtml(
         append("<p>The new GitLab credential is shown once, on the next page only.</p>")
         append(
             "<form method=\"post\" action=\"${(basePath + "/manage/rotate").html()}\">" +
+                "<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">" +
                 "<button type=\"submit\">Rotate credential</button></form>",
         )
         append("<h2>Recovery</h2>")
@@ -260,6 +320,7 @@ private fun manageHtml(
         )
         append(
             "<form method=\"post\" action=\"${(basePath + "/manage/logout").html()}\">" +
+                "<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">" +
                 "<button type=\"submit\">Log out</button></form>",
         )
     }
@@ -279,7 +340,7 @@ private fun rotatedHtml(
         )
     }
 
-private fun managementDocument(title: String, body: String): String =
+internal fun managementDocument(title: String, body: String): String =
     """
     <!doctype html>
     <html lang="en">
@@ -300,7 +361,7 @@ private fun managementDocument(title: String, body: String): String =
     </html>
     """.trimIndent()
 
-private fun String.html(): String =
+internal fun String.html(): String =
     replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")

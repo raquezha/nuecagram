@@ -80,9 +80,10 @@ val InstallationRepositoryTests by testSuite {
                 Instant.now().plus(8, ChronoUnit.HOURS),
             )
             assertThat(session).isNotNull()
-            assertThat(
-                repository.verifyManagementSession(session!!.raw)?.installationId,
-            ).isEqualTo(installation.id)
+            val verifiedSession = repository.verifyManagementSession(session!!.raw)
+            assertThat(verifiedSession?.installationId).isEqualTo(installation.id)
+            assertThat(repository.verifyManagementCsrf(verifiedSession!!, session.csrf)).isTrue()
+            assertThat(repository.verifyManagementCsrf(verifiedSession, "invalid")).isFalse()
             assertThat(
                 repository.exchangeManagementLinkForSession(
                     sessionLink.raw,
@@ -127,8 +128,12 @@ val InstallationRepositoryTests by testSuite {
                 Instant.now().minus(1, ChronoUnit.MINUTES),
             )
             assertThat(session).isNotNull()
+            val platformSession =
+                repository.issuePlatformAdminSession(Instant.now().minus(1, ChronoUnit.MINUTES))
+            assertThat(repository.verifyPlatformAdminSession(platformSession.raw)).isNull()
             assertThat(repository.cleanupExpiredManagementLinks()).isEqualTo(1)
             assertThat(repository.cleanupExpiredManagementSessions()).isEqualTo(1)
+            assertThat(repository.cleanupExpiredPlatformAdminSessions()).isEqualTo(1)
             assertThat(repository.cleanupExpiredWebhookSecrets()).isEqualTo(1)
 
             repository.writeAuditEvent(
