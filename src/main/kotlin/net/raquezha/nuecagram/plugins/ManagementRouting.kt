@@ -276,7 +276,7 @@ private fun onboardingHtml(basePath: String): String =
     """
     <h1>Nuecagram onboarding</h1>
     <p>Setup stays in Telegram. Start a private chat with the bot, run <code>/start</code>, then run
-    <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt; [topic-id]</code> in your group.</p>
+    <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in the destination group or topic.</p>
     <p>Management links redirect into a short-lived session at
     <code>${(basePath + "/manage").html()}</code>. Credentials are only shown when first issued or rotated.</p>
     """.trimIndent()

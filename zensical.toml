@@ -1,0 +1,6 @@
+[project]
+site_name = "Nuecagram"
+site_description = "Self-hosted GitLab to Telegram notifications"
+site_url = "https://raquezha.github.io/nuecagram/"
+docs_dir = "docs"
+site_dir = "site"

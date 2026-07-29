@@ -19,7 +19,7 @@ private const val DIGEST_USAGE_MESSAGE = "Usage: /digest <installation-id>"
 private const val TEST_USAGE_MESSAGE = "Usage: /test <installation-id>"
 private const val MUTE_USAGE_MESSAGE = "Usage: /mute <installation-id>"
 private const val UNMUTE_USAGE_MESSAGE = "Usage: /unmute <installation-id>"
-private const val SETUP_USAGE_MESSAGE = "Usage: /setup <gitlab-base-url> <project-id> [topic-id]"
+private const val SETUP_USAGE_MESSAGE = "Usage: /setup <gitlab-base-url> <project-id>"
 private const val MANAGE_USAGE_MESSAGE = "Usage: /manage <installation-id>"
 private const val ROTATE_USAGE_MESSAGE = "Usage: /rotate <installation-id>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
@@ -28,10 +28,9 @@ private const val PRIVATE_DELIVERY_MESSAGE = "Private setup details sent."
 private const val MANAGEMENT_LINK_TTL_MINUTES = 30L
 private const val ROTATION_GRACE_MINUTES = 0L
 private const val SETUP_ARG_COUNT_MIN = 3
-private const val SETUP_ARG_COUNT_MAX = 4
+private const val SETUP_ARG_COUNT_MAX = 3
 private const val SETUP_URL_INDEX = 1
 private const val SETUP_PROJECT_INDEX = 2
-private const val SETUP_TOPIC_INDEX = 3
 
 private data class AuthorizedGroupAdmin(
     val actorId: Long,
@@ -47,7 +46,6 @@ private data class AuthorizedInstallationCommand(
 private data class SetupArguments(
     val gitlabBaseUrl: String,
     val projectId: Long,
-    val topicId: Long?,
 )
 
 class TelegramUpdateHandler(
@@ -143,7 +141,7 @@ class TelegramUpdateHandler(
                 gitlabBaseUrl = setup.gitlabBaseUrl,
                 gitlabProjectId = setup.projectId,
                 telegramChatId = message.chat.id,
-                telegramTopicId = setup.topicId,
+                telegramTopicId = message.messageThreadId,
             )
         val credential = installationRepository.issueWebhookSecret(installation.id)
         val managementLink = installationRepository.issueManagementLink(installation.id, managementLinkExpiry())
@@ -282,8 +280,7 @@ private fun parseSetupArgumentsValue(text: String?): SetupArguments? {
     val parts = text?.trim()?.split(Regex("\\s+")) ?: return null
     if (parts.size !in SETUP_ARG_COUNT_MIN..SETUP_ARG_COUNT_MAX) return null
     val projectId = parts[SETUP_PROJECT_INDEX].toLongOrNull() ?: return null
-    val topicId = parts.getOrNull(SETUP_TOPIC_INDEX)?.toLongOrNull()
-    return SetupArguments(parts[SETUP_URL_INDEX], projectId, topicId)
+    return SetupArguments(parts[SETUP_URL_INDEX], projectId)
 }
 
 private fun InstallationAdminContext.statusText(): String =
@@ -388,6 +385,8 @@ data class TelegramMessage(
     val text: String? = null,
     val chat: TelegramChat,
     val from: TelegramUser? = null,
+    @SerialName("message_thread_id")
+    val messageThreadId: Long? = null,
 )
 
 @Serializable

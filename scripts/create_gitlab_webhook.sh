@@ -1,42 +1,51 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Variables (replace these with your actual values)
-GITLAB_URL="https://gitlab.com"
-PROJECT_ID="XXX"
-WEBHOOK_URL="https://15a8-158-62-83-135.ngrok-free.app/webhook"
-PRIVATE_TOKEN="your_private_token"
-WEBHOOK_NAME="Nuecagram Webhook"
-WEBHOOK_DESCRIPTION="Nuecagram made by raquezha"
-SECRET_TOKEN=""
+usage() {
+  echo "Usage: GITLAB_PAT=... $0 <gitlab-url> <project-id> <webhook-url> <gitlab-webhook-key>" >&2
+}
 
-# Make the POST request to create the webhook
-curl --request POST "$GITLAB_URL/api/v4/projects/$PROJECT_ID/hooks" \
-     --header "PRIVATE-TOKEN: $PRIVATE_TOKEN" \
-     --header "Content-Type: application/json" \
-     --data '{
-  "url": "'"$WEBHOOK_URL"'",
-  "name": "'"$WEBHOOK_NAME"'",
-  "description": "'"$WEBHOOK_DESCRIPTION"'",
-  "confidential_issues_events": true,
-  "confidential_note_events": true,
-  "deployment_events": true,
-  "enable_ssl_verification": true,
-  "issues_events": true,
-  "job_events": true,
-  "merge_requests_events": true,
-  "note_events": true,
-  "pipeline_events": true,
-  "push_events_branch_filter": "",
-  "push_events": true,
-  "releases_events": true,
-  "tag_push_events": true,
-  "token": "'"$SECRET_TOKEN"'",
-  "wiki_page_events": false,
-  "resource_access_token_events": false,
-  "custom_webhook_template": "",
-  "custom_headers": [
-    { "key": "X-Nuecagram-Token", "value": "your_private_token" },
-    { "key": "X-Nuecagram-Chat-Id", "value": "your_private_token" },
-    { "key": "X-Nuecagram-Topic-Id", "value": "your_private_token" }
-  ]
-}'
+require() {
+  if [ -z "${2:-}" ]; then
+    echo "Missing $1" >&2
+    usage
+    exit 1
+  fi
+}
+
+GITLAB_URL="${1:-}"
+PROJECT_ID="${2:-}"
+WEBHOOK_URL="${3:-}"
+WEBHOOK_KEY="${4:-}"
+WEBHOOK_NAME="${WEBHOOK_NAME:-Nuecagram Webhook}"
+WEBHOOK_DESCRIPTION="${WEBHOOK_DESCRIPTION:-Nuecagram GitLab notifications}"
+
+require "gitlab-url" "$GITLAB_URL"
+require "project-id" "$PROJECT_ID"
+require "webhook-url" "$WEBHOOK_URL"
+require "gitlab-webhook-key" "$WEBHOOK_KEY"
+require "GITLAB_PAT" "${GITLAB_PAT:-}"
+
+curl --fail --show-error --silent --request POST \
+  "${GITLAB_URL%/}/api/v4/projects/${PROJECT_ID}/hooks" \
+  --header "PRIVATE-TOKEN: ${GITLAB_PAT}" \
+  --data-urlencode "url=${WEBHOOK_URL}" \
+  --data-urlencode "name=${WEBHOOK_NAME}" \
+  --data-urlencode "description=${WEBHOOK_DESCRIPTION}" \
+  --data "token=${WEBHOOK_KEY}" \
+  --data "enable_ssl_verification=true" \
+  --data "pipeline_events=true" \
+  --data "push_events=true" \
+  --data "tag_push_events=true" \
+  --data "merge_requests_events=true" \
+  --data "issues_events=true" \
+  --data "note_events=true" \
+  --data "confidential_issues_events=true" \
+  --data "confidential_note_events=true" \
+  --data "deployment_events=true" \
+  --data "releases_events=true" \
+  --data "job_events=true" \
+  --data "wiki_page_events=false" \
+  --data "resource_access_token_events=false"
+
+echo

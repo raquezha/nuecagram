@@ -80,10 +80,10 @@ src/test/kotlin/net/raquezha/nuecagram/
 ## Architecture
 
 ### Request Flow
-1. GitLab sends webhook POST to `/webhook`
-2. `WebhookRequestHandler` validates headers and parses event
+1. GitLab sends webhook POST to the configured base path, for example `/nuecagram/webhook`
+2. `WebhookRequestHandler` validates `X-Gitlab-Token` against the installation store and parses the event
 3. `WebhookMessageFormatter` formats event into Telegram message
-4. `TelegramService` sends message to configured chat
+4. `TelegramService` sends message to the stored installation destination
 5. For pipeline events, messages are consolidated (create/update pattern)
 
 ### Key Components
@@ -115,15 +115,13 @@ Pipeline and job events are consolidated into a single updating message per pipe
 
 ## Environment Variables
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token from BotFather
-- `NUECAGRAM_SECRET_TOKEN`: Secret token for webhook validation
+- `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook header secret
+- `PLATFORM_ADMIN_PASSWORD_HASH`: platform admin password hash
+- `NUECAGRAM_PUBLIC_URL`: public application root, including any path prefix
+- `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`: PostgreSQL connection
 
 ## Deployment
-Deployment is tag-triggered via GitHub Actions (`.github/workflows/docker-deploy.yml`):
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
-This builds Docker image, pushes to Docker Hub, and creates GitHub Release.
+Use `compose.yaml` with a private `.env` copied from `env.example`. Release and production deployment changes are tracked in later RPIV slices.
 
 ## Tech Stack
 - **Language:** Kotlin 1.9.24
