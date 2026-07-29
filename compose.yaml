@@ -1,32 +1,35 @@
 services:
-  gradle-build:
-    image: gradle:8.4-jdk17
-    container_name: nuecagram_build_service
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - path: ${NUECAGRAM_ENV_FILE:-.env}
+        required: false
     volumes:
-      - ./:/home/gradle/src
-    working_dir: /home/gradle/src
-    command: gradle buildFatJar --no-daemon --info
-    networks:
-      - app-network
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  java-run:
-    image: openjdk:17
-    container_name: nuecagram_service
-    environment:
-      - TELEGRAM_BOT_TOKEN=<ADD_TOKEN_HERE>
-      - NUECAGRAM_SECRET_TOKEN=<ADD_TOKEN_HERE>
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: ${NUECAGRAM_ENV_FILE:-.env}
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
-    volumes:
-      - ./build/libs:/app
-    working_dir: /app
-    command: java -jar nuecagram-fat.jar
-    depends_on:
-      gradle-build:
-        condition: service_completed_successfully
-    networks:
-      - app-network
-  
-networks:
-  app-network:
-    driver: bridge
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:$${PORT:-8080}/nuecagram/health/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  postgres-data:

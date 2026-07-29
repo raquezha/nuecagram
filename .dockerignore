@@ -1,0 +1,11 @@
+.git
+.gradle
+.reposcry
+.workflow
+build
+site
+out
+node_modules
+.env
+*.env
+.local.properties
