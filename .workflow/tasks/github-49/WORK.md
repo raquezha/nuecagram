@@ -210,6 +210,7 @@ Acceptance hints:
 - 2026-07-29 01:31 PM: Post-merge prune switched back to `feat/github-49-hosted-onboarding`, pruned deleted remote refs, deleted merged local branch `feat/github-49-s7-docs-ops`, and left S8 as the next unchecked slice.
 - 2026-07-29 02:55 PM: Task resumed via /triage and cut stacked branch `feat/github-49-s8-release-gates` from `feat/github-49-hosted-onboarding` for S8 review-sized release workflow commits.
 - 2026-07-29 03:04 PM: Implemented S8 on `feat/github-49-s8-release-gates`: made Release Please PR-only, added build and dependency vulnerability workflows to join lint/Detekt/test gates, and replaced tag-trigger publication with a gated merged-release workflow that publishes immutable image tags before creating the git tag and GitHub Release. Test-first was not practical because this slice is GitHub Actions orchestration. Verification passed `ruby -e 'require "yaml"; Dir[".github/workflows/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'` and `./gradlew lintKotlinMain lintKotlinTest detekt test build`. Commit `8052e15`; draft PR https://github.com/raquezha/nuecagram/pull/58.
+- 2026-07-29 03:07 PM: Fixed the S8 dependency scan workflow after GitHub Actions rejected `aquasecurity/trivy-action@0.28.0`; the workflow now uses the valid tagged ref `v0.28.0`. Verification re-passed `ruby -e 'require "yaml"; Dir[".github/workflows/*.yml"].each { |f| YAML.load_file(f); puts "ok #{f}" }'`.
 ## [META]
 - Branch: `feat/github-49-s8-release-gates`
 - Status: `active`
