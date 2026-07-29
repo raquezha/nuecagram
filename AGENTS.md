@@ -24,6 +24,8 @@ For long answers, always include a **TLDR;** at the top.
 - If any part of that gate fails, do not commit, do not push, and fix the failure first.
 - If a change touches one focused test area, you may run that focused test first for speed, but the full gate still must pass before commit/push.
 - Treat CI as confirmation, not first discovery. Catch lint, test, and build failures locally before sending them upstream.
+- If AI contributed to a commit, the commit message must include an exact `Assisted-by` trailer. Get the exact value with `bash ~/RQZ/personal/nothing/packages/workflows/norpiv/scripts/get-pi-model.sh` and use that exact output in the trailer, for example `Assisted-by: openai-codex:gpt-5.4 [read,bash,edit,write]`.
+- Before push, verify the actual committed trailer matches the current helper output; if not, amend the commit before pushing so `/verify` does not fail on trailer drift.
 
 ## Project Structure
 

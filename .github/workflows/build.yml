@@ -1,0 +1,9 @@
+name: Run Build
+
+on: [workflow_call, push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+    uses: ./.github/workflows/setup-gradle.yml
+    with:
+      gradle-task: build
