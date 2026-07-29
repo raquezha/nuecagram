@@ -31,13 +31,15 @@ fun main() {
 
 private fun validateRequiredEnvironmentVariables() {
     if (System.getenv("TELEGRAM_BOT_TOKEN").isNullOrBlank() ||
-        System.getenv("TELEGRAM_WEBHOOK_SECRET").isNullOrBlank()
+        System.getenv("TELEGRAM_WEBHOOK_SECRET").isNullOrBlank() ||
+        System.getenv("PLATFORM_ADMIN_PASSWORD_HASH").isNullOrBlank()
     ) {
         throw IllegalStateException(
             """
             Missing required environment variables:
               - TELEGRAM_BOT_TOKEN
               - TELEGRAM_WEBHOOK_SECRET
+              - PLATFORM_ADMIN_PASSWORD_HASH
 
             Please set these variables before starting the application.
             """.trimIndent(),
@@ -56,6 +58,7 @@ fun configWithSecrets(
     filename: String,
     botApi: String,
     telegramWebhookSecret: String,
+    platformAdminHash: String,
 ): ConfigWithSecrets {
     val config = config(filename)
 
@@ -65,6 +68,7 @@ fun configWithSecrets(
         host = config.host,
         port = config.port,
         botApi = botApi,
+        platformAdminHash = platformAdminHash,
         telegramWebhookSecret = telegramWebhookSecret,
     )
 }

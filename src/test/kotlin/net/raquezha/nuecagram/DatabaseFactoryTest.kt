@@ -56,6 +56,8 @@ val DatabaseFactoryTests by testSuite {
                 "installations",
                 "webhook_secrets",
                 "management_links",
+                "management_sessions",
+                "platform_admin_sessions",
                 "audit_events",
                 "event_summaries",
                 "mute_states",

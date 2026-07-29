@@ -28,6 +28,7 @@ import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.dsl.module
+import org.mindrot.jbcrypt.BCrypt
 
 fun appModule() =
     listOf(
@@ -64,6 +65,7 @@ val testModule =
                 host = "localhost",
                 port = 8080,
                 botApi = "mock_bot_api",
+                platformAdminHash = BCrypt.hashpw("test-admin-password", BCrypt.gensalt(4)),
                 telegramWebhookSecret = "test-telegram-webhook-token",
             )
         }
@@ -75,6 +77,8 @@ val provideConfigModule =
             filename = "/application.json",
             botApi = System.getenv("TELEGRAM_BOT_TOKEN")
                 ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
+            platformAdminHash = System.getenv("PLATFORM_ADMIN_PASSWORD_HASH")
+                ?: throw IllegalStateException("PLATFORM_ADMIN_PASSWORD_HASH missing"),
             telegramWebhookSecret = System.getenv("TELEGRAM_WEBHOOK_SECRET")
                 ?: throw IllegalStateException("TELEGRAM_WEBHOOK_SECRET missing"),
         ) }

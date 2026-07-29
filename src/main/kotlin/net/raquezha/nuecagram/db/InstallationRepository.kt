@@ -3,6 +3,7 @@ package net.raquezha.nuecagram.db
 import java.sql.PreparedStatement
 import java.sql.Types
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 import net.raquezha.nuecagram.webhook.ChatDetails
@@ -13,6 +14,7 @@ private const val PARAM_3 = 3
 private const val PARAM_4 = 4
 private const val PARAM_5 = 5
 private const val PARAM_6 = 6
+private const val PARAM_7 = 7
 
 data class InstallationRecord(
     val id: UUID,
@@ -38,9 +40,36 @@ data class ConsumedManagementLink(
     val installationId: UUID,
 )
 
+data class IssuedManagementSession(
+    val sessionId: UUID,
+    val installationId: UUID,
+    val raw: String,
+    val csrf: String,
+)
+
 data class ManagementSessionContext(
     val sessionId: UUID,
     val installationId: UUID,
+    val csrfDigest: ByteArray?,
+    val csrfHash: String?,
+)
+
+data class IssuedPlatformAdminSession(
+    val id: UUID,
+    val raw: String,
+    val csrf: String,
+)
+
+data class PlatformAdminSessionContext(
+    val id: UUID,
+    val csrfDigest: ByteArray,
+    val csrfHash: String,
+)
+
+data class PlatformAdminAuditRecord(
+    val installationId: UUID?,
+    val action: String,
+    val createdAt: Instant,
 )
 
 data class InstallationContext(
@@ -372,7 +401,7 @@ class InstallationRepository(
         raw: String,
         sessionExpiresAt: Instant,
         now: Instant = Instant.now(),
-    ): IssuedCredential? =
+    ): IssuedManagementSession? =
         databaseFactory.dbQuery { connection ->
             data class Candidate(
                 val id: UUID,
@@ -407,6 +436,7 @@ class InstallationRepository(
                     ?: return@dbQuery null
             val sessionId = UUID.randomUUID()
             val (sessionRaw, stored) = CredentialCodec.issueCredential()
+            val (csrf, storedCsrf) = CredentialCodec.issueCredential()
             val previousAutoCommit = connection.autoCommit
             connection.autoCommit = false
             try {
@@ -429,8 +459,9 @@ class InstallationRepository(
                 }
                 connection.prepareStatement(
                     """
-                    INSERT INTO management_sessions (id, installation_id, token_digest, token_hash, expires_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO management_sessions
+                        (id, installation_id, token_digest, token_hash, expires_at, csrf_digest, csrf_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """.trimIndent(),
                 ).use { statement ->
                     statement.setObject(PARAM_1, sessionId)
@@ -438,10 +469,12 @@ class InstallationRepository(
                     statement.setBytes(PARAM_3, stored.digest)
                     statement.setString(PARAM_4, stored.hash)
                     statement.setInstant(PARAM_5, sessionExpiresAt)
+                    statement.setBytes(PARAM_6, storedCsrf.digest)
+                    statement.setString(PARAM_7, storedCsrf.hash)
                     statement.executeUpdate()
                 }
                 connection.commit()
-                IssuedCredential(sessionId, match.installationId, sessionRaw)
+                IssuedManagementSession(sessionId, match.installationId, sessionRaw, csrf)
             } catch (exception: Exception) {
                 connection.rollback()
                 throw exception
@@ -455,16 +488,9 @@ class InstallationRepository(
         now: Instant = Instant.now(),
     ): ManagementSessionContext? =
         databaseFactory.dbQuery { connection ->
-            data class Candidate(
-                val id: UUID,
-                val installationId: UUID,
-                val digest: ByteArray,
-                val hash: String,
-            )
-            val candidates = mutableListOf<Candidate>()
             connection.prepareStatement(
                 """
-                SELECT id, installation_id, token_digest, token_hash
+                SELECT id, installation_id, token_digest, token_hash, csrf_digest, csrf_hash
                 FROM management_sessions
                 WHERE expires_at > ? AND token_digest = ?
                 """.trimIndent(),
@@ -474,17 +500,163 @@ class InstallationRepository(
                 statement.executeQuery().use { result ->
                     while (result.next()) {
                         val hash = result.getString("token_hash") ?: continue
-                        candidates += Candidate(
-                            id = result.getObject("id", UUID::class.java),
-                            installationId = result.getObject("installation_id", UUID::class.java),
-                            digest = result.getBytes("token_digest"),
-                            hash = hash,
-                        )
+                        if (CredentialCodec.matches(raw, result.getBytes("token_digest"), hash)) {
+                            return@dbQuery ManagementSessionContext(
+                                sessionId = result.getObject("id", UUID::class.java),
+                                installationId = result.getObject("installation_id", UUID::class.java),
+                                csrfDigest = result.getBytes("csrf_digest"),
+                                csrfHash = result.getString("csrf_hash"),
+                            )
+                        }
+                    }
+                    null
+                }
+            }
+        }
+
+    fun verifyManagementCsrf(
+        session: ManagementSessionContext,
+        raw: String,
+    ): Boolean =
+        session.csrfDigest?.let { digest ->
+            session.csrfHash?.let { hash -> CredentialCodec.matches(raw, digest, hash) }
+        } ?: false
+
+    suspend fun deleteManagementSession(id: UUID): Boolean =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement("DELETE FROM management_sessions WHERE id = ?").use { statement ->
+                statement.setObject(PARAM_1, id)
+                statement.executeUpdate() == 1
+            }
+        }
+
+    suspend fun issuePlatformAdminSession(expiresAt: Instant): IssuedPlatformAdminSession {
+        val id = UUID.randomUUID()
+        val (raw, token) = CredentialCodec.issueCredential()
+        val (csrf, storedCsrf) = CredentialCodec.issueCredential()
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO platform_admin_sessions
+                    (id, token_digest, token_hash, csrf_digest, csrf_hash, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setObject(PARAM_1, id)
+                statement.setBytes(PARAM_2, token.digest)
+                statement.setString(PARAM_3, token.hash)
+                statement.setBytes(PARAM_4, storedCsrf.digest)
+                statement.setString(PARAM_5, storedCsrf.hash)
+                statement.setInstant(PARAM_6, expiresAt)
+                statement.executeUpdate()
+            }
+        }
+        return IssuedPlatformAdminSession(id, raw, csrf)
+    }
+
+    suspend fun verifyPlatformAdminSession(
+        raw: String,
+        now: Instant = Instant.now(),
+    ): PlatformAdminSessionContext? =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                SELECT id, token_digest, token_hash, csrf_digest, csrf_hash
+                FROM platform_admin_sessions
+                WHERE expires_at > ? AND token_digest = ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInstant(PARAM_1, now)
+                statement.setBytes(PARAM_2, CredentialCodec.digest(raw))
+                statement.executeQuery().use { result ->
+                    while (result.next()) {
+                        if (
+                            CredentialCodec.matches(
+                                raw,
+                                result.getBytes("token_digest"),
+                                result.getString("token_hash"),
+                            )
+                        ) {
+                            return@dbQuery PlatformAdminSessionContext(
+                                id = result.getObject("id", UUID::class.java),
+                                csrfDigest = result.getBytes("csrf_digest"),
+                                csrfHash = result.getString("csrf_hash"),
+                            )
+                        }
+                    }
+                    null
+                }
+            }
+        }
+
+    fun verifyPlatformAdminCsrf(
+        session: PlatformAdminSessionContext,
+        raw: String,
+    ): Boolean = CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
+
+    suspend fun deletePlatformAdminSession(id: UUID): Boolean =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement("DELETE FROM platform_admin_sessions WHERE id = ?").use { statement ->
+                statement.setObject(PARAM_1, id)
+                statement.executeUpdate() == 1
+            }
+        }
+
+    suspend fun platformAdminInstallations(): List<InstallationAdminContext> =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id, i.telegram_topic_id,
+                    COALESCE(m.muted, FALSE) AS muted
+                FROM installations i
+                LEFT JOIN mute_states m ON m.installation_id = i.id
+                ORDER BY i.created_at DESC
+                """.trimIndent(),
+            ).use { statement ->
+                statement.executeQuery().use { result ->
+                    buildList {
+                        while (result.next()) {
+                            add(
+                                InstallationAdminContext(
+                                    id = result.getObject("id", UUID::class.java),
+                                    gitlabBaseUrl = result.getString("gitlab_base_url"),
+                                    gitlabProjectId = result.getNullableLong("gitlab_project_id"),
+                                    telegramChatId = result.getLong("telegram_chat_id"),
+                                    telegramTopicId = result.getNullableLong("telegram_topic_id"),
+                                    muted = result.getBoolean("muted"),
+                                ),
+                            )
+                        }
                     }
                 }
             }
-            candidates.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
-                ?.let { ManagementSessionContext(it.id, it.installationId) }
+        }
+
+    suspend fun platformAdminAuditEvents(limit: Int = 200): List<PlatformAdminAuditRecord> =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                SELECT installation_id, action, created_at
+                FROM audit_events
+                ORDER BY created_at DESC
+                LIMIT ?
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setInt(PARAM_1, limit)
+                statement.executeQuery().use { result ->
+                    buildList {
+                        while (result.next()) {
+                            add(
+                                PlatformAdminAuditRecord(
+                                    installationId = result.getObject("installation_id", UUID::class.java),
+                                    action = result.getString("action"),
+                                    createdAt = result.getObject("created_at", OffsetDateTime::class.java).toInstant(),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
         }
 
     suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int =
@@ -501,6 +673,16 @@ class InstallationRepository(
         databaseFactory.dbQuery { connection ->
             connection.prepareStatement(
                 "DELETE FROM management_sessions WHERE expires_at <= ?",
+            ).use { statement ->
+                statement.setInstant(PARAM_1, now)
+                statement.executeUpdate()
+            }
+        }
+
+    suspend fun cleanupExpiredPlatformAdminSessions(now: Instant = Instant.now()): Int =
+        databaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                "DELETE FROM platform_admin_sessions WHERE expires_at <= ?",
             ).use { statement ->
                 statement.setInstant(PARAM_1, now)
                 statement.executeUpdate()
