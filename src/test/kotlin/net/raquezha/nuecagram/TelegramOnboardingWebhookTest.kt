@@ -34,37 +34,50 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun setupSendsCredentialOnlyToPrivateChatAndAudits() =
-        testApplication {
-            configureTestApplication()
-            bootstrapPrivateUser(71)
-            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 71, "administrator")
-            val initialSetupAuditCount = auditActionCount("telegram_setup")
-            val initialLinkAuditCount = auditActionCount("telegram_management_link")
+    fun setupSendsCredentialOnlyToPrivateChatAndAudits() {
+        val previous = System.getProperty("nuecagram.publicUrl")
+        System.setProperty("nuecagram.publicUrl", "https://android.nweca.com/nuecagram")
+        try {
+            testApplication {
+                configureTestApplication()
+                bootstrapPrivateUser(71)
+                mockTelegramService().setChatMemberStatus(installation.telegramChatId, 71, "administrator")
+                val initialSetupAuditCount = auditActionCount("telegram_setup")
+                val initialLinkAuditCount = auditActionCount("telegram_management_link")
 
-            assertThat(
-                postTelegram(
-                    groupUpdate(
-                        71,
-                        "/setup https://gitlab.example.com 321 777",
-                        installation.telegramChatId,
-                        userId = 71,
-                    ),
-                ).status,
-            ).isEqualTo(HttpStatusCode.OK)
+                assertThat(
+                    postTelegram(
+                        groupUpdate(
+                            71,
+                            "/setup https://gitlab.example.com 321 777",
+                            installation.telegramChatId,
+                            userId = 71,
+                        ),
+                    ).status,
+                ).isEqualTo(HttpStatusCode.OK)
 
-            val privateMessage = messagesForChat(71).single()
-            val groupMessage = messagesForChat(installation.telegramChatId).single()
-            assertThat(privateMessage.text).contains("GitLab credential:")
-            assertThat(privateMessage.text).contains("Management URL:")
-            assertThat(privateMessage.text).contains("Webhook URL:")
-            assertThat(groupMessage.text).isEqualTo("Private setup details sent.")
-            assertThat(groupMessage.text).doesNotContain("GitLab credential:")
-            assertThat(groupMessage.text).doesNotContain("Management URL:")
-            assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(1)
-            assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount + 1)
-            assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
+                val privateMessage = messagesForChat(71).single()
+                val groupMessage = messagesForChat(installation.telegramChatId).single()
+                assertThat(privateMessage.text).contains("GitLab credential:")
+                assertThat(privateMessage.text).contains("Management URL:")
+                assertThat(privateMessage.text).contains("Webhook URL:")
+                assertThat(privateMessage.text).contains("https://android.nweca.com/nuecagram/webhook")
+                assertThat(privateMessage.text).contains("https://android.nweca.com/nuecagram/manage/")
+                assertThat(groupMessage.text).isEqualTo("Private setup details sent.")
+                assertThat(groupMessage.text).doesNotContain("GitLab credential:")
+                assertThat(groupMessage.text).doesNotContain("Management URL:")
+                assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(1)
+                assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount + 1)
+                assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
+            }
+        } finally {
+            if (previous == null) {
+                System.clearProperty("nuecagram.publicUrl")
+            } else {
+                System.setProperty("nuecagram.publicUrl", previous)
+            }
         }
+    }
 
     @Test
     fun manageSendsPrivateLinkOnlyOnceForDuplicateUpdates() =

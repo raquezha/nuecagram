@@ -1,4 +1,4 @@
-POST http://127.0.0.1:8080/webhook
+POST http://127.0.0.1:8080/nuecagram/webhook
 Content-Type: application/json
 User-Agent: GitLab/16.11.2-ee
 X-Gitlab-Event: Issue Hook

@@ -12,6 +12,7 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import net.raquezha.nuecagram.configuredRoute
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.SkipEventException
@@ -24,7 +25,7 @@ import org.koin.ktor.ext.inject
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 
-private fun Application.healthPath() = basePath() + "/health"
+private fun Application.healthPath() = configuredRoute("/health")
 
 @Suppress("LongMethod")
 fun Application.configureRouting() {
@@ -51,7 +52,7 @@ fun Application.configureRouting() {
         managementRouting(this@configureRouting.basePath())
         platformAdminRouting(this@configureRouting.basePath())
 
-        post("/webhook") {
+        post(configuredRoute("/webhook")) {
             try {
                 val webhookData = webhookService.handleRequest(call)
                 logger.debug {

@@ -23,11 +23,13 @@ class ManagementUiTest : BaseEventTestHelper() {
     @Before
     fun resetBasePath() {
         System.clearProperty("nuecagram.basePath")
+        System.clearProperty("nuecagram.publicUrl")
     }
 
     @After
     fun clearBasePath() {
         System.clearProperty("nuecagram.basePath")
+        System.clearProperty("nuecagram.publicUrl")
     }
 
     @Test
@@ -225,8 +227,8 @@ class ManagementUiTest : BaseEventTestHelper() {
 
     @Test
     fun setupPageUsesConfiguredBasePath() {
-        val previous = System.getProperty("nuecagram.basePath")
-        System.setProperty("nuecagram.basePath", "/managed")
+        val previous = System.getProperty("nuecagram.publicUrl")
+        System.setProperty("nuecagram.publicUrl", "https://example.com/managed")
         try {
             testApplication {
                 configureTestApplication()
@@ -235,9 +237,9 @@ class ManagementUiTest : BaseEventTestHelper() {
             }
         } finally {
             if (previous == null) {
-                System.clearProperty("nuecagram.basePath")
+                System.clearProperty("nuecagram.publicUrl")
             } else {
-                System.setProperty("nuecagram.basePath", previous)
+                System.setProperty("nuecagram.publicUrl", previous)
             }
         }
     }

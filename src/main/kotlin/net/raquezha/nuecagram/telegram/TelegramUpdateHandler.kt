@@ -6,7 +6,7 @@ import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import net.raquezha.nuecagram.ConfigWithSecrets
-import net.raquezha.nuecagram.configuredBasePath
+import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
@@ -328,19 +328,12 @@ private fun InstallationAdminContext.deliveryTestMessage(): Message =
 private fun managementLinkExpiry(): Instant =
     Instant.now().plus(MANAGEMENT_LINK_TTL_MINUTES, ChronoUnit.MINUTES)
 
-private fun ConfigWithSecrets.publicBaseUrl(): String {
-    val host = host.removeSuffix("/")
-    return when {
-        host.startsWith("http://") || host.startsWith("https://") -> host
-        host == "localhost" -> "http://$host:$port"
-        else -> "https://$host"
-    }
-}
+private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
 
 private fun ConfigWithSecrets.webhookUrl(): String = "${publicBaseUrl()}/webhook"
 
 private fun ConfigWithSecrets.managementUrl(code: String): String =
-    "${publicBaseUrl()}${configuredBasePath()}/manage/$code"
+    "${publicBaseUrl()}/manage/$code"
 
 private fun setupDetailsText(
     config: ConfigWithSecrets,

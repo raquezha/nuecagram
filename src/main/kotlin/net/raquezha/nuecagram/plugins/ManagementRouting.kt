@@ -26,7 +26,7 @@ private const val ROTATION_GRACE_MINUTES = 0L
 fun Route.managementRouting(basePath: String) {
     val installationRepository by inject<InstallationRepository>()
 
-    get(basePath) {
+    get(basePath.ifEmpty { "/" }) {
         call.respondManagementHtml(
             title = "Nuecagram setup",
             body = onboardingHtml(basePath),
@@ -173,7 +173,7 @@ fun Route.managementRouting(basePath: String) {
         installationRepository.deleteManagementSession(session.sessionId)
         call.clearManagementSession(basePath)
         call.appendSecurityHeaders()
-        call.respondRedirect(basePath)
+        call.respondRedirect(basePath.ifEmpty { "/" })
     }
 }
 
