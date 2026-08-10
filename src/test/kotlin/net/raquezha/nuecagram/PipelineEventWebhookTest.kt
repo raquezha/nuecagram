@@ -46,7 +46,59 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
                 )
             }
 
-            val payload = """
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+
+            val completionReply = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().find { it.text.contains("@bob") }
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(completionReply).isNotNull()
+            assertThat(completionReply?.text).contains("@bob @charlie")
+        }
+
+    @Test
+    fun testMrPipelineFailurePingsCreator() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2924L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_FAILED)
+
+            val completionReply = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().find { it.text.contains("@alice") }
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(completionReply).isNotNull()
+            assertThat(completionReply?.text).contains("@alice")
+            assertThat(completionReply?.text).doesNotContain("@bob")
+        }
+
+    companion object {
+        val SAMPLE_PAYLOAD_MR_SUCCESS =
+            """
 {
   "object_kind": "pipeline",
   "object_attributes": {
@@ -83,32 +135,8 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
 }
 """.trimIndent()
 
-            postWebhook(EVENT_PIPELINE, payload)
-
-            val sentMessages = mockTelegramService.sentMessages()
-            val completionReply = sentMessages.find { it.text.contains("@bob") }
-            assertThat(completionReply).isNotNull()
-            assertThat(completionReply?.text).contains("@bob @charlie")
-        }
-
-    @Test
-    fun testMrPipelineFailurePingsCreator() =
-        testApplication {
-            configureTestApplication()
-            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
-            mockTelegramService.reset()
-
-            kotlinx.coroutines.runBlocking {
-                installationRepository.upsertMrParticipants(
-                    installationId = installation.id,
-                    projectId = 105L,
-                    mrIid = 2924L,
-                    authorUsername = "alice",
-                    reviewerUsernames = listOf("bob"),
-                )
-            }
-
-            val payload = """
+        val SAMPLE_PAYLOAD_MR_FAILED =
+            """
 {
   "object_kind": "pipeline",
   "object_attributes": {
@@ -144,17 +172,6 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
   }
 }
 """.trimIndent()
-
-            postWebhook(EVENT_PIPELINE, payload)
-
-            val sentMessages = mockTelegramService.sentMessages()
-            val completionReply = sentMessages.find { it.text.contains("@alice") }
-            assertThat(completionReply).isNotNull()
-            assertThat(completionReply?.text).contains("@alice")
-            assertThat(completionReply?.text).doesNotContain("@bob")
-        }
-
-    companion object {
         @BeforeClass
         @JvmStatic
         fun setUpClass() {

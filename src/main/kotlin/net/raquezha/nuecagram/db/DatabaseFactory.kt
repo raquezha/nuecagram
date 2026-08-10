@@ -30,6 +30,10 @@ data class DatabaseConfig(
 }
 
 object DatabaseFactory {
+    private const val DEFAULT_MAX_POOL_SIZE = 20
+    private const val DEFAULT_MIN_IDLE = 2
+    private const val DEFAULT_CONNECTION_TIMEOUT_MS = 10_000L
+
     @Volatile
     private var dataSource: HikariDataSource? = null
 
@@ -47,6 +51,9 @@ object DatabaseFactory {
                         username = config.username
                         setPassword(config.password)
                         driverClassName = "org.postgresql.Driver"
+                        maximumPoolSize = DEFAULT_MAX_POOL_SIZE
+                        minimumIdle = DEFAULT_MIN_IDLE
+                        connectionTimeout = DEFAULT_CONNECTION_TIMEOUT_MS
                     },
                 )
             try {
