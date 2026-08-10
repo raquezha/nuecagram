@@ -40,9 +40,18 @@ object DatabaseFactory {
     @Volatile
     private var database: Database? = null
 
+    @Volatile
+    private var initializedUrl: String? = null
+
     fun initialize(config: DatabaseConfig = DatabaseConfig.fromEnvironment()) {
         synchronized(this) {
-            if (dataSource != null) return
+            if (dataSource != null && initializedUrl == config.url) return
+            // URL changed (e.g., new Testcontainer) — close the stale pool first
+            if (dataSource != null && initializedUrl != config.url) {
+                dataSource?.close()
+                dataSource = null
+                database = null
+            }
 
             val source =
                 HikariDataSource(
@@ -60,6 +69,7 @@ object DatabaseFactory {
                 Flyway.configure().dataSource(source).load().migrate()
                 database = Database.connect(source)
                 dataSource = source
+                initializedUrl = config.url
             } catch (exception: Exception) {
                 source.close()
                 throw exception
@@ -95,6 +105,7 @@ object DatabaseFactory {
         dataSource?.close()
         dataSource = null
         database = null
+        initializedUrl = null
     }
 
     fun install(application: Application) {
