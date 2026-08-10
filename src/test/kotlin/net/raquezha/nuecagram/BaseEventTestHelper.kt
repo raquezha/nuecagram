@@ -133,9 +133,21 @@ abstract class BaseEventTestHelper : KoinTest {
         const val EVENT_RELEASE = "Release Hook"
         const val EVENT_NOTE = "Note Hook"
 
-        private val postgres = PostgreSQLContainer<Nothing>("postgres:16-alpine")
+        private val postgres = PostgreSQLContainer<Nothing>("postgres:16-alpine").apply {
+            withReuse(true)
+        }
         private val installationCounter = AtomicLong(0)
+        @Volatile
         private var testDatabaseStarted = false
+
+        init {
+            Runtime.getRuntime().addShutdownHook(Thread {
+                if (testDatabaseStarted) {
+                    runCatching { postgres.stop() }
+                    testDatabaseStarted = false
+                }
+            })
+        }
 
         @BeforeClass
         @JvmStatic
