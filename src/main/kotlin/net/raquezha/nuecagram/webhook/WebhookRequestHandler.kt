@@ -6,7 +6,9 @@ import kotlinx.coroutines.channels.Channel
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import org.gitlab4j.api.webhook.BuildEvent
+import org.gitlab4j.api.webhook.MergeRequestEvent
 import org.gitlab4j.api.webhook.PipelineEvent
+import net.raquezha.nuecagram.db.InstallationRepository
 import org.koin.ktor.ext.inject
 
 class WebhookRequestHandler(
@@ -57,6 +59,7 @@ class WebhookRequestHandler(
 
     suspend fun processQueue() {
         val webhookService by application.inject<WebHookService>()
+        val installationRepository by application.inject<InstallationRepository>()
         val logger by application.inject<KLogger>()
         val telegramService by application.inject<TelegramService>()
         val formatter: WebhookMessageFormatter by application.inject()
@@ -64,43 +67,14 @@ class WebhookRequestHandler(
         logger.debug { MESSAGE_PROCESSING }
         for (data in queue) {
             try {
-                val event = data.event
-                val installationId = data.installationId
-                val chatDetails = data.chatDetails
-
-                when (event) {
-                    is PipelineEvent -> {
-                        handlePipelineEvent(
-                            installationId = installationId,
-                            event = event,
-                            chatDetails = chatDetails,
-                            webhookService = webhookService,
-                            telegramService = telegramService,
-                            formatter = formatter,
-                            logger = logger,
-                        )
-                    }
-                    is BuildEvent -> {
-                        handleBuildEvent(
-                            installationId = installationId,
-                            event = event,
-                            chatDetails = chatDetails,
-                            webhookService = webhookService,
-                            telegramService = telegramService,
-                            formatter = formatter,
-                            logger = logger,
-                        )
-                    }
-                    else -> {
-                        handleGenericEvent(
-                            event = data.event,
-                            chatDetails = chatDetails,
-                            telegramService = telegramService,
-                            formatter = formatter,
-                            logger = logger,
-                        )
-                    }
-                }
+                processEvent(
+                    data = data,
+                    webhookService = webhookService,
+                    installationRepository = installationRepository,
+                    telegramService = telegramService,
+                    formatter = formatter,
+                    logger = logger,
+                )
             } catch (skipEx: SkipEventException) {
                 logger.debug { MESSAGE_SKIPPED }
             } catch (e: Exception) {
@@ -108,6 +82,64 @@ class WebhookRequestHandler(
             }
         }
         logger.debug { MESSAGE_STOPPED }
+    }
+
+    private suspend fun processEvent(
+        data: EventData,
+        webhookService: WebHookService,
+        installationRepository: InstallationRepository,
+        telegramService: TelegramService,
+        formatter: WebhookMessageFormatter,
+        logger: KLogger,
+    ) {
+        val event = data.event
+        val installationId = data.installationId
+        val chatDetails = data.chatDetails
+
+        when (event) {
+            is PipelineEvent -> {
+                handlePipelineEvent(
+                    installationId = installationId,
+                    event = event,
+                    chatDetails = chatDetails,
+                    webhookService = webhookService,
+                    telegramService = telegramService,
+                    formatter = formatter,
+                    logger = logger,
+                )
+            }
+            is BuildEvent -> {
+                handleBuildEvent(
+                    installationId = installationId,
+                    event = event,
+                    chatDetails = chatDetails,
+                    webhookService = webhookService,
+                    telegramService = telegramService,
+                    formatter = formatter,
+                    logger = logger,
+                )
+            }
+            is MergeRequestEvent -> {
+                handleMergeRequestEvent(
+                    installationId = installationId,
+                    event = event,
+                    chatDetails = chatDetails,
+                    installationRepository = installationRepository,
+                    telegramService = telegramService,
+                    formatter = formatter,
+                    logger = logger,
+                )
+            }
+            else -> {
+                handleGenericEvent(
+                    event = data.event,
+                    chatDetails = chatDetails,
+                    telegramService = telegramService,
+                    formatter = formatter,
+                    logger = logger,
+                )
+            }
+        }
     }
 
     private suspend fun handlePipelineEvent(
@@ -300,6 +332,40 @@ class WebhookRequestHandler(
                 ),
             )
         logger.debug { "Sent message $messageId for ${event.objectKind}" }
+    }
+
+    private suspend fun handleMergeRequestEvent(
+        installationId: java.util.UUID,
+        event: org.gitlab4j.api.webhook.MergeRequestEvent,
+        chatDetails: ChatDetails,
+        installationRepository: InstallationRepository,
+        telegramService: TelegramService,
+        formatter: WebhookMessageFormatter,
+        logger: KLogger,
+    ) {
+        val projectId = event.project?.id ?: event.objectAttributes?.targetProjectId
+        val mrIid = event.objectAttributes?.iid
+        val authorUsername = event.user?.username
+        val reviewers = event.reviewers.orEmpty().mapNotNull { it.username }
+
+        if (projectId != null && mrIid != null) {
+            installationRepository.upsertMrParticipants(
+                installationId = installationId,
+                projectId = projectId,
+                mrIid = mrIid,
+                authorUsername = authorUsername,
+                reviewerUsernames = reviewers,
+            )
+            logger.debug { "MR !$mrIid (project $projectId): cached author=$authorUsername, reviewers=$reviewers" }
+        }
+
+        handleGenericEvent(
+            event = event,
+            chatDetails = chatDetails,
+            telegramService = telegramService,
+            formatter = formatter,
+            logger = logger,
+        )
     }
 
     private fun formatPipelineCompletionReply(
