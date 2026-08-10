@@ -56,6 +56,11 @@ data class IssuedPlatformAdminSession(val id: UUID, val raw: String, val csrf: S
 data class PlatformAdminSessionContext(val id: UUID, val csrfDigest: ByteArray, val csrfHash: String)
 data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
 
+data class MrParticipants(
+    val authorUsername: String?,
+    val reviewerUsernames: List<String>,
+)
+
 data class InstallationContext(
     val secretId: UUID,
     val installationId: UUID,
@@ -463,6 +468,48 @@ class InstallationRepository(
         telegramTopicId = this[Installations.telegramTopicId],
         muted = getOrNull(MuteStates.muted) ?: false,
     )
+
+    suspend fun upsertMrParticipants(
+        installationId: UUID,
+        projectId: Long,
+        mrIid: Long,
+        authorUsername: String?,
+        reviewerUsernames: List<String>,
+    ) {
+        val serializedReviewers = reviewerUsernames.joinToString(",")
+        databaseFactory.dbTransaction {
+            MrParticipantCaches.upsert {
+                it[MrParticipantCaches.installationId] = installationId
+                it[MrParticipantCaches.projectId] = projectId
+                it[MrParticipantCaches.mrIid] = mrIid
+                it[MrParticipantCaches.authorUsername] = authorUsername
+                it[MrParticipantCaches.reviewerUsernames] = serializedReviewers
+                it[MrParticipantCaches.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
+            }
+        }
+    }
+
+    suspend fun getMrParticipants(
+        installationId: UUID,
+        projectId: Long,
+        mrIid: Long,
+    ): MrParticipants? {
+        return databaseFactory.dbTransaction {
+            MrParticipantCaches.selectAll()
+                .where {
+                    (MrParticipantCaches.installationId eq installationId) and
+                        (MrParticipantCaches.projectId eq projectId) and
+                        (MrParticipantCaches.mrIid eq mrIid)
+                }
+                .singleOrNull()
+                ?.let { row ->
+                    val author = row[MrParticipantCaches.authorUsername]
+                    val rawReviewers = row[MrParticipantCaches.reviewerUsernames]
+                    val reviewers = if (rawReviewers.isBlank()) emptyList() else rawReviewers.split(",")
+                    MrParticipants(authorUsername = author, reviewerUsernames = reviewers)
+                }
+        }
+    }
 }
 
 private fun Instant.databaseTime(): OffsetDateTime = atOffset(ZoneOffset.UTC)
