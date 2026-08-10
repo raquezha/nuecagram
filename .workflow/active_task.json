@@ -1,0 +1,9 @@
+{
+  "active_task": "github-49",
+  "source": "github",
+  "id": "49",
+  "sourceId": "49",
+  "taskPath": ".workflow/tasks/github-49",
+  "path": ".workflow/tasks/github-49",
+  "branch": "feat/github-49-hosted-onboarding"
+}

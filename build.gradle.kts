@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ktor)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.testballoon)
 }
 
 group = "net.raquezha"
@@ -95,6 +96,15 @@ dependencies {
     implementation(libs.koin.annotation)
     implementation(libs.kotlin.logging)
     implementation(libs.vendeli.telegram.bot)
+    implementation(libs.hikari)
+    implementation(libs.postgresql)
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.postgresql)
+    implementation(libs.exposed.core)
+    implementation(libs.exposed.jdbc)
+    implementation(libs.exposed.java.time)
+    implementation(libs.exposed.json)
+    implementation(libs.jbcrypt)
     "ksp"(libs.vendeli.ksp)
 
     testImplementation(libs.kotlin.test)
@@ -102,6 +112,9 @@ dependencies {
     testImplementation(libs.koin.test)
     testImplementation(libs.koin.test.junit4)
     testImplementation(libs.mockk)
+    testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.testballoon.framework.core)
+    testRuntimeOnly(libs.junit.vintage.engine)
 
 }
 

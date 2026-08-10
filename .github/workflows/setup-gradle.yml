@@ -4,13 +4,15 @@ on:
   workflow_call:
     inputs:
       gradle-task:
-        description: 'Gradle task to run'
+        description: Gradle task to run
         required: true
         type: string
 
 jobs:
   setup-and-run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -19,18 +21,9 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: "17"
-          distribution: "temurin"
+          distribution: temurin
+          cache: gradle
           overwrite-settings: false
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
       - name: Run Gradle Task
-        run: |
-          # Mask secrets to prevent accidental exposure in logs
-          echo "::add-mask::$TELEGRAM_BOT_TOKEN"
-          echo "::add-mask::$NUECAGRAM_SECRET_TOKEN"
-          ./gradlew ${{ inputs.gradle-task }}
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          NUECAGRAM_SECRET_TOKEN: ${{ secrets.NUECAGRAM_SECRET_TOKEN }}
+        run: ./gradlew ${{ inputs.gradle-task }}

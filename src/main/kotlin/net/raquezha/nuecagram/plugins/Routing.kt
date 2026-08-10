@@ -2,6 +2,7 @@ package net.raquezha.nuecagram.plugins
 
 import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.http.HttpStatusCode.Companion.OK
+import io.ktor.http.HttpStatusCode.Companion.ServiceUnavailable
 import io.ktor.server.application.*
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
@@ -11,8 +12,12 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import net.raquezha.nuecagram.configuredRoute
+import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
+import net.raquezha.nuecagram.webhook.WebhookRequestException
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.core.parameter.parametersOf
 import org.koin.ktor.ext.inject
@@ -20,17 +25,34 @@ import org.koin.ktor.ext.inject
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 
+private fun Application.healthPath() = configuredRoute("/health")
+
+@Suppress("LongMethod")
 fun Application.configureRouting() {
+    val databaseFactory by inject<DatabaseFactory>()
     val webhookService by inject<WebHookService>()
+    val installationRepository by inject<InstallationRepository>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
 
     routing {
+        get("${this@configureRouting.healthPath()}/live") {
+            call.respond(OK)
+        }
+
+        get("${this@configureRouting.healthPath()}/ready") {
+            call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+        }
+
         get("/") {
             call.respondText("This application is made to receive webhooks request and send telegram notification")
         }
 
-        post("/webhook") {
+        telegramRouting(this@configureRouting.basePath())
+        managementRouting(this@configureRouting.basePath())
+        platformAdminRouting(this@configureRouting.basePath())
+
+        post(configuredRoute("/webhook")) {
             try {
                 val webhookData = webhookService.handleRequest(call)
                 logger.debug {
@@ -41,11 +63,13 @@ fun Application.configureRouting() {
 
                 call.respond(OK, "Webhook received successfully")
             } catch (skipEx: SkipEventException) {
-                // Skipped events are valid - return 200 OK (not an error)
                 call.respond(OK, "Event skipped: not relevant")
+            } catch (e: WebhookRequestException) {
+                logger.warn { "Rejected webhook request: ${e.message}" }
+                call.respond(e.status, e.message)
             } catch (e: Exception) {
                 logger.error(e) { "Failed to process webhook request: ${e.message}" }
-                call.respond(OK, "Webhook received")
+                call.respond(io.ktor.http.HttpStatusCode.InternalServerError, "Webhook processing failed")
             }
         }
 
@@ -55,6 +79,10 @@ fun Application.configureRouting() {
                 try {
                     webhookRequestHandler.processQueue()
                 } catch (e: Exception) {
+                    if (e is java.util.concurrent.CancellationException) {
+                        logger.debug { "Queue processor stopped" }
+                        break
+                    }
                     logger.error(e) { "Queue processor crashed, restarting in ${QUEUE_RESTART_DELAY_MS}ms..." }
                     delay(QUEUE_RESTART_DELAY_MS)
                 }
@@ -67,6 +95,9 @@ fun Application.configureRouting() {
                 delay(CLEANUP_INTERVAL_MS)
                 try {
                     webhookService.cleanupStaleEntries()
+                    installationRepository.cleanupExpiredManagementLinks()
+                    installationRepository.cleanupExpiredManagementSessions()
+                    installationRepository.cleanupExpiredPlatformAdminSessions()
                     logger.debug { "Periodic cleanup completed" }
                 } catch (e: Exception) {
                     logger.error(e) { "Periodic cleanup failed: ${e.message}" }

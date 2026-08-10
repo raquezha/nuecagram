@@ -1,4 +1,4 @@
-POST http://127.0.0.1:8080/webhook
+POST http://127.0.0.1:8080/nuecagram/webhook
 Content-Type: application/json
 User-Agent: GitLab/16.11.2-ee
 X-Gitlab-Event: Push Hook
@@ -6,9 +6,7 @@ X-Gitlab-Webhook-UUID: 4934cc87-96a7-401b-8256-4aa3ea1c8f74
 X-Gitlab-Instance: https://gitlab.com
 X-Gitlab-Token: [REDACTED]
 X-Gitlab-Event-UUID: 04862d56-febc-4be8-8339-be10e5120f02
-X-Nuecagram-Token: {{X-Nuecagram-Token}}
-X-Nuecagram-Chat-Id: {{X-Nuecagram-Chat-Id}}
-X-Nuecagram-Topic-Id: {{X-Nuecagram-Topic-Id}}
+X-Gitlab-Token: {{X-Gitlab-Token}}
 
 {
   "object_kind": "build",

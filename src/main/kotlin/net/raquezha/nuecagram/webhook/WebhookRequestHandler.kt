@@ -65,11 +65,13 @@ class WebhookRequestHandler(
         for (data in queue) {
             try {
                 val event = data.event
-                val chatDetails = data.chatDetails()
+                val installationId = data.installationId
+                val chatDetails = data.chatDetails
 
                 when (event) {
                     is PipelineEvent -> {
                         handlePipelineEvent(
+                            installationId = installationId,
                             event = event,
                             chatDetails = chatDetails,
                             webhookService = webhookService,
@@ -80,6 +82,7 @@ class WebhookRequestHandler(
                     }
                     is BuildEvent -> {
                         handleBuildEvent(
+                            installationId = installationId,
                             event = event,
                             chatDetails = chatDetails,
                             webhookService = webhookService,
@@ -108,6 +111,7 @@ class WebhookRequestHandler(
     }
 
     private suspend fun handlePipelineEvent(
+        installationId: java.util.UUID,
         event: PipelineEvent,
         chatDetails: ChatDetails,
         webhookService: WebHookService,
@@ -120,12 +124,12 @@ class WebhookRequestHandler(
 
         // Mark that we received a PipelineEvent for this pipeline
         // This tells BuildEvent handler to skip (both-enabled mode)
-        webhookService.markPipelineEventReceived(pipelineId)
+        webhookService.markPipelineEventReceived(installationId, pipelineId)
 
         // Cleanup stale entries periodically
         webhookService.cleanupStaleEntries()
 
-        val existingMessageId = webhookService.getPipelineMessageId(pipelineId)
+        val existingMessageId = webhookService.getPipelineMessageId(installationId, pipelineId)
 
         val messageId =
             telegramService.sendMessage(
@@ -159,17 +163,18 @@ class WebhookRequestHandler(
                 }
 
                 // Clear all tracking for this pipeline
-                webhookService.clearTrackedPipeline(pipelineId)
+                webhookService.clearTrackedPipeline(installationId, pipelineId)
                 logger.debug { "Pipeline #$pipelineId finished ($status), cleared all tracking" }
             }
             else -> {
-                webhookService.setPipelineMessageId(pipelineId, messageId)
+                webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
                 logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
             }
         }
     }
 
     private suspend fun handleBuildEvent(
+        installationId: java.util.UUID,
         event: BuildEvent,
         chatDetails: ChatDetails,
         webhookService: WebHookService,
@@ -185,7 +190,7 @@ class WebhookRequestHandler(
         webhookService.cleanupStaleEntries()
 
         // Check if PipelineEvent is handling this pipeline (both-enabled mode)
-        if (webhookService.hasPipelineEvent(pipelineId)) {
+        if (webhookService.hasPipelineEvent(installationId, pipelineId)) {
             logger.debug { "Skipping BuildEvent #$jobId - PipelineEvent is handling pipeline #$pipelineId" }
             return
         }
@@ -193,7 +198,7 @@ class WebhookRequestHandler(
         // Job-only mode: accumulate jobs and build consolidated message
         // This is a fallback for users who only enabled "Job events" in GitLab.
         // For best experience, users should enable "Pipeline events" instead.
-        val isFirstJobForPipeline = webhookService.getTrackedPipeline(pipelineId) == null
+        val isFirstJobForPipeline = webhookService.getTrackedPipeline(installationId, pipelineId) == null
         if (isFirstJobForPipeline) {
             logger.debug {
                 "Job-only mode: Pipeline #$pipelineId has no PipelineEvent. " +
@@ -202,41 +207,15 @@ class WebhookRequestHandler(
         }
         logger.debug { "Processing BuildEvent #$jobId for pipeline #$pipelineId in job-only mode" }
 
-        // Create JobInfo from BuildEvent
-        val jobInfo =
-            JobInfo(
-                id = jobId,
-                name = event.buildName ?: "unknown",
-                stage = event.buildStage ?: "unknown",
-                status = status ?: "unknown",
-                duration = event.buildDuration,
-                failureReason = event.buildFailureReason,
-                allowFailure = event.buildAllowFailure ?: false,
-            )
-
-        // Create metadata for tracking
-        val metadata =
-            PipelineMetadata(
-                projectName = event.project?.name ?: event.repository?.name,
-                projectWebUrl = event.project?.webUrl ?: event.repository?.homepage,
-                ref = event.ref,
-                commitSha = event.sha,
-                commitMessage = event.commit?.message,
-                userName = event.user?.name,
-            )
+        val jobInfo = event.toJobInfo(jobId, status)
+        val metadata = event.toPipelineMetadata()
 
         // Add job to tracked pipeline
-        webhookService.addJobToTrackedPipeline(pipelineId, jobInfo, metadata)
+        webhookService.addJobToTrackedPipeline(installationId, pipelineId, jobInfo, metadata)
 
-        // Get the tracked pipeline with all accumulated jobs
-        val trackedPipeline = webhookService.getTrackedPipeline(pipelineId)
-        if (trackedPipeline == null) {
-            logger.error {
-                "Bug: TrackedPipeline #$pipelineId is null immediately after addJobToTrackedPipeline(). " +
-                    "This indicates a bug in WebHookService.addJobToTrackedPipeline()."
-            }
-            return
-        }
+        val trackedPipeline =
+            webhookService.getTrackedPipeline(installationId, pipelineId)
+                ?: return logMissingTrackedPipeline(logger, pipelineId)
 
         val existingMessageId = trackedPipeline.messageId
 
@@ -253,23 +232,52 @@ class WebhookRequestHandler(
             )
         logger.debug { "Pipeline #$pipelineId (job-only): sent/updated message $messageId with ${trackedPipeline.jobs.size} jobs" }
 
-        // Update the tracked pipeline with the message ID
-        webhookService.updateTrackedPipelineMessageId(pipelineId, messageId)
+        webhookService.updateTrackedPipelineMessageId(installationId, pipelineId, messageId)
+        logTerminalJobOnlyPipelineIfNeeded(logger, pipelineId, trackedPipeline)
+    }
 
-        // Check if this might be a terminal state for the pipeline
-        // In job-only mode, we can't definitively know when the pipeline is complete,
-        // so we rely on TTL cleanup. However, if we detect a terminal job status and
-        // all tracked jobs are terminal, we can consider it potentially complete.
-        val allJobsTerminal =
-            trackedPipeline.jobs.values.all { job ->
-                job.status in JOB_TERMINAL_STATUSES
-            }
+    private fun BuildEvent.toJobInfo(
+        jobId: Long,
+        status: String?,
+    ) =
+        JobInfo(
+            id = jobId,
+            name = buildName ?: "unknown",
+            stage = buildStage ?: "unknown",
+            status = status ?: "unknown",
+            duration = buildDuration,
+            failureReason = buildFailureReason,
+            allowFailure = buildAllowFailure ?: false,
+        )
 
+    private fun BuildEvent.toPipelineMetadata() =
+        PipelineMetadata(
+            projectName = project?.name ?: repository?.name,
+            projectWebUrl = project?.webUrl ?: repository?.homepage,
+            ref = ref,
+            commitSha = sha,
+            commitMessage = commit?.message,
+            userName = user?.name,
+        )
+
+    private fun logMissingTrackedPipeline(
+        logger: KLogger,
+        pipelineId: Long,
+    ) {
+        logger.error {
+            "Bug: TrackedPipeline #$pipelineId is null immediately after addJobToTrackedPipeline(). " +
+                "This indicates a bug in WebHookService.addJobToTrackedPipeline()."
+        }
+    }
+
+    private fun logTerminalJobOnlyPipelineIfNeeded(
+        logger: KLogger,
+        pipelineId: Long,
+        trackedPipeline: TrackedPipeline,
+    ) {
+        val allJobsTerminal = trackedPipeline.jobs.values.all { job -> job.status in JOB_TERMINAL_STATUSES }
         if (allJobsTerminal && trackedPipeline.jobs.isNotEmpty()) {
             logger.debug { "Pipeline #$pipelineId (job-only): all ${trackedPipeline.jobs.size} jobs in terminal state" }
-            // Note: We don't send a reply in job-only mode per requirements
-            // We also don't clear tracking immediately - more jobs might arrive
-            // TTL cleanup will handle it eventually
         }
     }
 

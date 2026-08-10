@@ -16,20 +16,26 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.*
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
+import net.raquezha.nuecagram.telegram.TelegramUpdateHandler
 import net.raquezha.nuecagram.webhook.RandomMessageProvider
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.dsl.module
+import org.mindrot.jbcrypt.BCrypt
 
 fun appModule() =
     listOf(
         provideLogger,
+        provideDatabaseModule,
         provideTelegramService,
+        provideTelegramUpdateModule,
         provideWebhookModule,
         provideHttpClient,
         provideConfigModule,
@@ -39,7 +45,9 @@ fun appModule() =
 fun testAppModule() =
     listOf(
         provideLogger,
+        provideDatabaseModule,
         provideTelegramService,
+        provideTelegramUpdateModule,
         provideWebhookModule,
         provideHttpClient,
         provideTelegramBot,
@@ -57,7 +65,8 @@ val testModule =
                 host = "localhost",
                 port = 8080,
                 botApi = "mock_bot_api",
-                secretToken = "mock_secret_token",
+                platformAdminHash = BCrypt.hashpw("test-admin-password", BCrypt.gensalt(4)),
+                telegramWebhookSecret = "test-telegram-webhook-token",
             )
         }
     }
@@ -68,8 +77,10 @@ val provideConfigModule =
             filename = "/application.json",
             botApi = System.getenv("TELEGRAM_BOT_TOKEN")
                 ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
-            secretToken = System.getenv("NUECAGRAM_SECRET_TOKEN")
-                ?: throw IllegalStateException("NUECAGRAM_SECRET_TOKEN missing"),
+            platformAdminHash = System.getenv("PLATFORM_ADMIN_PASSWORD_HASH")
+                ?: throw IllegalStateException("PLATFORM_ADMIN_PASSWORD_HASH missing"),
+            telegramWebhookSecret = System.getenv("TELEGRAM_WEBHOOK_SECRET")
+                ?: throw IllegalStateException("TELEGRAM_WEBHOOK_SECRET missing"),
         ) }
     }
 
@@ -107,6 +118,12 @@ val provideHttpClient =
     }
 
 
+val provideDatabaseModule =
+    module {
+        single { DatabaseFactory }
+        single { InstallationRepository(get()) }
+    }
+
 val provideLogger =
     module {
         single<KLogger> {
@@ -119,6 +136,11 @@ val provideTelegramService =
         single<TelegramService> {
             TelegramServiceImpl(get(), get())
         }
+    }
+
+val provideTelegramUpdateModule =
+    module {
+        single { TelegramUpdateHandler(get(), get(), get()) }
     }
 
 val provideTelegramBot =
@@ -145,10 +167,8 @@ val provideWebhookModule =
             RandomMessageProvider()
         }
 
-        // Define WebHookHandlerImpl as a single instance, injecting the secretToken and WebHookListenerBuilder
         single<WebHookService> {
-            val config: net.raquezha.nuecagram.ConfigWithSecrets = get()
-            WebHookService(config.secretToken, get())
+            WebHookService(get(), get())
         }
     }
 

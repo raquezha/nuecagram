@@ -1,0 +1,89 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deploy an image or roll back to the previously deployed image
+        required: true
+        type: choice
+        options:
+          - deploy
+          - rollback
+      image_digest:
+        description: Full raquezha/nuecagram@sha256:... reference; optional only for rollback
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+      SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
+      SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
+    steps:
+      - name: Validate deployment request
+        env:
+          ACTION: ${{ inputs.action }}
+          IMAGE: ${{ inputs.image_digest }}
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ]
+          if [ "$ACTION" = deploy ] && [ -z "$IMAGE" ]; then
+            echo "image_digest is required for deploy" >&2
+            exit 1
+          fi
+          if [ -n "$IMAGE" ] && [[ ! "$IMAGE" =~ ^raquezha/nuecagram@sha256:[0-9a-f]{64}$ ]]; then
+            echo "image_digest must be an immutable raquezha/nuecagram digest" >&2
+            exit 1
+          fi
+
+      - name: Install SSH credentials
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          known_host="$SSH_HOST"
+          if [ "$SSH_PORT" != 22 ]; then
+            known_host="[$SSH_HOST]:$SSH_PORT"
+          fi
+          ssh-keygen -F "$known_host" -f ~/.ssh/known_hosts >/dev/null
+
+      - name: Run protected deploy entrypoint
+        env:
+          ACTION: ${{ inputs.action }}
+          IMAGE: ${{ inputs.image_digest || 'previous' }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -p "$SSH_PORT" \
+            "$SSH_USER@$SSH_HOST" \
+            "sudo /usr/local/bin/nuecagram-deploy --mode $ACTION --image $IMAGE"
+
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts

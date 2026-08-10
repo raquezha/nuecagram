@@ -17,6 +17,16 @@ For long answers, always include a **TLDR;** at the top.
 - **Generate detekt baseline:** `./gradlew detektBaseline`
 - **Run app:** `./gradlew run`
 
+## Commit/Push Gate (Required)
+- Before every commit or push, run the full local gate: `./gradlew lintKotlinMain lintKotlinTest detekt test build`.
+- Also run the CI-equivalent clean test job: `./gradlew clean test`.
+- If you changed tests, routing, shared fixtures, static/global state, or system-property/env-based config, run `./gradlew clean test` twice before push to catch order-dependent flakes.
+- If any part of that gate fails, do not commit, do not push, and fix the failure first.
+- If a change touches one focused test area, you may run that focused test first for speed, but the full gate still must pass before commit/push.
+- Treat CI as confirmation, not first discovery. Catch lint, test, and build failures locally before sending them upstream.
+- If AI contributed to a commit, the commit message must include an exact `Assisted-by` trailer. Get the exact value with `bash ~/RQZ/personal/nothing/packages/workflows/norpiv/scripts/get-pi-model.sh` and use that exact output in the trailer, for example `Assisted-by: openai-codex:gpt-5.4 [read,bash,edit,write]`.
+- Before push, verify the actual committed trailer matches the current helper output; if not, amend the commit before pushing so `/verify` does not fail on trailer drift.
+
 ## Project Structure
 
 ```
@@ -72,10 +82,10 @@ src/test/kotlin/net/raquezha/nuecagram/
 ## Architecture
 
 ### Request Flow
-1. GitLab sends webhook POST to `/webhook`
-2. `WebhookRequestHandler` validates headers and parses event
+1. GitLab sends webhook POST to the configured base path, for example `/nuecagram/webhook`
+2. `WebhookRequestHandler` validates `X-Gitlab-Token` against the installation store and parses the event
 3. `WebhookMessageFormatter` formats event into Telegram message
-4. `TelegramService` sends message to configured chat
+4. `TelegramService` sends message to the stored installation destination
 5. For pipeline events, messages are consolidated (create/update pattern)
 
 ### Key Components
@@ -107,15 +117,13 @@ Pipeline and job events are consolidated into a single updating message per pipe
 
 ## Environment Variables
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token from BotFather
-- `NUECAGRAM_SECRET_TOKEN`: Secret token for webhook validation
+- `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook header secret
+- `PLATFORM_ADMIN_PASSWORD_HASH`: platform admin password hash
+- `NUECAGRAM_PUBLIC_URL`: public application root, including any path prefix
+- `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`: PostgreSQL connection
 
 ## Deployment
-Deployment is tag-triggered via GitHub Actions (`.github/workflows/docker-deploy.yml`):
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
-This builds Docker image, pushes to Docker Hub, and creates GitHub Release.
+Use `compose.yaml` with a private `.env` copied from `env.example` for local deployment. Production deployment uses `compose.production.yaml` and the protected workflow documented in `docs/operations.md`.
 
 ## Tech Stack
 - **Language:** Kotlin 1.9.24
