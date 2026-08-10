@@ -41,7 +41,7 @@ abstract class BaseEventTestHelper : KoinTest {
     protected lateinit var installation: InstallationRecord
     protected lateinit var webhookToken: String
 
-    private val telegramService: TelegramService by inject(TelegramService::class.java)
+    protected val telegramService: TelegramService by inject(TelegramService::class.java)
     private val webhookService: WebHookService by inject(WebHookService::class.java)
     protected val installationRepository: InstallationRepository by inject(InstallationRepository::class.java)
 

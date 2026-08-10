@@ -11,6 +11,15 @@ import org.gitlab4j.api.webhook.PipelineEvent
 import net.raquezha.nuecagram.db.InstallationRepository
 import org.koin.ktor.ext.inject
 
+private data class EventProcessingContext(
+    val webhookService: WebHookService,
+    val installationRepository: InstallationRepository,
+    val telegramService: TelegramService,
+    val formatter: WebhookMessageFormatter,
+    val logger: KLogger,
+)
+
+@Suppress("TooManyFunctions")
 class WebhookRequestHandler(
     private val application: Application,
     private val randomMessageProvider: RandomMessageProvider,
@@ -58,39 +67,33 @@ class WebhookRequestHandler(
     }
 
     suspend fun processQueue() {
-        val webhookService by application.inject<WebHookService>()
-        val installationRepository by application.inject<InstallationRepository>()
-        val logger by application.inject<KLogger>()
-        val telegramService by application.inject<TelegramService>()
-        val formatter: WebhookMessageFormatter by application.inject()
+        val ctx = EventProcessingContext(
+            webhookService = application.inject<WebHookService>().value,
+            installationRepository = application.inject<InstallationRepository>().value,
+            logger = application.inject<KLogger>().value,
+            telegramService = application.inject<TelegramService>().value,
+            formatter = application.inject<WebhookMessageFormatter>().value,
+        )
 
-        logger.debug { MESSAGE_PROCESSING }
+        ctx.logger.debug { MESSAGE_PROCESSING }
         for (data in queue) {
             try {
                 processEvent(
                     data = data,
-                    webhookService = webhookService,
-                    installationRepository = installationRepository,
-                    telegramService = telegramService,
-                    formatter = formatter,
-                    logger = logger,
+                    ctx = ctx,
                 )
             } catch (skipEx: SkipEventException) {
-                logger.debug { MESSAGE_SKIPPED }
+                ctx.logger.debug { MESSAGE_SKIPPED }
             } catch (e: Exception) {
-                logger.error { "$MESSAGE_ERROR \n${e.message}" }
+                ctx.logger.error { "$MESSAGE_ERROR \n${e.message}" }
             }
         }
-        logger.debug { MESSAGE_STOPPED }
+        ctx.logger.debug { MESSAGE_STOPPED }
     }
 
     private suspend fun processEvent(
         data: EventData,
-        webhookService: WebHookService,
-        installationRepository: InstallationRepository,
-        telegramService: TelegramService,
-        formatter: WebhookMessageFormatter,
-        logger: KLogger,
+        ctx: EventProcessingContext,
     ) {
         val event = data.event
         val installationId = data.installationId
@@ -102,10 +105,7 @@ class WebhookRequestHandler(
                     installationId = installationId,
                     event = event,
                     chatDetails = chatDetails,
-                    webhookService = webhookService,
-                    telegramService = telegramService,
-                    formatter = formatter,
-                    logger = logger,
+                    ctx = ctx,
                 )
             }
             is BuildEvent -> {
@@ -113,10 +113,7 @@ class WebhookRequestHandler(
                     installationId = installationId,
                     event = event,
                     chatDetails = chatDetails,
-                    webhookService = webhookService,
-                    telegramService = telegramService,
-                    formatter = formatter,
-                    logger = logger,
+                    ctx = ctx,
                 )
             }
             is MergeRequestEvent -> {
@@ -124,19 +121,14 @@ class WebhookRequestHandler(
                     installationId = installationId,
                     event = event,
                     chatDetails = chatDetails,
-                    installationRepository = installationRepository,
-                    telegramService = telegramService,
-                    formatter = formatter,
-                    logger = logger,
+                    ctx = ctx,
                 )
             }
             else -> {
                 handleGenericEvent(
                     event = data.event,
                     chatDetails = chatDetails,
-                    telegramService = telegramService,
-                    formatter = formatter,
-                    logger = logger,
+                    ctx = ctx,
                 )
             }
         }
@@ -146,62 +138,94 @@ class WebhookRequestHandler(
         installationId: java.util.UUID,
         event: PipelineEvent,
         chatDetails: ChatDetails,
-        webhookService: WebHookService,
-        telegramService: TelegramService,
-        formatter: WebhookMessageFormatter,
-        logger: KLogger,
+        ctx: EventProcessingContext,
     ) {
         val pipelineId = event.objectAttributes.id
         val status = event.objectAttributes.status
 
-        // Mark that we received a PipelineEvent for this pipeline
-        // This tells BuildEvent handler to skip (both-enabled mode)
-        webhookService.markPipelineEventReceived(installationId, pipelineId)
+        ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
+        ctx.webhookService.cleanupStaleEntries()
 
-        // Cleanup stale entries periodically
-        webhookService.cleanupStaleEntries()
-
-        val existingMessageId = webhookService.getPipelineMessageId(installationId, pipelineId)
+        val existingMessageId = ctx.webhookService.getPipelineMessageId(installationId, pipelineId)
 
         val messageId =
-            telegramService.sendMessage(
+            ctx.telegramService.sendMessage(
                 Message(
                     chatId = chatDetails.chatId,
-                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", logger),
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                     messageId = existingMessageId,
-                    text = formatter.formatEventMessage(event),
+                    text = ctx.formatter.formatEventMessage(event),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
                 ),
             )
-        logger.debug { "Pipeline #$pipelineId: sent/updated message $messageId" }
+        ctx.logger.debug { "Pipeline #$pipelineId: sent/updated message $messageId" }
 
         when (status) {
             in PIPELINE_TERMINAL_STATUSES -> {
-                // Send reply tagging the author
-                val username = event.user?.username
-                if (username != null) {
-                    val replyText = formatPipelineCompletionReply(status, username)
-                    telegramService.sendMessage(
-                        Message(
-                            chatId = chatDetails.chatId,
-                            threadId = chatDetails.topicId.toMessageIdOrNull("topicId", logger),
-                            text = replyText,
-                            parseMode = PARSE_MODE,
-                            replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", logger),
-                        ),
-                    )
-                    logger.debug { "Pipeline #$pipelineId: sent completion reply tagging @$username" }
-                }
-
-                // Clear all tracking for this pipeline
-                webhookService.clearTrackedPipeline(installationId, pipelineId)
-                logger.debug { "Pipeline #$pipelineId finished ($status), cleared all tracking" }
+                handleTerminalPipelineReply(
+                    installationId = installationId,
+                    pipelineId = pipelineId,
+                    status = status,
+                    event = event,
+                    chatDetails = chatDetails,
+                    messageId = messageId,
+                    ctx = ctx,
+                )
+                ctx.webhookService.clearTrackedPipeline(installationId, pipelineId)
+                ctx.logger.debug { "Pipeline #$pipelineId finished ($status), cleared all tracking" }
             }
             else -> {
-                webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
-                logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
+                ctx.webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
+                ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
             }
+        }
+    }
+
+    private suspend fun handleTerminalPipelineReply(
+        installationId: java.util.UUID,
+        pipelineId: Long,
+        status: String,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ) {
+        val mrIid = event.mergeRequest?.iid
+        val projectId = event.project?.id
+        val cachedParticipants = if (mrIid != null && projectId != null) {
+            ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
+        } else {
+            null
+        }
+
+        val targetUsernames = when {
+            status == "success" && cachedParticipants?.reviewerUsernames?.isNotEmpty() == true -> {
+                cachedParticipants.reviewerUsernames
+            }
+            cachedParticipants?.authorUsername != null -> {
+                listOf(cachedParticipants.authorUsername)
+            }
+            event.user?.username != null -> {
+                listOf(event.user.username)
+            }
+            else -> {
+                emptyList()
+            }
+        }
+
+        if (targetUsernames.isNotEmpty()) {
+            val replyText = formatPipelineCompletionReply(status, targetUsernames)
+            ctx.telegramService.sendMessage(
+                Message(
+                    chatId = chatDetails.chatId,
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                    text = replyText,
+                    parseMode = PARSE_MODE,
+                    replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+                ),
+            )
+            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging $targetUsernames" }
         }
     }
 
@@ -209,63 +233,62 @@ class WebhookRequestHandler(
         installationId: java.util.UUID,
         event: BuildEvent,
         chatDetails: ChatDetails,
-        webhookService: WebHookService,
-        telegramService: TelegramService,
-        formatter: WebhookMessageFormatter,
-        logger: KLogger,
+        ctx: EventProcessingContext,
     ) {
         val pipelineId = event.pipelineId
         val jobId = event.buildId
         val status = event.buildStatus
 
         // Cleanup stale entries periodically (prevents memory leak)
-        webhookService.cleanupStaleEntries()
+        ctx.webhookService.cleanupStaleEntries()
 
         // Check if PipelineEvent is handling this pipeline (both-enabled mode)
-        if (webhookService.hasPipelineEvent(installationId, pipelineId)) {
-            logger.debug { "Skipping BuildEvent #$jobId - PipelineEvent is handling pipeline #$pipelineId" }
+        if (ctx.webhookService.hasPipelineEvent(installationId, pipelineId)) {
+            ctx.logger.debug { "Skipping BuildEvent #$jobId - PipelineEvent is handling pipeline #$pipelineId" }
             return
         }
 
         // Job-only mode: accumulate jobs and build consolidated message
         // This is a fallback for users who only enabled "Job events" in GitLab.
         // For best experience, users should enable "Pipeline events" instead.
-        val isFirstJobForPipeline = webhookService.getTrackedPipeline(installationId, pipelineId) == null
+        val isFirstJobForPipeline = ctx.webhookService.getTrackedPipeline(installationId, pipelineId) == null
         if (isFirstJobForPipeline) {
-            logger.debug {
+            ctx.logger.debug {
                 "Job-only mode: Pipeline #$pipelineId has no PipelineEvent. " +
                     "Using job accumulation fallback."
             }
         }
-        logger.debug { "Processing BuildEvent #$jobId for pipeline #$pipelineId in job-only mode" }
+        ctx.logger.debug { "Processing BuildEvent #$jobId for pipeline #$pipelineId in job-only mode" }
 
         val jobInfo = event.toJobInfo(jobId, status)
         val metadata = event.toPipelineMetadata()
 
         // Add job to tracked pipeline
-        webhookService.addJobToTrackedPipeline(installationId, pipelineId, jobInfo, metadata)
+        ctx.webhookService.addJobToTrackedPipeline(installationId, pipelineId, jobInfo, metadata)
 
         val trackedPipeline =
-            webhookService.getTrackedPipeline(installationId, pipelineId)
-                ?: return logMissingTrackedPipeline(logger, pipelineId)
+            ctx.webhookService.getTrackedPipeline(installationId, pipelineId)
+                ?: return logMissingTrackedPipeline(ctx.logger, pipelineId)
 
         val existingMessageId = trackedPipeline.messageId
 
         val messageId =
-            telegramService.sendMessage(
+            ctx.telegramService.sendMessage(
                 Message(
                     chatId = chatDetails.chatId,
-                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", logger),
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                     messageId = existingMessageId,
-                    text = formatter.formatJobOnlyPipelineMessage(trackedPipeline, pipelineId),
+                    text = ctx.formatter.formatJobOnlyPipelineMessage(trackedPipeline, pipelineId),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
                 ),
             )
-        logger.debug { "Pipeline #$pipelineId (job-only): sent/updated message $messageId with ${trackedPipeline.jobs.size} jobs" }
+        ctx.logger.debug {
+            "Pipeline #$pipelineId (job-only): sent/updated message $messageId with ${trackedPipeline.jobs.size} jobs"
+        }
 
-        webhookService.updateTrackedPipelineMessageId(installationId, pipelineId, messageId)
-        logTerminalJobOnlyPipelineIfNeeded(logger, pipelineId, trackedPipeline)
+        ctx.webhookService.updateTrackedPipelineMessageId(installationId, pipelineId, messageId)
+        logTerminalJobOnlyPipelineIfNeeded(ctx.logger, pipelineId, trackedPipeline)
     }
 
     private fun BuildEvent.toJobInfo(
@@ -316,32 +339,27 @@ class WebhookRequestHandler(
     private suspend fun handleGenericEvent(
         event: org.gitlab4j.api.webhook.Event,
         chatDetails: ChatDetails,
-        telegramService: TelegramService,
-        formatter: WebhookMessageFormatter,
-        logger: KLogger,
+        ctx: EventProcessingContext,
     ) {
         val messageId =
-            telegramService.sendMessage(
+            ctx.telegramService.sendMessage(
                 Message(
                     chatId = chatDetails.chatId,
-                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", logger),
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                     messageId = null,
-                    text = formatter.formatEventMessage(event),
+                    text = ctx.formatter.formatEventMessage(event),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
                 ),
             )
-        logger.debug { "Sent message $messageId for ${event.objectKind}" }
+        ctx.logger.debug { "Sent message $messageId for ${event.objectKind}" }
     }
 
     private suspend fun handleMergeRequestEvent(
         installationId: java.util.UUID,
         event: org.gitlab4j.api.webhook.MergeRequestEvent,
         chatDetails: ChatDetails,
-        installationRepository: InstallationRepository,
-        telegramService: TelegramService,
-        formatter: WebhookMessageFormatter,
-        logger: KLogger,
+        ctx: EventProcessingContext,
     ) {
         val projectId = event.project?.id ?: event.objectAttributes?.targetProjectId
         val mrIid = event.objectAttributes?.iid
@@ -349,30 +367,29 @@ class WebhookRequestHandler(
         val reviewers = event.reviewers.orEmpty().mapNotNull { it.username }
 
         if (projectId != null && mrIid != null) {
-            installationRepository.upsertMrParticipants(
+            ctx.installationRepository.upsertMrParticipants(
                 installationId = installationId,
                 projectId = projectId,
                 mrIid = mrIid,
                 authorUsername = authorUsername,
                 reviewerUsernames = reviewers,
             )
-            logger.debug { "MR !$mrIid (project $projectId): cached author=$authorUsername, reviewers=$reviewers" }
+            ctx.logger.debug { "MR !$mrIid (project $projectId): cached author=$authorUsername, reviewers=$reviewers" }
         }
 
         handleGenericEvent(
             event = event,
             chatDetails = chatDetails,
-            telegramService = telegramService,
-            formatter = formatter,
-            logger = logger,
+            ctx = ctx,
         )
     }
 
     private fun formatPipelineCompletionReply(
         status: String,
-        username: String,
+        usernames: List<String>,
     ): String {
+        val handles = usernames.joinToString(" ") { "@$it" }
         val message = randomMessageProvider.getMessageForStatus(status)
-        return "@$username $message"
+        return "$handles $message".trim()
     }
 }
