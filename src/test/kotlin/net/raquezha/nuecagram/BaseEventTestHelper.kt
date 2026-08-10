@@ -30,7 +30,6 @@ import org.junit.Before
 import org.junit.BeforeClass
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
-import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.java.KoinJavaComponent.inject
 import org.koin.test.KoinTest
 import org.testcontainers.DockerClientFactory
@@ -164,12 +163,7 @@ abstract class BaseEventTestHelper : KoinTest {
         @AfterClass
         @JvmStatic
         fun tearDownClass() {
-            DatabaseFactory.close()
-            if (testDatabaseStarted) {
-                postgres.stop()
-                testDatabaseStarted = false
-            }
-            stopKoin()
+            // Keep container and DatabaseFactory active across test classes to avoid stopping DB mid-suite
         }
     }
 }
