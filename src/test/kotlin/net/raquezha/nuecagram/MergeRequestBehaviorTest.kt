@@ -1,0 +1,62 @@
+package net.raquezha.nuecagram
+
+import com.google.common.truth.Truth.assertThat
+import de.infix.testBalloon.framework.core.testSuite
+import java.util.UUID
+import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.testing.Scenario
+import net.raquezha.nuecagram.testing.postgresTest
+
+private class MrNotificationScenarioContext {
+    lateinit var repository: InstallationRepository
+    lateinit var installationId: UUID
+    val projectId: Long = 200L
+    val mrIid: Long = 42L
+}
+
+val MergeRequestBehaviorTest by testSuite {
+    postgresTest("MR participant caching stores and updates author and reviewers") { config ->
+        DatabaseFactory.initialize(config)
+        val repository = InstallationRepository(DatabaseFactory)
+
+        Scenario(
+            "MR update caches author and reviewers",
+            context = { MrNotificationScenarioContext() },
+        ) {
+            Given("an active installation") {
+                val inst = repository.createInstallation("https://gitlab.example.com", 200, 10001, null)
+                installationId = inst.id
+                this.repository = repository
+            }
+            When("author alice and reviewers bob and charlie are cached for MR 42") {
+                repository.upsertMrParticipants(
+                    installationId = installationId,
+                    projectId = projectId,
+                    mrIid = mrIid,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob", "charlie"),
+                )
+            }
+            Then("retrieving MR participants yields author alice and reviewers bob, charlie") {
+                val cached = repository.getMrParticipants(installationId, projectId, mrIid)
+                assertThat(cached).isNotNull()
+                assertThat(cached?.authorUsername).isEqualTo("alice")
+                assertThat(cached?.reviewerUsernames).containsExactly("bob", "charlie").inOrder()
+            }
+            When("reviewers change to dave for MR 42") {
+                repository.upsertMrParticipants(
+                    installationId = installationId,
+                    projectId = projectId,
+                    mrIid = mrIid,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("dave"),
+                )
+            }
+            Then("the cache is updated to dave") {
+                val updated = repository.getMrParticipants(installationId, projectId, mrIid)
+                assertThat(updated?.reviewerUsernames).containsExactly("dave")
+            }
+        }
+    }
+}
