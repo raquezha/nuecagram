@@ -47,7 +47,7 @@ val InstallationRepositoryTests by testSuite {
                 }
             }
         } finally {
-            DatabaseFactory.close()
+            // Pool cleaned up automatically on re-initialization
         }
     }
 
@@ -91,7 +91,7 @@ val InstallationRepositoryTests by testSuite {
                 ),
             ).isNull()
         } finally {
-            DatabaseFactory.close()
+            // Pool cleaned up automatically on re-initialization
         }
     }
 
@@ -155,7 +155,7 @@ val InstallationRepositoryTests by testSuite {
                 }
             }
         } finally {
-            DatabaseFactory.close()
+            // Pool cleaned up automatically on re-initialization
         }
     }
 }
