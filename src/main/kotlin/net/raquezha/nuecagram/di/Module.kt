@@ -19,7 +19,6 @@ import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.configWithSecrets
-import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
 import net.raquezha.nuecagram.telegram.TelegramUpdateHandler
@@ -28,7 +27,6 @@ import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookMessageFormatter
 import net.raquezha.nuecagram.webhook.WebhookRequestHandler
 import org.koin.dsl.module
-import org.mindrot.jbcrypt.BCrypt
 
 fun appModule() =
     listOf(
@@ -41,35 +39,6 @@ fun appModule() =
         provideConfigModule,
         provideWebhookRequestHandler,
     )
-
-fun testAppModule() =
-    listOf(
-        provideLogger,
-        provideDatabaseModule,
-        provideTelegramService,
-        provideTelegramUpdateModule,
-        provideWebhookModule,
-        provideHttpClient,
-        provideTelegramBot,
-        provideWebhookRequestHandler,
-        testModule,
-    )
-
-val testModule =
-    module {
-        single<TelegramService> { MockTelegramService() }
-        single<ConfigWithSecrets> {
-            ConfigWithSecrets(
-                name = "TestConfig",
-                env = "test",
-                host = "localhost",
-                port = 8080,
-                botApi = "mock_bot_api",
-                platformAdminHash = BCrypt.hashpw("test-admin-password", BCrypt.gensalt(4)),
-                telegramWebhookSecret = "test-telegram-webhook-token",
-            )
-        }
-    }
 
 val provideConfigModule =
     module {
