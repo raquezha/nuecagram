@@ -19,28 +19,29 @@ private class ConsolidationContext {
         )
     val pipeline1 = UUID.randomUUID()
     val pipeline2 = UUID.randomUUID()
+    val unknownPipeline = UUID.randomUUID()
     val chatId = 1001L
 }
 
 val PipelineConsolidationBehaviorTest by testSuite {
     Scenario(
-        "pipeline event message consolidation across job updates",
+        "pipeline event message consolidation across job updates and edge cases",
         context = { ConsolidationContext() },
         testConfig = TestConfig.behaviorStyle(BehaviorStyle.Hierarchical),
     ) {
         Given("a fresh webhook service state") {
             service.resetRuntimeState()
         }
+        When("querying untracked pipeline ID") {
+            // No action needed; checking non-existent pipeline ID
+        }
+        Then("the service returns null message ID") {
+            assertThat(service.getPipelineMessageId(unknownPipeline, chatId)).isNull()
+        }
         When("initial pipeline event creates message ID 100") {
             service.setPipelineMessageId(pipeline1, chatId, "100")
         }
         Then("retrieving message ID for pipeline returns 100") {
-            assertThat(service.getPipelineMessageId(pipeline1, chatId)).isEqualTo("100")
-        }
-        When("subsequent job event updates message ID to 100") {
-            // Consolidation verifies same message ID 100 is returned for subsequent job updates
-        }
-        Then("the tracked message ID remains 100") {
             assertThat(service.getPipelineMessageId(pipeline1, chatId)).isEqualTo("100")
         }
         When("a distinct pipeline 2 sets message ID 200") {
@@ -49,6 +50,13 @@ val PipelineConsolidationBehaviorTest by testSuite {
         Then("pipeline 1 retains 100 and pipeline 2 returns 200") {
             assertThat(service.getPipelineMessageId(pipeline1, chatId)).isEqualTo("100")
             assertThat(service.getPipelineMessageId(pipeline2, chatId)).isEqualTo("200")
+        }
+        When("resetRuntimeState is called") {
+            service.resetRuntimeState()
+        }
+        Then("all tracked pipeline message IDs are cleared") {
+            assertThat(service.getPipelineMessageId(pipeline1, chatId)).isNull()
+            assertThat(service.getPipelineMessageId(pipeline2, chatId)).isNull()
         }
     }
 }

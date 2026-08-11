@@ -24,7 +24,7 @@ private class SecurityScenarioContext {
 
 val WebhookSecurityBehaviorTest by testSuite {
     Scenario(
-        "token issuance rotation and confirmation lifecycle",
+        "token issuance rotation and confirmation lifecycle with edge cases",
         context = { SecurityScenarioContext() },
         testConfig =
             if (dockerAvailable) TestConfig.behaviorStyle(BehaviorStyle.Hierarchical) else TestConfig.disable(),
@@ -42,7 +42,14 @@ val WebhookSecurityBehaviorTest by testSuite {
             val sec = runBlocking { repo.issueWebhookSecret(instId, expiry) }
             str = sec.raw
         }
-        When("webhook token is validated") {
+        When("an invalid token string is verified") {
+            // Testing invalid token edge case
+        }
+        Then("verification returns null without throwing") {
+            val invalidVerified = runBlocking { repo.verifyWebhookSecret("invalid-token-string") }
+            assertThat(invalidVerified).isNull()
+        }
+        When("valid webhook token is verified") {
             val verified = runBlocking { repo.verifyWebhookSecret(str) }
             assertThat(verified).isNotNull()
             assertThat(verified?.installationId).isEqualTo(instId)
@@ -58,6 +65,13 @@ val WebhookSecurityBehaviorTest by testSuite {
         Then("new token is active and confirmation resolves pending state") {
             val ok = runBlocking { repo.confirmWebhookSecret(rotId!!) }
             assertThat(ok).isTrue()
+        }
+        When("attempting to confirm an already confirmed token") {
+            // Re-confirming same token ID
+        }
+        Then("re-confirmation returns false as already confirmed") {
+            val reConfirmed = runBlocking { repo.confirmWebhookSecret(rotId!!) }
+            assertThat(reConfirmed).isFalse()
         }
     }
 }

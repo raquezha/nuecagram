@@ -22,7 +22,7 @@ private class MrNotificationScenarioContext {
 
 val MergeRequestBehaviorTest by testSuite {
     Scenario(
-        "MR update caches author and reviewers",
+        "MR update caches author and reviewers with edge cases",
         context = { MrNotificationScenarioContext() },
         testConfig =
             if (dockerAvailable) TestConfig.behaviorStyle(BehaviorStyle.Hierarchical) else TestConfig.disable(),
@@ -33,6 +33,13 @@ val MergeRequestBehaviorTest by testSuite {
             val inst = repository.createInstallation("https://example.com", 200, 10001, null)
             installationId = inst.id
             this.repository = repository
+        }
+        When("querying an uncached MR ID") {
+            // No action needed; querying non-existent MR 999
+        }
+        Then("the repository returns null without throwing") {
+            val uncached = repository.getMrParticipants(installationId, projectId, 999L)
+            assertThat(uncached).isNull()
         }
         When("author alice and reviewers bob and charlie are cached for MR 42") {
             repository.upsertMrParticipants(
@@ -61,6 +68,19 @@ val MergeRequestBehaviorTest by testSuite {
         Then("the cache is updated to dave") {
             val updated = repository.getMrParticipants(installationId, projectId, mrIid)
             assertThat(updated?.reviewerUsernames).containsExactly("dave")
+        }
+        When("all reviewers are removed from MR 42") {
+            repository.upsertMrParticipants(
+                installationId = installationId,
+                projectId = projectId,
+                mrIid = mrIid,
+                authorUsername = "alice",
+                reviewerUsernames = emptyList(),
+            )
+        }
+        Then("the cache reflects empty reviewers list") {
+            val emptyReviewers = repository.getMrParticipants(installationId, projectId, mrIid)
+            assertThat(emptyReviewers?.reviewerUsernames).isEmpty()
         }
     }
 }
