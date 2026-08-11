@@ -8,12 +8,13 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import net.raquezha.nuecagram.ConfigWithSecrets
 import org.apache.http.HttpException
-import org.gitlab4j.api.utils.JacksonJson
+import com.fasterxml.jackson.databind.ObjectMapper
 
 class TelegramServiceImpl(
     private val client: HttpClient,
     private val config: ConfigWithSecrets,
 ) : TelegramService {
+    private val mapper = ObjectMapper()
     override suspend fun chatMemberStatus(
         chatId: Long,
         userId: Long,
@@ -27,13 +28,13 @@ class TelegramServiceImpl(
         }
 
         val responseBody = response.bodyAsText()
-        val responseJson = JacksonJson.toJsonNode(responseBody)
+        val responseJson = mapper.readTree(responseBody)
         val result = responseJson.get("result") ?: return null
         return result.get("status")?.asText()
     }
 
     override suspend fun sendMessage(message: Message): String {
-        val jsonMessage = JacksonJson.toJsonString(message)
+        val jsonMessage = mapper.writeValueAsString(message)
         val response =
             when {
                 message.messageId.isNullOrBlank() -> {
@@ -55,7 +56,7 @@ class TelegramServiceImpl(
         }
 
         val responseBody = response.bodyAsText()
-        val responseJson = JacksonJson.toJsonNode(responseBody)
+        val responseJson = mapper.readTree(responseBody)
 
         val result =
             responseJson.get("result")
