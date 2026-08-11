@@ -114,6 +114,7 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.testballoon.framework.core)
+    testImplementation(libs.konsist)
     testRuntimeOnly(libs.junit.vintage.engine)
 
 }
