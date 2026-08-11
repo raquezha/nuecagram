@@ -5,6 +5,7 @@ import de.infix.testBalloon.framework.core.TestSuiteScope
 import de.infix.testBalloon.framework.core.disable
 import de.infix.testBalloon.framework.shared.TestRegistering
 import net.raquezha.nuecagram.db.DatabaseConfig
+import net.raquezha.nuecagram.db.DatabaseFactory
 import org.testcontainers.DockerClientFactory
 import org.testcontainers.containers.PostgreSQLContainer
 
@@ -12,8 +13,27 @@ val dockerAvailable: Boolean by lazy {
     DockerClientFactory.instance().isDockerAvailable
 }
 
+private val sharedPostgresContainer by lazy {
+    PostgreSQLContainer<Nothing>("postgres:16-alpine").apply {
+        start()
+        Runtime.getRuntime().addShutdownHook(Thread {
+            runCatching { stop() }
+        })
+    }
+}
+
+fun ensureSharedTestDatabase() {
+    if (!dockerAvailable) return
+    val config = DatabaseConfig(
+        sharedPostgresContainer.jdbcUrl,
+        sharedPostgresContainer.username,
+        sharedPostgresContainer.password,
+    )
+    DatabaseFactory.initialize(config)
+}
+
 /**
- * A domain-specific test runner that automatically spins up a PostgreSQL container,
+ * A domain-specific test runner that uses a shared PostgreSQL container,
  * skips the test if Docker is unavailable, and injects the database configuration.
  */
 @TestRegistering
@@ -25,16 +45,12 @@ fun TestSuiteScope.postgresTest(
         name,
         testConfig = if (dockerAvailable) TestConfig else TestConfig.disable(),
     ) {
-        PostgreSQLContainer<Nothing>("postgres:16-alpine").use { postgres ->
-            postgres.start()
-
-            // Extract credentials from container
-            val dbUrl = postgres.jdbcUrl
-            val dbUser = postgres.username
-            val dbPass = postgres.getPassword()
-
-            val config = DatabaseConfig(dbUrl, dbUser, dbPass)
-            action(config)
-        }
+        ensureSharedTestDatabase()
+        val config = DatabaseConfig(
+            sharedPostgresContainer.jdbcUrl,
+            sharedPostgresContainer.username,
+            sharedPostgresContainer.password,
+        )
+        action(config)
     }
 }

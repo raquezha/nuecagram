@@ -16,16 +16,14 @@ private class MrNotificationScenarioContext {
 }
 
 val MergeRequestBehaviorTest by testSuite {
-    postgresTest("MR participant caching stores and updates author and reviewers") { config ->
-        DatabaseFactory.initialize(config)
+    postgresTest("MR update caches author and reviewers") {
         val repository = InstallationRepository(DatabaseFactory)
-
         Scenario(
             "MR update caches author and reviewers",
             context = { MrNotificationScenarioContext() },
         ) {
             Given("an active installation") {
-                val inst = repository.createInstallation("https://gitlab.example.com", 200, 10001, null)
+                val inst = repository.createInstallation("https://example.com", 200, 10001, null)
                 installationId = inst.id
                 this.repository = repository
             }

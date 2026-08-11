@@ -1,16 +1,13 @@
 package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
-import de.infix.testBalloon.framework.core.TestConfig
 import de.infix.testBalloon.framework.core.testSuite
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.testing.BehaviorStyle
 import net.raquezha.nuecagram.testing.Scenario
-import net.raquezha.nuecagram.testing.behaviorStyle
 import net.raquezha.nuecagram.testing.postgresTest
 
 private class SecurityScenarioContext {
@@ -21,14 +18,11 @@ private class SecurityScenarioContext {
 }
 
 val WebhookSecurityBehaviorTest by testSuite {
-    postgresTest("webhook token security lifecycle rotation and confirmation") { config ->
-        DatabaseFactory.initialize(config)
+    postgresTest("webhook token security lifecycle rotation and confirmation") {
         val repository = InstallationRepository(DatabaseFactory)
-
         Scenario(
             "token issuance rotation and confirmation lifecycle",
             context = { SecurityScenarioContext() },
-            testConfig = TestConfig.behaviorStyle(BehaviorStyle.Hierarchical),
         ) {
             Given("an active installation") {
                 val pId = 301L
