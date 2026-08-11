@@ -1,0 +1,57 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Asia/Manila",
+  "schedule": [
+    "before 4am on Monday"
+  ],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Group Kotlin and KSP updates together",
+      "groupName": "kotlin",
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.kotlin/",
+        "/^com\\.google\\.devtools\\.ksp/"
+      ]
+    },
+    {
+      "description": "Group Ktor framework dependencies together",
+      "groupName": "ktor",
+      "matchPackageNames": [
+        "/^io\\.ktor:/"
+      ]
+    },
+    {
+      "description": "Group Koin DI dependencies together",
+      "groupName": "koin",
+      "matchPackageNames": [
+        "/^io\\.insert-koin:/"
+      ]
+    },
+    {
+      "description": "Group Exposed ORM dependencies together",
+      "groupName": "exposed",
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.exposed:/"
+      ]
+    },
+    {
+      "description": "Group Flyway database migration dependencies together",
+      "groupName": "flyway",
+      "matchPackageNames": [
+        "/^org\\.flywaydb:/"
+      ]
+    },
+    {
+      "description": "Keep major updates separate and non-automerged",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false
+    }
+  ]
+}

@@ -41,5 +41,5 @@ This document records the key architectural choices behind Nuecagram's design.
 
 - **Status**: Accepted
 - **Context**: Outdated dependencies create security risks, but unvetted auto-updates break builds.
-- **Decision**: Automate updates via Renovate with dependency grouping, security scanning (Trivy), and mandatory CI gate passing.
-- **Consequences**: Modern, secure dependencies with zero manual tracking overhead.
+- **Decision**: Automate updates via Renovate (`renovate.json5`) with dependency grouping (Kotlin/KSP, Ktor, Koin, Exposed, Flyway), security scanning (Trivy + Dependabot Alerts), and mandatory CI gate passing. Automerge is disabled.
+- **Consequences**: Modern, secure dependencies across Gradle, GitHub Actions, Docker, and Gradle Wrapper with zero manual tracking overhead. Policy details documented in `docs/architecture/dependency-maintenance.md`.

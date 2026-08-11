@@ -16,6 +16,7 @@ Nuecagram hosts multiple GitLab project notification installs behind one Telegra
   - [Core Principles](architecture/principles.md)
   - [Feature-First Package Layout](architecture/feature-first.md)
   - [Dependency & Import Rules](architecture/dependency-rules.md)
+  - [Automated Dependency Maintenance](architecture/dependency-maintenance.md)
   - [Architectural Decisions](architecture/decisions.md)
 
 ## Guides
