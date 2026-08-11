@@ -30,7 +30,6 @@ import org.junit.Before
 import org.junit.BeforeClass
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
-import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.java.KoinJavaComponent.inject
 import org.koin.test.KoinTest
 import org.testcontainers.DockerClientFactory
@@ -41,7 +40,7 @@ abstract class BaseEventTestHelper : KoinTest {
     protected lateinit var installation: InstallationRecord
     protected lateinit var webhookToken: String
 
-    private val telegramService: TelegramService by inject(TelegramService::class.java)
+    protected val telegramService: TelegramService by inject(TelegramService::class.java)
     private val webhookService: WebHookService by inject(WebHookService::class.java)
     protected val installationRepository: InstallationRepository by inject(InstallationRepository::class.java)
 
@@ -136,7 +135,17 @@ abstract class BaseEventTestHelper : KoinTest {
 
         private val postgres = PostgreSQLContainer<Nothing>("postgres:16-alpine")
         private val installationCounter = AtomicLong(0)
+        @Volatile
         private var testDatabaseStarted = false
+
+        init {
+            Runtime.getRuntime().addShutdownHook(Thread {
+                if (testDatabaseStarted) {
+                    runCatching { postgres.stop() }
+                    testDatabaseStarted = false
+                }
+            })
+        }
 
         @BeforeClass
         @JvmStatic
@@ -164,12 +173,7 @@ abstract class BaseEventTestHelper : KoinTest {
         @AfterClass
         @JvmStatic
         fun tearDownClass() {
-            DatabaseFactory.close()
-            if (testDatabaseStarted) {
-                postgres.stop()
-                testDatabaseStarted = false
-            }
-            stopKoin()
+            // Keep container and DatabaseFactory active across test classes to avoid stopping DB mid-suite
         }
     }
 }

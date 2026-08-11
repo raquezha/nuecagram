@@ -29,7 +29,149 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(successResponse).isEqualTo("Webhook received successfully")
         }
 
+    @Test
+    fun testMrPipelineSuccessPingsReviewers() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob", "charlie"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+
+            val completionReply = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().find { it.text.contains("@bob") }
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(completionReply).isNotNull()
+            assertThat(completionReply?.text).contains("@bob @charlie")
+        }
+
+    @Test
+    fun testMrPipelineFailurePingsCreator() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2924L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_FAILED)
+
+            val completionReply = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().find { it.text.contains("@alice") }
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(completionReply).isNotNull()
+            assertThat(completionReply?.text).contains("@alice")
+            assertThat(completionReply?.text).doesNotContain("@bob")
+        }
+
     companion object {
+        val SAMPLE_PAYLOAD_MR_SUCCESS =
+            """
+{
+  "object_kind": "pipeline",
+  "object_attributes": {
+    "id": 8888,
+    "iid": 2923,
+    "source": "merge_request_event",
+    "status": "success",
+    "ref": "feature-branch",
+    "stages": ["test"],
+    "created_at": "2024-06-19 02:20:18 UTC",
+    "finished_at": "2024-06-19 02:25:18 UTC",
+    "duration": 300,
+    "url": "https://gitlab.com/android-team/customer-app/-/pipelines/8888"
+  },
+  "merge_request": {
+    "id": 999,
+    "iid": 2923,
+    "title": "Add feature",
+    "source_branch": "feature-branch",
+    "target_branch": "main",
+    "state": "opened",
+    "url": "https://gitlab.com/android-team/customer-app/-/merge_requests/2923"
+  },
+  "user": {
+    "id": 38,
+    "name": "Alice Author",
+    "username": "alice"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app",
+    "web_url": "https://gitlab.com/android-team/customer-app"
+  }
+}
+""".trimIndent()
+
+        val SAMPLE_PAYLOAD_MR_FAILED =
+            """
+{
+  "object_kind": "pipeline",
+  "object_attributes": {
+    "id": 8889,
+    "iid": 2924,
+    "source": "merge_request_event",
+    "status": "failed",
+    "ref": "feature-branch",
+    "stages": ["test"],
+    "created_at": "2024-06-19 02:20:18 UTC",
+    "finished_at": "2024-06-19 02:25:18 UTC",
+    "duration": 300,
+    "url": "https://gitlab.com/android-team/customer-app/-/pipelines/8889"
+  },
+  "merge_request": {
+    "id": 1000,
+    "iid": 2924,
+    "title": "Add feature",
+    "source_branch": "feature-branch",
+    "target_branch": "main",
+    "state": "opened",
+    "url": "https://gitlab.com/android-team/customer-app/-/merge_requests/2924"
+  },
+  "user": {
+    "id": 38,
+    "name": "Alice Author",
+    "username": "alice"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app",
+    "web_url": "https://gitlab.com/android-team/customer-app"
+  }
+}
+""".trimIndent()
         @BeforeClass
         @JvmStatic
         fun setUpClass() {

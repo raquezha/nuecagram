@@ -115,3 +115,14 @@ object PlatformAdminSessions : Table("platform_admin_sessions") {
 
     override val primaryKey = PrimaryKey(id)
 }
+
+object MrParticipantCaches : Table("mr_participant_caches") {
+    val installationId = javaUUID("installation_id")
+    val projectId = long("project_id")
+    val mrIid = long("mr_iid")
+    val authorUsername = varchar("author_username", 255).nullable()
+    val reviewerUsernames = text("reviewer_usernames")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(installationId, projectId, mrIid)
+}

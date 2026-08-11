@@ -30,15 +30,28 @@ data class DatabaseConfig(
 }
 
 object DatabaseFactory {
+    private const val DEFAULT_MAX_POOL_SIZE = 20
+    private const val DEFAULT_MIN_IDLE = 2
+    private const val DEFAULT_CONNECTION_TIMEOUT_MS = 10_000L
+
     @Volatile
     private var dataSource: HikariDataSource? = null
 
     @Volatile
     private var database: Database? = null
 
+    @Volatile
+    private var initializedUrl: String? = null
+
     fun initialize(config: DatabaseConfig = DatabaseConfig.fromEnvironment()) {
         synchronized(this) {
-            if (dataSource != null) return
+            if (dataSource != null && initializedUrl == config.url) return
+            // URL changed (e.g., new Testcontainer) — close the stale pool first
+            if (dataSource != null && initializedUrl != config.url) {
+                dataSource?.close()
+                dataSource = null
+                database = null
+            }
 
             val source =
                 HikariDataSource(
@@ -47,12 +60,16 @@ object DatabaseFactory {
                         username = config.username
                         setPassword(config.password)
                         driverClassName = "org.postgresql.Driver"
+                        maximumPoolSize = DEFAULT_MAX_POOL_SIZE
+                        minimumIdle = DEFAULT_MIN_IDLE
+                        connectionTimeout = DEFAULT_CONNECTION_TIMEOUT_MS
                     },
                 )
             try {
                 Flyway.configure().dataSource(source).load().migrate()
                 database = Database.connect(source)
                 dataSource = source
+                initializedUrl = config.url
             } catch (exception: Exception) {
                 source.close()
                 throw exception
@@ -88,6 +105,7 @@ object DatabaseFactory {
         dataSource?.close()
         dataSource = null
         database = null
+        initializedUrl = null
     }
 
     fun install(application: Application) {

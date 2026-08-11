@@ -13,6 +13,54 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             assertThat(response).isEqualTo("Webhook received successfully")
         }
 
+    @Test
+    fun testWebhookMergeEventCachesMultipleReviewers() =
+        testApplication {
+            configureTestApplication()
+            val payload = """
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": {
+    "id": 1,
+    "name": "Alice Author",
+    "username": "alice",
+    "email": "alice@example.com"
+  },
+  "project": {
+    "id": 101,
+    "name": "Gitlab Test",
+    "web_url": "http://example.com/gitlabhq/gitlab-test",
+    "path_with_namespace": "gitlabhq/gitlab-test"
+  },
+  "object_attributes": {
+    "id": 99,
+    "iid": 42,
+    "title": "Feature branch"
+  },
+  "reviewers": [
+    {
+      "id": 2,
+      "name": "Bob Reviewer",
+      "username": "bob"
+    },
+    {
+      "id": 3,
+      "name": "Charlie Reviewer",
+      "username": "charlie"
+    }
+  ]
+}
+""".trimIndent()
+            postWebhook(EVENT_MERGE, payload)
+            val cached = kotlinx.coroutines.runBlocking {
+                installationRepository.getMrParticipants(installation.id, 101L, 42L)
+            }
+            assertThat(cached).isNotNull()
+            assertThat(cached?.authorUsername).isEqualTo("alice")
+            assertThat(cached?.reviewerUsernames).containsExactly("bob", "charlie").inOrder()
+        }
+
     companion object {
         val SAMPLE_PAYLOAD =
             """
