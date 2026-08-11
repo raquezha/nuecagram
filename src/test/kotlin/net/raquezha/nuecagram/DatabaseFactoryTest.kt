@@ -32,10 +32,9 @@ val DatabaseFactoryTests by testSuite {
     }
 
     postgresTest("migrates schema and reports ready") { config ->
-        try {
-            DatabaseFactory.initialize(config)
+        DatabaseFactory.initialize(config)
 
-            val tables =
+        val tables =
                 DriverManager.getConnection(
                     config.url,
                     config.username,
@@ -63,8 +62,5 @@ val DatabaseFactoryTests by testSuite {
                 "mute_states",
             )
             assertThat(DatabaseFactory.isReady()).isTrue()
-        } finally {
-            DatabaseFactory.close()
-        }
     }
 }

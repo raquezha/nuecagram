@@ -43,12 +43,16 @@ object DatabaseFactory {
     @Volatile
     private var initializedUrl: String? = null
 
+    @Volatile
+    private var lastConfig: DatabaseConfig? = null
+
     fun initialize(config: DatabaseConfig = DatabaseConfig.fromEnvironment()) {
         synchronized(this) {
-            if (dataSource != null && initializedUrl == config.url) return
-            // URL changed (e.g., new Testcontainer) — close the stale pool first
-            if (dataSource != null && initializedUrl != config.url) {
-                dataSource?.close()
+            lastConfig = config
+            if (dataSource != null && database != null && initializedUrl == config.url) return
+            // Re-initializing or URL changed — close old pool first
+            if (dataSource != null) {
+                runCatching { dataSource?.close() }
                 dataSource = null
                 database = null
             }
@@ -71,6 +75,7 @@ object DatabaseFactory {
                 dataSource = source
                 initializedUrl = config.url
             } catch (exception: Exception) {
+                exception.printStackTrace()
                 source.close()
                 throw exception
             }
@@ -79,14 +84,25 @@ object DatabaseFactory {
 
     suspend fun <T> dbQuery(block: (java.sql.Connection) -> T): T =
         withContext(Dispatchers.IO) {
-            val source = dataSource ?: throw IllegalStateException("DatabaseFactory is not initialized")
+            val source = dataSource ?: synchronized(this@DatabaseFactory) {
+                dataSource ?: run {
+                    lastConfig?.let { initialize(it) }
+                    dataSource ?: throw IllegalStateException("DatabaseFactory is not initialized")
+                }
+            }
             source.connection.use(block)
         }
 
     suspend fun <T> dbTransaction(block: Transaction.() -> T): T =
         withContext(Dispatchers.IO) {
+            val db = database ?: synchronized(this@DatabaseFactory) {
+                database ?: run {
+                    lastConfig?.let { initialize(it) }
+                    database ?: throw IllegalStateException("DatabaseFactory is not initialized")
+                }
+            }
             transaction(
-                db = database ?: throw IllegalStateException("DatabaseFactory is not initialized"),
+                db = db,
                 statement = block,
             )
         }

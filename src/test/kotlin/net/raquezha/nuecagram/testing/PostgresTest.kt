@@ -6,14 +6,13 @@ import de.infix.testBalloon.framework.core.disable
 import de.infix.testBalloon.framework.shared.TestRegistering
 import net.raquezha.nuecagram.db.DatabaseConfig
 import org.testcontainers.DockerClientFactory
-import org.testcontainers.containers.PostgreSQLContainer
 
 val dockerAvailable: Boolean by lazy {
     DockerClientFactory.instance().isDockerAvailable
 }
 
 /**
- * A domain-specific test runner that automatically spins up a PostgreSQL container,
+ * A domain-specific test runner that uses the shared PostgreSQL test database,
  * skips the test if Docker is unavailable, and injects the database configuration.
  */
 @TestRegistering
@@ -25,16 +24,12 @@ fun TestSuiteScope.postgresTest(
         name,
         testConfig = if (dockerAvailable) TestConfig else TestConfig.disable(),
     ) {
-        PostgreSQLContainer<Nothing>("postgres:16-alpine").use { postgres ->
-            postgres.start()
-
-            // Extract credentials from container
-            val dbUrl = postgres.jdbcUrl
-            val dbUser = postgres.username
-            val dbPass = postgres.getPassword()
-
-            val config = DatabaseConfig(dbUrl, dbUser, dbPass)
-            action(config)
-        }
+        TestDatabase.ensureInitialized()
+        val config = DatabaseConfig(
+            TestDatabase.container.jdbcUrl,
+            TestDatabase.container.username,
+            TestDatabase.container.password,
+        )
+        action(config)
     }
 }
