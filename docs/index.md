@@ -10,8 +10,19 @@ Nuecagram hosts multiple GitLab project notification installs behind one Telegra
 4. Run `/setup https://gitlab.com <project-id>` in the destination group or notification topic as a Telegram administrator.
 5. Use the private setup message to create the GitLab webhook with GitLab's native secret token.
 
+## Architecture
+
+- [Architecture Overview](architecture/index.md)
+  - [Core Principles](architecture/principles.md)
+  - [Feature-First Package Layout](architecture/feature-first.md)
+  - [Dependency & Import Rules](architecture/dependency-rules.md)
+  - [Architectural Decisions](architecture/decisions.md)
+
 ## Guides
 
+- [Developer Guides Index](guides/index.md)
+  - [Adding a New Event Type](guides/add-event-type.md)
+  - [Adding an External Adapter](guides/add-adapter.md)
 - [Onboarding](onboarding.md)
 - [Operations](operations.md)
 - [Webhook scripts](webhook-scripts.md)
