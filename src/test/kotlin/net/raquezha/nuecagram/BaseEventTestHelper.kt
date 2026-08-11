@@ -13,8 +13,6 @@ import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
-import net.raquezha.nuecagram.db.DatabaseConfig
-import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.di.testAppModule
@@ -32,8 +30,7 @@ import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
 import org.koin.java.KoinJavaComponent.inject
 import org.koin.test.KoinTest
-import org.testcontainers.DockerClientFactory
-import org.testcontainers.containers.PostgreSQLContainer
+import net.raquezha.nuecagram.testing.TestDatabase
 
 abstract class BaseEventTestHelper : KoinTest {
     private lateinit var testHeaders: HeadersBuilder
@@ -133,19 +130,7 @@ abstract class BaseEventTestHelper : KoinTest {
         const val EVENT_RELEASE = "Release Hook"
         const val EVENT_NOTE = "Note Hook"
 
-        private val postgres = PostgreSQLContainer<Nothing>("postgres:16-alpine")
         private val installationCounter = AtomicLong(0)
-        @Volatile
-        private var testDatabaseStarted = false
-
-        init {
-            Runtime.getRuntime().addShutdownHook(Thread {
-                if (testDatabaseStarted) {
-                    runCatching { postgres.stop() }
-                    testDatabaseStarted = false
-                }
-            })
-        }
 
         @BeforeClass
         @JvmStatic
@@ -161,13 +146,9 @@ abstract class BaseEventTestHelper : KoinTest {
 
         @JvmStatic
         private fun ensureTestDatabase() {
-            val dockerAvailable = DockerClientFactory.instance().isDockerAvailable
+            val dockerAvailable = org.testcontainers.DockerClientFactory.instance().isDockerAvailable
             assumeTrue("Docker is required for webhook tests", dockerAvailable)
-            if (!testDatabaseStarted) {
-                postgres.start()
-                testDatabaseStarted = true
-            }
-            DatabaseFactory.initialize(DatabaseConfig(postgres.jdbcUrl, postgres.username, postgres.password))
+            TestDatabase.ensureInitialized()
         }
 
         @AfterClass
