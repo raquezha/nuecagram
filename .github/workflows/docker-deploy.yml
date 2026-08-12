@@ -77,7 +77,9 @@ jobs:
           overwrite-settings: false
 
       - name: Build release artifacts
-        run: ./gradlew buildImage buildFatJar
+        run: |
+          printf '%s\n' "${{ steps.version.outputs.version }}" > version.txt
+          ./gradlew buildImage buildFatJar
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
