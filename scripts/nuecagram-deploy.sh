@@ -61,6 +61,7 @@ fi
 
 install -d -o root -g root -m 700 "$(dirname "$STATE_FILE")"
 export NUECAGRAM_ENV_FILE="$ENV_FILE"
+export NUECAGRAM_IMAGE="$image"
 
 compose() {
   docker compose \
