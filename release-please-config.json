@@ -1,8 +1,7 @@
 {
   "packages": {
     ".": {
-      "release-type": "simple",
-      "package-name": "nuecagram"
+      "release-type": "simple"
     }
   }
 }
