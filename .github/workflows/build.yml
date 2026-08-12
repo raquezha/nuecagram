@@ -1,5 +1,8 @@
 name: Run Build
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on: [workflow_call, push, pull_request, workflow_dispatch]
 
 jobs:
