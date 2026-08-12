@@ -14,6 +14,19 @@ import net.raquezha.nuecagram.db.InstallationRepository
 private val ADMIN_STATUSES = setOf("creator", "administrator")
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
 private const val ADMIN_ONLY_MESSAGE = "Only Telegram group administrators can use this command."
+private const val HELP_MESSAGE =
+    "Nuecagram GitLab Notification Gateway\n\n" +
+        "1. First-time setup:\n" +
+        " - Send /start in a private DM with the bot.\n" +
+        " - Add bot as Admin to your Telegram group or topic.\n" +
+        " - Run /setup <gitlab-url> <project-id> in your group/topic.\n\n" +
+        "2. Group commands:\n" +
+        " - /status <inst-id> : View installation status\n" +
+        " - /test <inst-id> : Send test notification\n" +
+        " - /manage <inst-id> : Web management link\n" +
+        " - /rotate <inst-id> : Rotate webhook secret\n" +
+        " - /mute <inst-id> : Pause notifications\n" +
+        " - /unmute <inst-id> : Resume notifications"
 private const val STATUS_USAGE_MESSAGE = "Usage: /status <installation-id>"
 private const val DIGEST_USAGE_MESSAGE = "Usage: /digest <installation-id>"
 private const val TEST_USAGE_MESSAGE = "Usage: /test <installation-id>"
@@ -68,7 +81,7 @@ class TelegramUpdateHandler(
             "/help" ->
                 send(
                     message.chat.id,
-                    "Use /start in a private chat before group setup.",
+                    HELP_MESSAGE,
                     message.messageThreadId,
                 )
             "/status" -> {
