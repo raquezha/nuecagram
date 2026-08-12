@@ -61,7 +61,19 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
         run: |
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          python3 -c "
+          import os
+          key = os.environ.get('SSH_PRIVATE_KEY', '').strip()
+          if 'BEGIN' in key and ' ' in key and '\n' not in key:
+              parts = key.split()
+              if len(parts) >= 6:
+                  head = ' '.join(parts[:4])
+                  tail = ' '.join(parts[-4:])
+                  body = '\n'.join(parts[4:-4])
+                  key = f'{head}\n{body}\n{tail}'
+          with open(os.path.expanduser('~/.ssh/id_ed25519'), 'w') as f:
+              f.write(key + '\n')
+          "
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
