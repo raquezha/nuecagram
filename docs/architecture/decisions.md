@@ -43,3 +43,10 @@ This document records the key architectural choices behind Nuecagram's design.
 - **Context**: Outdated dependencies create security risks, but unvetted auto-updates break builds.
 - **Decision**: Automate updates via Renovate (`renovate.json5`) with dependency grouping (Kotlin/KSP, Ktor, Koin, Exposed, Flyway), security scanning (Trivy + Dependabot Alerts), and mandatory CI gate passing. Automerge is disabled.
 - **Consequences**: Modern, secure dependencies across Gradle, GitHub Actions, Docker, and Gradle Wrapper with zero manual tracking overhead. Policy details documented in `docs/architecture/dependency-maintenance.md`.
+
+## 7. Node.js 24 GitHub Actions Runtime Standardization
+
+- **Status**: Accepted
+- **Context**: GitHub Actions runners are transitioning runner runtimes to Node 24, causing deprecation warnings on legacy Node 20 actions.
+- **Decision**: Standardize top-level environment configuration across all repository workflows using `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` aligned with `raquezha/nothing`.
+- **Consequences**: Clean CI execution logs with zero Node.js runner deprecation noise.
