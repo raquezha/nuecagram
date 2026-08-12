@@ -1,0 +1,11 @@
+{
+  "name": "@raquezha/nuecagram",
+  "version": "0.10.1",
+  "private": true,
+  "scripts": {
+    "release": "echo 'Releasing Nuecagram...'"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1"
+  }
+}

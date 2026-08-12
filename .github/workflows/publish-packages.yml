@@ -1,0 +1,49 @@
+name: Publish Packages
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip actual publish)"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  release:
+    name: Version and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create Version PR or publish
+        id: changesets
+        if: ${{ inputs.dry_run != 'true' }}
+        uses: changesets/action@v1
+        with:
+          publish: npm run release
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
