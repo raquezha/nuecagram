@@ -64,11 +64,16 @@ class TelegramUpdateHandler(
     private suspend fun dispatch(command: String, message: TelegramMessage) {
         when (command) {
             "/start" -> handleStart(message)
-            "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.")
-            "/help" -> send(message.chat.id, "Use /start in a private chat before group setup.")
+            "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.", message.messageThreadId)
+            "/help" ->
+                send(
+                    message.chat.id,
+                    "Use /start in a private chat before group setup.",
+                    message.messageThreadId,
+                )
             "/status" -> {
                 val authorized = authorizeInstallationCommand(message, STATUS_USAGE_MESSAGE) ?: return
-                send(message.chat.id, authorized.installation.statusText())
+                send(message.chat.id, authorized.installation.statusText(), message.messageThreadId)
             }
             "/digest" -> handleDigest(message)
             "/test" -> handleDeliveryTest(message)
@@ -86,13 +91,13 @@ class TelegramUpdateHandler(
             installationRepository.upsertTelegramPrivateChat(userId, message.chat.id)
             send(message.chat.id, "Private onboarding is ready. Return to your group to continue.")
         } else {
-            send(message.chat.id, "Start a private chat with the bot first.")
+            send(message.chat.id, "Start a private chat with the bot first.", message.messageThreadId)
         }
     }
 
     private suspend fun handleDigest(message: TelegramMessage) {
         val authorized = authorizeInstallationCommand(message, DIGEST_USAGE_MESSAGE) ?: return
-        send(message.chat.id, authorized.installation.digestText())
+        send(message.chat.id, authorized.installation.digestText(), message.messageThreadId)
     }
 
     private suspend fun handleDeliveryTest(message: TelegramMessage) {
@@ -115,7 +120,7 @@ class TelegramUpdateHandler(
             actorId = authorized.actorId.toString(),
             action = "telegram_mute",
         )
-        send(message.chat.id, "Installation muted.")
+        send(message.chat.id, "Installation muted.", message.messageThreadId)
     }
 
     private suspend fun handleUnmute(message: TelegramMessage) {
@@ -127,13 +132,13 @@ class TelegramUpdateHandler(
             actorId = authorized.actorId.toString(),
             action = "telegram_unmute",
         )
-        send(message.chat.id, "Installation unmuted.")
+        send(message.chat.id, "Installation unmuted.", message.messageThreadId)
     }
 
     private suspend fun handleSetup(message: TelegramMessage) {
         val authorized = authorizeGroupAdmin(message, SETUP_USAGE_MESSAGE) ?: return
         val setup = parseSetupArgumentsValue(message.text) ?: run {
-            send(message.chat.id, SETUP_USAGE_MESSAGE)
+            send(message.chat.id, SETUP_USAGE_MESSAGE, message.messageThreadId)
             return
         }
         val installation =
@@ -161,7 +166,7 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             setupDetailsText(config, installation, credential.raw, managementLink.raw),
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE)
+        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
     }
 
     private suspend fun handleManage(message: TelegramMessage) {
@@ -181,7 +186,7 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             managementLinkText(config, authorized.installation.id, managementLink.raw),
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE)
+        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
     }
 
     private suspend fun handleRotate(message: TelegramMessage) {
@@ -212,7 +217,7 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             rotationDetailsText(config, authorized.installation, credential.raw, managementLink.raw),
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE)
+        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
     }
 
     private suspend fun authorizeGroupAdmin(
@@ -225,18 +230,18 @@ class TelegramUpdateHandler(
         }
         val text = message.text?.trim().orEmpty()
         if (text.substringAfter(' ', "").isBlank()) {
-            send(message.chat.id, usageMessage)
+            send(message.chat.id, usageMessage, message.messageThreadId)
             return null
         }
         val userId = message.from?.id
         val privateChatId = if (userId == null) null else installationRepository.telegramPrivateChatId(userId)
         if (userId == null || privateChatId == null) {
-            send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE)
+            send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
             return null
         }
         val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
         if (status !in ADMIN_STATUSES) {
-            send(message.chat.id, ADMIN_ONLY_MESSAGE)
+            send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
             return null
         }
         return AuthorizedGroupAdmin(userId, privateChatId)
@@ -248,13 +253,13 @@ class TelegramUpdateHandler(
     ): AuthorizedInstallationCommand? {
         val installationId = parseInstallationId(message.text)
         if (installationId == null) {
-            send(message.chat.id, usageMessage)
+            send(message.chat.id, usageMessage, message.messageThreadId)
             return null
         }
         val groupAdmin = authorizeGroupAdmin(message, usageMessage) ?: return null
         val installation = installationRepository.installationAdminContext(installationId)
         if (installation == null || installation.telegramChatId != message.chat.id) {
-            send(message.chat.id, WRONG_CHAT_MESSAGE)
+            send(message.chat.id, WRONG_CHAT_MESSAGE, message.messageThreadId)
             return null
         }
         return AuthorizedInstallationCommand(
@@ -271,8 +276,8 @@ class TelegramUpdateHandler(
             ?.takeIf(String::isNotBlank)
             ?.let { value -> runCatching { UUID.fromString(value) }.getOrNull() }
 
-    private suspend fun send(chatId: Long, text: String) {
-        telegramService.sendMessage(Message(chatId = chatId.toString(), text = text))
+    private suspend fun send(chatId: Long, text: String, threadId: Long? = null) {
+        telegramService.sendMessage(Message(chatId = chatId.toString(), text = text, threadId = threadId))
     }
 }
 
