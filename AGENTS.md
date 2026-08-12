@@ -27,6 +27,40 @@ For long answers, always include a **TLDR;** at the top.
 - If AI contributed to a commit, the commit message must include an exact `Assisted-by` trailer. Get the exact value with `bash ~/RQZ/personal/nothing/packages/workflows/norpiv/scripts/get-pi-model.sh` and use that exact output in the trailer, for example `Assisted-by: openai-codex:gpt-5.4 [read,bash,edit,write]`.
 - Before push, verify the actual committed trailer matches the current helper output; if not, amend the commit before pushing so `/verify` does not fail on trailer drift.
 
+## Pull Request Standards (Open Source Specification)
+
+### 1. PR Title Format
+PR titles must follow the **Conventional Commits** specification (`<type>(<scope>): <description>` in lowercase):
+- `feat`: New feature or capability (e.g., `feat(telegram): preserve topic thread ID on command replies`)
+- `fix`: Bug fix (e.g., `fix(ci): decode base64 SSH key in deploy workflow`)
+- `docs`: Documentation updates (e.g., `docs(operations): update deployment guide`)
+- `ci`: CI/CD workflow updates (e.g., `ci(github): bump setup-java to v5`)
+- `test`: Test suite additions or fixes (e.g., `test(mr): resolve async race condition`)
+- `refactor`: Code refactoring with no functional change
+
+### 2. PR Body Contract
+PR descriptions must be clean, concise, and reviewer-focused. **NEVER paste raw CLI terminal output, Gradle logs, or build dumps into PR descriptions.**
+
+Use this exact structure:
+
+```md
+## Summary
+- <1 to 3 bullets describing what changed and why>
+
+## Scope
+- <files or components modified>
+
+## Verification
+- [x] `./gradlew lintKotlinMain lintKotlinTest`
+- [x] `./gradlew detekt`
+- [x] `./gradlew test`
+- [x] `./gradlew build`
+
+## Risk / Rollback
+- Risk: <Low / Medium / High with reason>
+- Rollback: <revert commit or restore previous state>
+```
+
 ## Project Structure
 
 ```
