@@ -48,7 +48,7 @@ jobs:
       RELEASE_VERSION: ${{ inputs.version }}
     steps:
       - name: Checkout merged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           ref: ${{ env.MERGE_SHA }}
           fetch-depth: 0
