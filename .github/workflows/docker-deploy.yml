@@ -42,7 +42,7 @@ jobs:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
     outputs:
-      digest: ${{ steps.push-image.outputs.digest }}
+      version: ${{ steps.version.outputs.version }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
       RELEASE_VERSION: ${{ inputs.version }}
@@ -152,4 +152,4 @@ jobs:
     uses: ./.github/workflows/deploy-production.yml
     with:
       action: deploy
-      image_digest: ${{ needs.publish-release.outputs.digest }}
+      image_digest: raquezha/nuecagram:v${{ needs.publish-release.outputs.version }}

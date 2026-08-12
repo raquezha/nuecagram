@@ -7,7 +7,7 @@ readonly ENV_FILE=/etc/nuecagram/app.env
 readonly COMPOSE_FILE=/opt/nuecagram/compose.production.yaml
 readonly STATE_FILE=/var/lib/nuecagram/previous-image
 readonly HEALTH_TIMEOUT_SECONDS=300
-readonly IMAGE_PATTERN='^raquezha/nuecagram@sha256:[0-9a-f]{64}$'
+readonly IMAGE_PATTERN='^(raquezha/nuecagram:v[0-9]+\.[0-9]+\.[0-9]+|raquezha/nuecagram@sha256:[0-9a-f]{64})$'
 
 usage() {
   echo "Usage: $0 --mode <deploy|rollback> --image <digest|previous>" >&2
