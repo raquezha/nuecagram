@@ -32,7 +32,7 @@ fun main() {
 private fun validateRequiredEnvironmentVariables() {
     if (System.getenv("TELEGRAM_BOT_TOKEN").isNullOrBlank() ||
         System.getenv("TELEGRAM_WEBHOOK_SECRET").isNullOrBlank() ||
-        System.getenv("PLATFORM_ADMIN_PASSWORD_HASH").isNullOrBlank() ||
+        System.getenv("PLATFORM_ADMIN_PASSWORD").isNullOrBlank() ||
         System.getenv("NUECAGRAM_PUBLIC_URL").isNullOrBlank()
     ) {
         throw IllegalStateException(
@@ -40,7 +40,7 @@ private fun validateRequiredEnvironmentVariables() {
             Missing required environment variables:
               - TELEGRAM_BOT_TOKEN
               - TELEGRAM_WEBHOOK_SECRET
-              - PLATFORM_ADMIN_PASSWORD_HASH
+              - PLATFORM_ADMIN_PASSWORD
               - NUECAGRAM_PUBLIC_URL
 
             Please set these variables before starting the application.
@@ -60,7 +60,7 @@ fun configWithSecrets(
     filename: String,
     botApi: String,
     telegramWebhookSecret: String,
-    platformAdminHash: String,
+    platformAdminPassword: String,
 ): ConfigWithSecrets {
     val config = config(filename)
 
@@ -70,7 +70,7 @@ fun configWithSecrets(
         host = config.host,
         port = config.port,
         botApi = botApi,
-        platformAdminHash = platformAdminHash,
+        platformAdminPassword = platformAdminPassword,
         telegramWebhookSecret = telegramWebhookSecret,
     )
 }

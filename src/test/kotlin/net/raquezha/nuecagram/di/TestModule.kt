@@ -4,7 +4,6 @@ import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import org.koin.dsl.module
-import org.mindrot.jbcrypt.BCrypt
 
 fun testAppModule() =
     listOf(
@@ -29,7 +28,7 @@ val testModule =
                 host = "localhost",
                 port = 8080,
                 botApi = "mock_bot_api",
-                platformAdminHash = BCrypt.hashpw("test-admin-password", BCrypt.gensalt(4)),
+                platformAdminPassword = "test-admin-password",
                 telegramWebhookSecret = "test-telegram-webhook-token",
             )
         }

@@ -6,7 +6,7 @@ Copy `env.example` to a private `.env` file and replace every placeholder. Requi
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
-- `PLATFORM_ADMIN_PASSWORD_HASH`
+- `PLATFORM_ADMIN_PASSWORD`
 - `NUECAGRAM_PUBLIC_URL`
 - `DATABASE_URL`
 - `DATABASE_USER`
@@ -18,10 +18,12 @@ Never commit the real environment file.
 
 ## Local Compose deployment
 
-`compose.yaml` builds the app locally and starts PostgreSQL with a persistent `postgres-data` volume:
+`compose.yaml` starts the app and PostgreSQL with a persistent `postgres-data` volume:
 
 ```bash
-docker compose up --build -d
+cp env.example .env
+# edit .env
+docker compose up -d
 docker compose ps
 ```
 
@@ -36,10 +38,18 @@ The app health check uses the DB-backed readiness endpoint:
 Terminate TLS at a reverse proxy and preserve the complete public path:
 
 ```text
-https://example.com/nuecagram -> http://127.0.0.1:8080/nuecagram
+https://example.com/nuecagram -> http://127.0.0.1:18080/nuecagram
 ```
 
-Allow public traffic only to SSH, HTTP, and HTTPS as required. Production Compose binds the app to `127.0.0.1:8080`, so clients must use the reverse proxy.
+Example Caddy route:
+
+```caddyfile
+handle /nuecagram* {
+    reverse_proxy 127.0.0.1:18080
+}
+```
+
+Allow public traffic only to SSH, HTTP, and HTTPS as required. Production Compose binds the app to `127.0.0.1:18080`, so clients must use the reverse proxy.
 
 ## Telegram topic thread preservation
 
@@ -49,7 +59,7 @@ Suppress access logging for token-bearing paths, especially one-time management 
 
 ## Secret handling
 
-- Do not commit environment files, database dumps, Telegram tokens, GitLab personal access tokens, webhook tokens, management links, SSH private keys, or password hashes.
+- Do not commit environment files, database dumps, Telegram tokens, GitLab personal access tokens, webhook tokens, management links, SSH private keys, or plain-text admin passwords.
 - Do not paste management links into shared chats or tickets.
 - Rotate a webhook secret with `/rotate <installation-id>` when exposure is suspected.
 - Use a dedicated SSH key and unprivileged deploy user for automation; never use a personal key.
@@ -71,17 +81,13 @@ Install the root-owned deployment files at the paths expected by the workflow:
 
 ```bash
 sudo install -d -o root -g root -m 755 /opt/nuecagram
-sudo install -d -o root -g root -m 700 /etc/nuecagram /var/lib/nuecagram
+sudo install -d -o root -g root -m 700 /var/lib/nuecagram
 sudo install -o root -g root -m 755 scripts/nuecagram-deploy.sh /usr/local/bin/nuecagram-deploy
-sudo install -o root -g root -m 644 compose.production.yaml /opt/nuecagram/compose.production.yaml
-sudo install -o root -g root -m 600 .env /etc/nuecagram/app.env
+sudo install -o root -g root -m 644 compose.yaml /opt/nuecagram/compose.yaml
+sudo install -o root -g root -m 600 .env /opt/nuecagram/.env
 ```
 
-Production Compose requires an immutable PostgreSQL image reference. Add `NUECAGRAM_POSTGRES_IMAGE` to `/etc/nuecagram/app.env` using a digest, for example `postgres@sha256:...`, not a mutable tag. Obtain and review the digest before deployment:
-
-```bash
-docker buildx imagetools inspect postgres:16-alpine
-```
+Production Compose reads all app and Compose settings from `/opt/nuecagram/.env`. Use `NUECAGRAM_BIND=127.0.0.1:18080:8080` behind the reverse proxy, then point Caddy to `127.0.0.1:18080`. `NUECAGRAM_IMAGE` may be a version tag or digest; GitHub Actions sets it during deployment.
 
 Allow the deploy user to run only the root-owned, input-validating deployment entrypoint. Create the rule with `visudo`:
 
@@ -89,7 +95,7 @@ Allow the deploy user to run only the root-owned, input-validating deployment en
 deploy ALL=(root) NOPASSWD: /usr/local/bin/nuecagram-deploy *
 ```
 
-The entrypoint accepts only `deploy` or `rollback` and only immutable `raquezha/nuecagram@sha256:...` image references. All server paths and the readiness URL are fixed inside the root-owned script.
+The entrypoint accepts only `deploy` or `rollback` and only compatible `raquezha/nuecagram` version tags or digest references. All server paths and the readiness URL are fixed inside the root-owned script.
 
 ## GitHub production environment
 
@@ -115,10 +121,10 @@ The workflow also refuses to run from any branch except `main`. Environment appr
 
 ## Deploy an immutable release
 
-Published release notes include an image digest such as:
+Published release notes include an image reference such as:
 
 ```text
-raquezha/nuecagram@sha256:<64 hexadecimal characters>
+raquezha/nuecagram:v0.11.0
 ```
 
 To deploy it:
@@ -126,7 +132,7 @@ To deploy it:
 1. Open **Actions > Deploy to Production > Run workflow**.
 2. Select the `main` branch.
 3. Choose `deploy`.
-4. Paste the full digest into `image_digest`.
+4. Paste the full image reference into `image_digest`.
 5. Approve the protected environment deployment when prompted.
 
 The server pulls that exact digest, starts the app, and waits for the container health check backed by the database readiness endpoint. If readiness fails, it attempts to restore the image that was running before the deployment.

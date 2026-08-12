@@ -12,8 +12,6 @@ import io.ktor.server.routing.post
 import java.net.URI
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.CredentialCodec
 import net.raquezha.nuecagram.db.InstallationAdminContext
@@ -21,7 +19,6 @@ import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminAuditRecord
 import net.raquezha.nuecagram.db.PlatformAdminSessionContext
 import org.koin.ktor.ext.inject
-import org.mindrot.jbcrypt.BCrypt
 
 private const val ADMIN_SESSION_COOKIE = "nuecagram_admin_session"
 private const val LOGIN_CSRF_COOKIE = "nuecagram_admin_login_csrf"
@@ -82,9 +79,7 @@ fun Route.platformAdminRouting(basePath: String) {
         val password = form["password"].orEmpty()
         val authenticated =
             password.length in 1..MAX_PASSWORD_LENGTH &&
-                withContext(Dispatchers.Default) {
-                    runCatching { BCrypt.checkpw(password, config.platformAdminHash) }.getOrDefault(false)
-                }
+                constantTimeEquals(password, config.platformAdminPassword)
         if (!authenticated) {
             loginThrottle.recordFailure(clientId)
             call.respondManagementHtml(

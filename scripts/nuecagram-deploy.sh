@@ -3,8 +3,8 @@ set -euo pipefail
 umask 077
 
 readonly PROJECT_ROOT=/opt/nuecagram
-readonly ENV_FILE=/etc/nuecagram/app.env
-readonly COMPOSE_FILE=/opt/nuecagram/compose.production.yaml
+readonly ENV_FILE=/opt/nuecagram/.env
+readonly COMPOSE_FILE=/opt/nuecagram/compose.yaml
 readonly STATE_FILE=/var/lib/nuecagram/previous-image
 readonly HEALTH_TIMEOUT_SECONDS=300
 readonly IMAGE_PATTERN='^(raquezha/nuecagram:v[0-9]+\.[0-9]+\.[0-9]+|raquezha/nuecagram@sha256:[0-9a-f]{64})$'
@@ -32,7 +32,7 @@ if [ "$mode" != deploy ] && [ "$mode" != rollback ]; then
   exit 1
 fi
 if [ "$mode" = deploy ] && [[ ! "$image" =~ $IMAGE_PATTERN ]]; then
-  echo "deploy image must be an immutable raquezha/nuecagram digest" >&2
+  echo "deploy image must be a raquezha/nuecagram version or digest" >&2
   exit 1
 fi
 if [ "$mode" = rollback ] && [ "$image" != previous ] && [[ ! "$image" =~ $IMAGE_PATTERN ]]; then
@@ -95,7 +95,7 @@ current_image=""
 if [ -n "$current_container" ]; then
   current_image="$(docker inspect --format '{{.Config.Image}}' "$current_container")"
   if [[ ! "$current_image" =~ $IMAGE_PATTERN ]]; then
-    echo "current app image is not an immutable Nuecagram digest" >&2
+    echo "current app image is not a compatible Nuecagram version or digest" >&2
     exit 1
   fi
 fi
