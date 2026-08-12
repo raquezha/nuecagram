@@ -251,6 +251,10 @@ class TelegramUpdateHandler(
         message: TelegramMessage,
         usageMessage: String,
     ): AuthorizedInstallationCommand? {
+        if (message.chat.type == "private") {
+            send(message.chat.id, PRIVATE_COMMAND_MESSAGE, message.messageThreadId)
+            return null
+        }
         val installationId = parseInstallationId(message.text)
         if (installationId == null) {
             send(message.chat.id, usageMessage, message.messageThreadId)
