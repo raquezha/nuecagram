@@ -1,6 +1,14 @@
 name: Deploy to Production
 
 on:
+  workflow_call:
+    inputs:
+      action:
+        required: true
+        type: string
+      image_digest:
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       action:

@@ -41,6 +41,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'release-please--branches--'))
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push-image.outputs.digest }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
       RELEASE_VERSION: ${{ inputs.version }}
@@ -142,3 +144,10 @@ jobs:
               build/libs/nuecagram-fat.jar#nuecagram-${{ steps.version.outputs.version }}-fat.jar \
               build/jib/nuecagram-jib-image.tar#nuecagram-${{ steps.version.outputs.version }}.jib.tar
           fi
+
+  auto-deploy:
+    needs: publish-release
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      action: deploy
+      image_digest: ${{ needs.publish-release.outputs.digest }}
