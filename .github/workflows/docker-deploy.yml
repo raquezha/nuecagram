@@ -114,13 +114,11 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Create tag
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
         run: |
           git tag "${{ steps.version.outputs.tag }}" "$MERGE_SHA"
           git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Write release notes
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
         run: |
           cat > release-notes.md <<EOF
           Published after lint, test, build, and dependency-scan gates passed.
@@ -137,7 +135,6 @@ jobs:
           EOF
 
       - name: Create GitHub release
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
