@@ -3,6 +3,7 @@
   "version": "0.10.1",
   "private": true,
   "scripts": {
+    "changeset:status": "node scripts/validate-changeset-present.mjs",
     "release": "echo 'Releasing Nuecagram...'"
   },
   "devDependencies": {
