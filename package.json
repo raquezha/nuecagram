@@ -1,6 +1,6 @@
 {
   "name": "@raquezha/nuecagram",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "private": true,
   "scripts": {
     "changeset:status": "node scripts/validate-changeset-present.mjs",
