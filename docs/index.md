@@ -24,6 +24,7 @@ Nuecagram hosts multiple GitLab project notification installs behind one Telegra
 - [Developer Guides Index](guides/index.md)
   - [Adding a New Event Type](guides/add-event-type.md)
   - [Adding an External Adapter](guides/add-adapter.md)
+  - [Telegram Forum Topic Routing](guides/telegram-topics.md)
 - [Onboarding](onboarding.md)
 - [Operations](operations.md)
 - [Webhook scripts](webhook-scripts.md)
