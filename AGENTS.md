@@ -152,12 +152,12 @@ Pipeline and job events are consolidated into a single updating message per pipe
 ## Environment Variables
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token from BotFather
 - `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook header secret
-- `PLATFORM_ADMIN_PASSWORD_HASH`: platform admin password hash
+- `PLATFORM_ADMIN_PASSWORD`: platform admin password
 - `NUECAGRAM_PUBLIC_URL`: public application root, including any path prefix
 - `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`: PostgreSQL connection
 
 ## Deployment
-Use `compose.yaml` with a private `.env` copied from `env.example` for local deployment. Production deployment uses `compose.production.yaml` and the protected workflow documented in `docs/operations.md`.
+Use the single `compose.yaml` with a private `.env` copied from `env.example` for local and production deployment. Production stores that file at `/opt/nuecagram/.env` and uses the protected workflow documented in `docs/operations.md`.
 
 ## Tech Stack
 - **Language:** Kotlin 1.9.24

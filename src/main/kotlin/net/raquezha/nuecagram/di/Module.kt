@@ -46,8 +46,8 @@ val provideConfigModule =
             filename = "/application.json",
             botApi = System.getenv("TELEGRAM_BOT_TOKEN")
                 ?: throw IllegalStateException("TELEGRAM_BOT_TOKEN missing"),
-            platformAdminHash = System.getenv("PLATFORM_ADMIN_PASSWORD_HASH")
-                ?: throw IllegalStateException("PLATFORM_ADMIN_PASSWORD_HASH missing"),
+            platformAdminPassword = System.getenv("PLATFORM_ADMIN_PASSWORD")
+                ?: throw IllegalStateException("PLATFORM_ADMIN_PASSWORD missing"),
             telegramWebhookSecret = System.getenv("TELEGRAM_WEBHOOK_SECRET")
                 ?: throw IllegalStateException("TELEGRAM_WEBHOOK_SECRET missing"),
         ) }
