@@ -153,3 +153,4 @@ jobs:
     with:
       action: deploy
       image_digest: raquezha/nuecagram:v${{ needs.publish-release.outputs.version }}
+    secrets: inherit
