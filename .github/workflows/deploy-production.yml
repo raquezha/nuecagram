@@ -36,7 +36,7 @@ jobs:
       - name: Validate deployment request
         env:
           ACTION: ${{ inputs.action }}
-          IMAGE: ${{ inputs.image_digest }}
+          RAW_IMAGE: ${{ inputs.image_digest }}
           SSH_PRIVATE_KEY_B64: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY_B64 }}
           SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
         run: |
@@ -46,14 +46,23 @@ jobs:
           [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
           [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]]
           [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ]
+
+          IMAGE=$(echo "$RAW_IMAGE" | tr -d ' "' | xargs)
+          if [[ "$IMAGE" =~ ^sha256:[0-9a-fA-F]{64}$ ]]; then
+            IMAGE="raquezha/nuecagram@$IMAGE"
+          elif [[ "$IMAGE" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            IMAGE="raquezha/nuecagram@sha256:$IMAGE"
+          fi
+
           if [ "$ACTION" = deploy ] && [ -z "$IMAGE" ]; then
             echo "image_digest is required for deploy" >&2
             exit 1
           fi
-          if [ -n "$IMAGE" ] && [[ ! "$IMAGE" =~ ^raquezha/nuecagram@sha256:[0-9a-f]{64}$ ]]; then
+          if [ -n "$IMAGE" ] && [[ ! "$IMAGE" =~ ^raquezha/nuecagram@sha256:[0-9a-fA-F]{64}$ ]]; then
             echo "image_digest must be an immutable raquezha/nuecagram digest" >&2
             exit 1
           fi
+          echo "SANITY_IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
       - name: Install SSH credentials
         env:
@@ -75,7 +84,7 @@ jobs:
       - name: Run protected deploy entrypoint
         env:
           ACTION: ${{ inputs.action }}
-          IMAGE: ${{ inputs.image_digest || 'previous' }}
+          IMAGE: ${{ env.SANITY_IMAGE || inputs.image_digest || 'previous' }}
         run: |
           ssh -i ~/.ssh/id_ed25519 \
             -o BatchMode=yes \
