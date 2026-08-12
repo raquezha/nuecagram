@@ -7,11 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       merge_sha:
-        description: Main-branch commit to publish
-        required: true
+        description: Main-branch commit to publish (defaults to HEAD)
+        required: false
+        default: ''
       version:
-        description: Release version without leading v
-        required: true
+        description: Release version without leading v (defaults to version.txt)
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -40,7 +42,7 @@ jobs:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
     env:
-      MERGE_SHA: ${{ inputs.merge_sha || github.event.pull_request.merge_commit_sha }}
+      MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
       RELEASE_VERSION: ${{ inputs.version }}
     steps:
       - name: Checkout merged commit
@@ -96,10 +98,13 @@ jobs:
         run: |
           version_ref="raquezha/nuecagram:${{ steps.version.outputs.tag }}"
           sha_ref="raquezha/nuecagram:${{ steps.version.outputs.sha_tag }}"
+          latest_ref="raquezha/nuecagram:latest"
           docker tag nuecagram-docker-image:${{ steps.version.outputs.version }} "$version_ref"
           docker tag nuecagram-docker-image:${{ steps.version.outputs.version }} "$sha_ref"
+          docker tag nuecagram-docker-image:${{ steps.version.outputs.version }} "$latest_ref"
           docker push "$version_ref"
           docker push "$sha_ref"
+          docker push "$latest_ref"
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$version_ref")
           echo "version_ref=$version_ref" >> "$GITHUB_OUTPUT"
           echo "sha_ref=$sha_ref" >> "$GITHUB_OUTPUT"
