@@ -2,6 +2,7 @@ package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
 import io.ktor.server.testing.testApplication
+import net.raquezha.nuecagram.db.MrParticipants
 import org.junit.Test
 
 class MergeRequestWebhookTest : BaseEventTestHelper() {
@@ -54,7 +55,13 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
 """.trimIndent()
             postWebhook(EVENT_MERGE, payload)
             val cached = kotlinx.coroutines.runBlocking {
-                installationRepository.getMrParticipants(installation.id, 101L, 42L)
+                var found: MrParticipants? = null
+                for (i in 1..100) {
+                    found = installationRepository.getMrParticipants(installation.id, 101L, 42L)
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
             }
             assertThat(cached).isNotNull()
             assertThat(cached?.authorUsername).isEqualTo("alice")
