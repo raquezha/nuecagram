@@ -41,6 +41,10 @@ https://example.com/nuecagram -> http://127.0.0.1:8080/nuecagram
 
 Allow public traffic only to SSH, HTTP, and HTTPS as required. Production Compose binds the app to `127.0.0.1:8080`, so clients must use the reverse proxy.
 
+## Telegram topic thread preservation
+
+Nuecagram preserves Telegram Forum Topic thread IDs (`messageThreadId`). Slash commands typed inside a specific topic reply directly within that topic, and GitLab webhook installations bound to a topic post notifications exclusively into that topic.
+
 Suppress access logging for token-bearing paths, especially one-time management URLs. If full suppression is not possible, remove query strings and path parameters before writing logs.
 
 ## Secret handling
