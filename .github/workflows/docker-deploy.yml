@@ -1,20 +1,16 @@
-name: Publish Release Artifacts
+name: Build & Deploy to Production
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 on:
-  pull_request_target:
-    types:
-      - closed
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       merge_sha:
-        description: Main-branch commit to publish (defaults to HEAD)
-        required: false
-        default: ''
-      version:
-        description: Release version without leading v (defaults to version.txt)
+        description: Main-branch commit SHA to publish and deploy (defaults to HEAD)
         required: false
         default: ''
 
@@ -25,51 +21,36 @@ permissions:
 
 jobs:
   lint:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'changeset-release/'))
     uses: ./.github/workflows/lint.yml
 
   test:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'changeset-release/'))
     uses: ./.github/workflows/test.yml
 
   build:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'changeset-release/'))
     uses: ./.github/workflows/build.yml
 
   dependency-scan:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'changeset-release/'))
     uses: ./.github/workflows/dependency-scan.yml
 
-  publish-release:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'changeset-release/'))
+  publish:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      image_digest: ${{ steps.push-image.outputs.digest }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
-      RELEASE_VERSION: ${{ inputs.version }}
     steps:
-      - name: Checkout merged commit
+      - name: Checkout commit
         uses: actions/checkout@v4.2.2
         with:
           ref: ${{ env.MERGE_SHA }}
           fetch-depth: 0
 
-      - name: Fetch tags
-        run: git fetch --tags origin
-
-      - name: Resolve release version
-        id: version
+      - name: Resolve SHA tag
+        id: sha_tag
         run: |
-          version="${RELEASE_VERSION}"
-          if [ -z "$version" ]; then
-            version=$(tr -d '[:space:]' < version.txt)
-          fi
-          tag="v$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "sha_tag=sha-$(printf '%.12s' "$MERGE_SHA")" >> "$GITHUB_OUTPUT"
+          sha_tag="sha-$(printf '%.12s' "$MERGE_SHA")"
+          echo "sha_tag=$sha_tag" >> "$GITHUB_OUTPUT"
 
       - name: Setup JDK17
         uses: actions/setup-java@v5
@@ -80,9 +61,7 @@ jobs:
           overwrite-settings: false
 
       - name: Build release artifacts
-        run: |
-          printf '%s\n' "${{ steps.version.outputs.version }}" > version.txt
-          ./gradlew buildImage buildFatJar
+        run: ./gradlew buildImage buildFatJar
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
@@ -96,64 +75,56 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
-      - name: Tag and push immutable images
+      - name: Tag and push immutable image
         id: push-image
         run: |
-          version_ref="raquezha/nuecagram:${{ steps.version.outputs.tag }}"
-          sha_ref="raquezha/nuecagram:${{ steps.version.outputs.sha_tag }}"
-          latest_ref="raquezha/nuecagram:latest"
-          docker tag nuecagram-docker-image:${{ steps.version.outputs.version }} "$version_ref"
-          docker tag nuecagram-docker-image:${{ steps.version.outputs.version }} "$sha_ref"
-          docker tag nuecagram-docker-image:${{ steps.version.outputs.version }} "$latest_ref"
+          version=$(tr -d '[:space:]' < version.txt)
+          tag="v$version"
+          version_ref="raquezha/nuecagram:$tag"
+          sha_ref="raquezha/nuecagram:${{ steps.sha_tag.outputs.sha_tag }}"
+          docker tag "nuecagram-docker-image:$version" "$version_ref"
+          docker tag "nuecagram-docker-image:$version" "$sha_ref"
           docker push "$version_ref"
           docker push "$sha_ref"
-          docker push "$latest_ref"
-          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$version_ref")
-          echo "version_ref=$version_ref" >> "$GITHUB_OUTPUT"
-          echo "sha_ref=$sha_ref" >> "$GITHUB_OUTPUT"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$sha_ref")
+          if [ -z "$digest" ]; then
+            echo "Failed to resolve repository digest for $sha_ref" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Create tag
-        run: |
-          if ! git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-            git tag "${{ steps.version.outputs.tag }}" "$MERGE_SHA"
-            git push origin "${{ steps.version.outputs.tag }}"
-          fi
-
-      - name: Write release notes
-        run: |
-          cat > release-notes.md <<EOF
-          Published after lint, test, build, and dependency-scan gates passed.
-
-          Image tags:
-          - \
-            ${{ steps.push-image.outputs.version_ref }}
-          - \
-            ${{ steps.push-image.outputs.sha_ref }}
-
-          Image digest:
-          - \
-            ${{ steps.push-image.outputs.digest }}
-          EOF
-
-      - name: Create GitHub release
+      - name: Generate checksums & Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! gh release view "${{ steps.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "${{ steps.version.outputs.tag }}" \
+          tag="${{ steps.push-image.outputs.tag }}"
+          version="${{ steps.push-image.outputs.version }}"
+          if ! git rev-parse "$tag" >/dev/null 2>&1; then
+            git tag "$tag" "$MERGE_SHA"
+            git push origin "$tag" || true
+          fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            cd build/libs
+            sha256sum "nuecagram-fat.jar" > checksums.txt
+            cd ../jib
+            sha256sum "nuecagram-jib-image.tar" >> ../libs/checksums.txt
+            cd ../..
+            gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$MERGE_SHA" \
-              --title "${{ steps.version.outputs.version }}" \
-              --notes-file release-notes.md \
-              build/libs/nuecagram-fat.jar#nuecagram-${{ steps.version.outputs.version }}-fat.jar \
-              build/jib/nuecagram-jib-image.tar#nuecagram-${{ steps.version.outputs.version }}.jib.tar
+              --title "v$version" \
+              --generate-notes \
+              "build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar" \
+              "build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar" \
+              "build/libs/checksums.txt#checksums.txt" || true
           fi
 
   auto-deploy:
-    needs: publish-release
+    needs: publish
     uses: ./.github/workflows/deploy-production.yml
     with:
       action: deploy
-      image_digest: raquezha/nuecagram:v${{ needs.publish-release.outputs.version }}
+      image_digest: ${{ needs.publish.outputs.image_digest }}
     secrets: inherit

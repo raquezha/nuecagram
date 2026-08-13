@@ -1,0 +1,49 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: "🚀 Features"
+      labels:
+        - "feature"
+        - "enhancement"
+      keywords:
+        - "feat"
+        - "feature"
+    - title: "🐛 Bug Fixes"
+      labels:
+        - "bug"
+        - "fix"
+      keywords:
+        - "fix"
+        - "bug"
+    - title: "⚡ Performance Improvements"
+      labels:
+        - "performance"
+      keywords:
+        - "perf"
+    - title: "🔒 Security Updates"
+      labels:
+        - "security"
+      keywords:
+        - "security"
+    - title: "🧰 Maintenance & CI/CD"
+      labels:
+        - "chore"
+        - "ci"
+        - "dependencies"
+      keywords:
+        - "chore"
+        - "ci"
+        - "refactor"
+        - "deps"
+    - title: "📚 Documentation"
+      labels:
+        - "documentation"
+      keywords:
+        - "docs"
+    - title: "🧪 Tests"
+      labels:
+        - "testing"
+      keywords:
+        - "test"
