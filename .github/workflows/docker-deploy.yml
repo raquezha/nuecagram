@@ -60,8 +60,8 @@ jobs:
           cache: gradle
           overwrite-settings: false
 
-      - name: Build Docker image
-        run: ./gradlew buildImage
+      - name: Build release artifacts
+        run: ./gradlew buildImage buildFatJar
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
@@ -79,15 +79,47 @@ jobs:
         id: push-image
         run: |
           version=$(tr -d '[:space:]' < version.txt)
+          tag="v$version"
+          version_ref="raquezha/nuecagram:$tag"
           sha_ref="raquezha/nuecagram:${{ steps.sha_tag.outputs.sha_tag }}"
+          docker tag "nuecagram-docker-image:$version" "$version_ref"
           docker tag "nuecagram-docker-image:$version" "$sha_ref"
+          docker push "$version_ref"
           docker push "$sha_ref"
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$sha_ref")
           if [ -z "$digest" ]; then
             echo "Failed to resolve repository digest for $sha_ref" >&2
             exit 1
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Create git tag & GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.push-image.outputs.tag }}"
+          version="${{ steps.push-image.outputs.version }}"
+          if ! git rev-parse "$tag" >/dev/null 2>&1; then
+            git tag "$tag" "$MERGE_SHA"
+            git push origin "$tag" || true
+          fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            cat > release-notes.md <<EOF
+          Automated production deployment for release $version.
+
+          Commit SHA: $MERGE_SHA
+          Image digest: ${{ steps.push-image.outputs.digest }}
+          EOF
+            gh release create "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$MERGE_SHA" \
+              --title "$version" \
+              --notes-file release-notes.md \
+              build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar \
+              build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar || true
+          fi
 
   auto-deploy:
     needs: publish
