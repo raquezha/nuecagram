@@ -36,7 +36,7 @@ jobs:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
     outputs:
-      image_digest: ${{ steps.push-image.outputs.digest }}
+      image_digest: ${{ steps.push-image.outputs.sha_ref }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
     steps:
@@ -86,14 +86,9 @@ jobs:
           docker tag "nuecagram-docker-image:$version" "$sha_ref"
           docker push "$version_ref"
           docker push "$sha_ref"
-          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$sha_ref")
-          if [ -z "$digest" ]; then
-            echo "Failed to resolve repository digest for $sha_ref" >&2
-            exit 1
-          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "sha_ref=$sha_ref" >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums & Create GitHub release
         env:
