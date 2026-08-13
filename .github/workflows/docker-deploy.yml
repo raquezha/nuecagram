@@ -95,7 +95,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Create git tag & GitHub release
+      - name: Generate checksums & Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -106,13 +106,19 @@ jobs:
             git push origin "$tag" || true
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            cd build/libs
+            sha256sum "nuecagram-fat.jar" > checksums.txt
+            cd ../jib
+            sha256sum "nuecagram-jib-image.tar" >> ../libs/checksums.txt
+            cd ../..
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$MERGE_SHA" \
               --title "v$version" \
               --generate-notes \
-              build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar \
-              build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar || true
+              "build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar" \
+              "build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar" \
+              "build/libs/checksums.txt#checksums.txt" || true
           fi
 
   auto-deploy:
