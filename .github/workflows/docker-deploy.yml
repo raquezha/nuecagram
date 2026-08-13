@@ -95,7 +95,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Extract release notes from CHANGELOG.md & Create GitHub release
+      - name: Create git tag & GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -106,19 +106,11 @@ jobs:
             git push origin "$tag" || true
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            sed -n "/## \[\($version\|Unreleased\)\]/,/## \[/p" CHANGELOG.md | sed '$d' > release-notes.md
-            if [ ! -s release-notes.md ]; then
-              cat > release-notes.md <<EOF
-          ## [$version] - $(date +%Y-%m-%d)
-
-          Automated production deployment for release $version.
-          EOF
-            fi
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$MERGE_SHA" \
               --title "v$version" \
-              --notes-file release-notes.md \
+              --generate-notes \
               build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar \
               build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar || true
           fi
