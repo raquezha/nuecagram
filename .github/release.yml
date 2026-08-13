@@ -1,0 +1,16 @@
+changelog:
+  categories:
+    - title: "🚀 Features"
+      keywords:
+        - "feat"
+    - title: "🐛 Bug Fixes"
+      keywords:
+        - "fix"
+    - title: "🧰 Maintenance & CI"
+      keywords:
+        - "chore"
+        - "ci"
+        - "refactor"
+    - title: "📚 Documentation"
+      keywords:
+        - "docs"

@@ -106,17 +106,11 @@ jobs:
             git push origin "$tag" || true
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            cat > release-notes.md <<EOF
-          Automated production deployment for release $version.
-
-          Commit SHA: $MERGE_SHA
-          Image digest: ${{ steps.push-image.outputs.digest }}
-          EOF
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$MERGE_SHA" \
-              --title "$version" \
-              --notes-file release-notes.md \
+              --title "v$version" \
+              --generate-notes \
               build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar \
               build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar || true
           fi
