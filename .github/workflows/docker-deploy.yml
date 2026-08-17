@@ -36,21 +36,23 @@ jobs:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
     outputs:
-      image_digest: ${{ steps.push-image.outputs.sha_ref }}
+      image_digest: ${{ steps.push-image.outputs.image_digest }}
     env:
-      MERGE_SHA: ${{ inputs.merge_sha || github.sha }}
+      MERGE_SHA: ${{ inputs.merge_sha }}
     steps:
+      - name: Resolve commit SHA & tag
+        id: sha_tag
+        run: |
+          target_sha="${MERGE_SHA:-$GITHUB_SHA}"
+          sha_tag="sha-$(printf '%.12s' "$target_sha")"
+          echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$sha_tag" >> "$GITHUB_OUTPUT"
+
       - name: Checkout commit
         uses: actions/checkout@v4.2.2
         with:
-          ref: ${{ env.MERGE_SHA }}
+          ref: ${{ steps.sha_tag.outputs.target_sha }}
           fetch-depth: 0
-
-      - name: Resolve SHA tag
-        id: sha_tag
-        run: |
-          sha_tag="sha-$(printf '%.12s' "$MERGE_SHA")"
-          echo "sha_tag=$sha_tag" >> "$GITHUB_OUTPUT"
 
       - name: Setup JDK17
         uses: actions/setup-java@v5
@@ -88,7 +90,7 @@ jobs:
           docker push "$sha_ref"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "sha_ref=$sha_ref" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$sha_ref" >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums & Create GitHub release
         env:
@@ -96,8 +98,9 @@ jobs:
         run: |
           tag="${{ steps.push-image.outputs.tag }}"
           version="${{ steps.push-image.outputs.version }}"
+          target_sha="${{ steps.sha_tag.outputs.target_sha }}"
           if ! git rev-parse "$tag" >/dev/null 2>&1; then
-            git tag "$tag" "$MERGE_SHA"
+            git tag "$tag" "$target_sha"
             git push origin "$tag" || true
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -108,7 +111,7 @@ jobs:
             cd ../..
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
-              --target "$MERGE_SHA" \
+              --target "$target_sha" \
               --title "v$version" \
               --generate-notes \
               "build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar" \
