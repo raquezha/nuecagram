@@ -288,12 +288,12 @@ private fun onboardingHtml(basePath: String): String =
 
     <div class="step-card">
       <h3>Step 1: Add Bot to Telegram Group</h3>
-      <p>Add <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> to your destination Telegram group or forum topic and promote it to <strong>Administrator</strong>.</p>
+      <p>Add <strong>@NuecagramBot</strong> to your destination Telegram group or forum topic and promote it to <strong>Administrator</strong>.</p>
     </div>
 
     <div class="step-card">
       <h3>Step 2: Start Private Onboarding</h3>
-      <p>Open a private chat with <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> and send <code>/start</code>.</p>
+      <p>Open a private chat with <strong>@NuecagramBot</strong> and send <code>/start</code>.</p>
     </div>
 
     <div class="step-card">
