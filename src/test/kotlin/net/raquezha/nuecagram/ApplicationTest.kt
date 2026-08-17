@@ -39,7 +39,8 @@ class ApplicationTest {
                 configureRouting()
             }
             assertEquals(HttpStatusCode.OK, client.get("/nuecagram/health/live").status)
-            val readyStatus = client.get("/nuecagram/health/ready").status
+            assertEquals(HttpStatusCode.OK, client.get("/health/live").status)
+            val readyStatus = client.get("/health/ready").status
             org.junit.Assert.assertTrue(
                 readyStatus == HttpStatusCode.OK || readyStatus == HttpStatusCode.ServiceUnavailable,
             )

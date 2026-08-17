@@ -36,12 +36,23 @@ fun Application.configureRouting() {
     val logger by inject<KLogger>()
 
     routing {
-        get("${this@configureRouting.healthPath()}/live") {
+        val healthPath = this@configureRouting.healthPath()
+        get("$healthPath/live") {
             call.respond(OK)
         }
 
-        get("${this@configureRouting.healthPath()}/ready") {
+        get("$healthPath/ready") {
             call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+        }
+
+        if (healthPath != "/health") {
+            get("/health/live") {
+                call.respond(OK)
+            }
+
+            get("/health/ready") {
+                call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+            }
         }
 
         get("/") {
