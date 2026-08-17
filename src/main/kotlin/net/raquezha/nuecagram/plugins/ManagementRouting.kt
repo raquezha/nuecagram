@@ -284,21 +284,11 @@ private fun managementSessionExpiry(): Instant = Instant.now().plus(SESSION_TTL_
 
 private fun onboardingHtml(basePath: String): String =
     """
-    <div style="text-align: center; margin-bottom: 2rem;">
-      <p style="font-size: 1.1rem; color: #444; margin-bottom: 1.5rem;">
-        Get instant GitLab push, pipeline, merge request, and issue updates delivered directly to your Telegram groups or forum topics.
-      </p>
-      <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener" class="btn-telegram">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.68-.55.84-1.12.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.21-3.05 5.56-5.02c.24-.22-.05-.34-.37-.13l-6.87 4.33-2.96-.92c-.64-.2-.65-.64.13-.95l11.57-4.46c.54-.2 1.01.13.89.92z"/></svg>
-        Open @NuecagramBot in Telegram
-      </a>
-    </div>
-
-    <h2>How it Works in 3 Easy Steps</h2>
+    <h2>How to Start in 3 Steps</h2>
 
     <div class="step-card">
       <h3>Step 1: Add Bot to Telegram Group</h3>
-      <p>Add <strong>@NuecagramBot</strong> to your destination Telegram group or forum topic and promote it to <strong>Administrator</strong>.</p>
+      <p>Add <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> to your destination Telegram group or forum topic and promote it to <strong>Administrator</strong>.</p>
     </div>
 
     <div class="step-card">
@@ -404,8 +394,8 @@ internal fun managementDocument(title: String, body: String): String {
           .version-badge { background: #007bc7; color: #ffffff; font-family: 'Reddit Mono', monospace; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 0.25rem; }
           .subtitle { text-align: center; font-size: 0.95rem; color: #586069; margin-top: 0.2rem; margin-bottom: 1rem; }
           hr { border: 0; border-top: 1px solid #eaeaea; margin-bottom: 2rem; }
-          .btn-telegram { display: inline-flex; align-items: center; gap: 0.5rem; background-color: #0088cc; color: #ffffff; font-family: 'Space Grotesk', sans-serif; font-size: 1rem; font-weight: 600; padding: 0.75rem 1.25rem; border-radius: 0.5rem; text-decoration: none; transition: background-color 0.2s ease; }
-          .btn-telegram:hover { background-color: #006699; }
+          .btn-telegram-sm { display: inline-flex; align-items: center; gap: 0.35rem; background-color: #0088cc; color: #ffffff; font-family: 'Space Grotesk', sans-serif; font-size: 0.8rem; font-weight: 600; padding: 0.25rem 0.6rem; border-radius: 0.3rem; text-decoration: none; transition: background-color 0.2s ease; }
+          .btn-telegram-sm:hover { background-color: #006699; }
           .step-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; }
           .step-card h3 { margin-top: 0; margin-bottom: 0.5rem; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; }
         </style>
@@ -414,13 +404,17 @@ internal fun managementDocument(title: String, body: String): String {
         <header class="site-header">
           <div class="title">nuecagram</div>
           <div class="right-meta">
+            <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener" class="btn-telegram-sm" aria-label="Open Telegram Bot">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.68-.55.84-1.12.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.21-3.05 5.56-5.02c.24-.22-.05-.34-.37-.13l-6.87 4.33-2.96-.92c-.64-.2-.65-.64.13-.95l11.57-4.46c.54-.2 1.01.13.89.92z"/></svg>
+              @NuecagramBot
+            </a>
             <a href="https://github.com/raquezha/nuecagram" target="_blank" rel="noopener" aria-label="GitHub Repository">
               <span class="version-badge">v${version.html()}</span>
               <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
             </a>
           </div>
         </header>
-        <div class="subtitle">Self-hosted GitLab-to-Telegram notification service</div>
+        <div class="subtitle">Instant GitLab pipeline and code alerts delivered to Telegram team chats</div>
         <hr>
         $body
       </body>
