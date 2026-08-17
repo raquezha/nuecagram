@@ -21,12 +21,21 @@ Nuecagram sends all credential material only to the administrator's private chat
 
 ## Configure the GitLab webhook
 
-Use GitLab project **Settings > Webhooks**:
+You have 2 choices for configuring webhooks in GitLab:
 
-- URL: the webhook URL from the private setup message, usually `${NUECAGRAM_PUBLIC_URL}/webhook`.
-- Secret token: the generated token from the private setup message. GitLab sends this as `X-Gitlab-Token`.
-- SSL verification: enabled.
-- Events: enable pipeline events first; add push, tag, merge request, issue, note, wiki, deployment, and release events as needed.
+### Choice 1: Group-Level Webhook (Recommended for multiple projects)
+Configure once at the GitLab Group level so all current and future projects in the group send events automatically:
+- Go to **Group Settings > Webhooks** in GitLab.
+- **URL**: `${NUECAGRAM_PUBLIC_URL}/webhook`
+- **Secret token**: the generated secret token from the private `/setup` message.
+- **Trigger events**: Push, Tag, Pipeline, Merge Request, Issue, Note, Release, Job.
+
+### Choice 2: Project-Level Webhook
+Configure for individual projects one by one:
+- Go to **Project Settings > Webhooks** in GitLab.
+- **URL**: `${NUECAGRAM_PUBLIC_URL}/webhook`
+- **Secret token**: the generated secret token from the private `/setup` message.
+- **Trigger events**: enable pipeline, push, tag, merge request, issue, note, wiki, deployment, and release events as needed.
 
 Do not configure custom Nuecagram headers. Routing comes from the verified installation secret stored by Nuecagram.
 

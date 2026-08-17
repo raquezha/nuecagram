@@ -49,6 +49,17 @@ class ApplicationTest {
         }
 
     @Test
+    fun testOnboardingLandingWithAndWithoutTrailingSlash() =
+        testApplication {
+            application {
+                configureRouting()
+            }
+            assertEquals(HttpStatusCode.OK, client.get("/nuecagram").status)
+            assertEquals(HttpStatusCode.OK, client.get("/nuecagram/").status)
+            assertEquals(HttpStatusCode.OK, client.get("/nuecagram/setup").status)
+        }
+
+    @Test
     fun rootWebhookRouteIsNotRegistered() =
         testApplication {
             application {

@@ -26,11 +26,21 @@ private const val ROTATION_GRACE_MINUTES = 0L
 fun Route.managementRouting(basePath: String) {
     val installationRepository by inject<InstallationRepository>()
 
-    get(basePath.ifEmpty { "/" }) {
+    val rootPath = basePath.ifEmpty { "/" }
+    get(rootPath) {
         call.respondManagementHtml(
             title = "Nuecagram setup",
             body = onboardingHtml(basePath),
         )
+    }
+
+    if (basePath.isNotEmpty()) {
+        get("$basePath/") {
+            call.respondManagementHtml(
+                title = "Nuecagram setup",
+                body = onboardingHtml(basePath),
+            )
+        }
     }
 
     get("$basePath/setup") {
@@ -274,11 +284,19 @@ private fun managementSessionExpiry(): Instant = Instant.now().plus(SESSION_TTL_
 
 private fun onboardingHtml(basePath: String): String =
     """
-    <h1>Nuecagram onboarding</h1>
-    <p>Setup stays in Telegram. Start a private chat with the bot, run <code>/start</code>, then run
-    <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in the destination group or topic.</p>
-    <p>Management links redirect into a short-lived session at
-    <code>${(basePath + "/manage").html()}</code>. Credentials are only shown when first issued or rotated.</p>
+    <h1>Nuecagram Onboarding</h1>
+    <p>There are two ways to set up and manage Nuecagram notifications:</p>
+
+    <h2>1. Telegram Bot Setup (Recommended)</h2>
+    <p>Start a private chat with the bot (send <code>/start</code>), then in your destination Telegram group or forum topic run:</p>
+    <p><code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code></p>
+    <p>Nuecagram will privately send your webhook secret token and a direct management link.</p>
+
+    <h2>2. Web Management Setup</h2>
+    <p>Use your single-use management link (issued via Telegram <code>/manage &lt;installation-id&gt;</code>) to access <code>${(basePath + "/manage").html()}</code> to view status or rotate secrets.</p>
+
+    <h2>Documentation</h2>
+    <p>View full system documentation at <a href="${(basePath + "/docs").html()}">${(basePath + "/docs").html()}</a>.</p>
     """.trimIndent()
 
 private fun recoveryHtml(basePath: String): String =
