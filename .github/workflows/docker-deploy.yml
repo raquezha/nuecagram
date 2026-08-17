@@ -36,7 +36,7 @@ jobs:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
     outputs:
-      image_digest: ${{ steps.push-image.outputs.image_digest }}
+      sha_tag: ${{ steps.sha_tag.outputs.sha_tag }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha }}
     steps:
@@ -90,7 +90,6 @@ jobs:
           docker push "$sha_ref"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "image_digest=$sha_ref" >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums & Create GitHub release
         env:
@@ -124,5 +123,5 @@ jobs:
     uses: ./.github/workflows/deploy-production.yml
     with:
       action: deploy
-      image_digest: ${{ needs.publish.outputs.image_digest }}
+      image_digest: raquezha/nuecagram:${{ needs.publish.outputs.sha_tag }}
     secrets: inherit
