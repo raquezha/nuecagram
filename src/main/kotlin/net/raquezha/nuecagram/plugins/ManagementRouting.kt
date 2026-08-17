@@ -383,20 +383,21 @@ internal fun managementDocument(title: String, body: String): String {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Reddit Mono', monospace; margin: 3rem auto; max-width: 48rem; line-height: 1.6; padding: 2.5rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='500' height='500'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='3' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='40'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='3' specularConstant='0.7' specularExponent='15' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='40'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='1' k3='1' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.95' intercept='0.05'/%3E%3CfeFuncG type='linear' slope='0.92' intercept='0.05'/%3E%3CfeFuncB type='linear' slope='0.85' intercept='0.05'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.35'/%3E%3C/svg%3E"); border: 1px solid #dfd5c6; border-radius: 0.5rem; box-shadow: 0 16px 50px rgba(60, 45, 25, 0.1), inset 0 0 100px rgba(195, 175, 150, 0.2); }
+          body { font-family: 'Reddit Mono', monospace; margin: 3rem auto; max-width: 48rem; line-height: 1.6; padding: 2.5rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.4) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.015 0.035' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='14' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='12' specularConstant='1.8' specularExponent='6' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.8' k3='0.8' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.85' intercept='0.15'/%3E%3CfeFuncG type='linear' slope='0.82' intercept='0.15'/%3E%3CfeFuncB type='linear' slope='0.75' intercept='0.15'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.65'/%3E%3C/svg%3E"); border: 1px solid #dfd5c6; border-radius: 0.5rem; box-shadow: 0 16px 50px rgba(60, 45, 25, 0.1), inset 0 0 100px rgba(195, 175, 150, 0.2); }
           code { font-family: 'Reddit Mono', monospace; background: #eae1d5; color: #8b3a00; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
           button { font-family: 'Space Grotesk', sans-serif; font-weight: 600; padding: 0.5rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s ease; }
           button:hover { background: #0088cc; }
           form { margin: 1rem 0; }
-          .site-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 0.5rem; }
-          .site-header .title { font-family: 'Space Grotesk', sans-serif; font-size: 2.2rem; font-weight: 700; flex-grow: 1; margin: 0; text-transform: lowercase; letter-spacing: -0.03em; color: #1a1612; }
+          .site-header { margin-bottom: 1rem; }
+          .site-header .header-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+          .site-header .title { font-family: 'Space Grotesk', sans-serif; font-size: 2.4rem; font-weight: 700; margin: 0; text-transform: lowercase; letter-spacing: -0.03em; color: #1a1612; }
           .site-header .right-meta { display: flex; align-items: center; gap: 0.5rem; }
           .header-btn { display: inline-flex; align-items: center; gap: 0.4rem; height: 32px; padding: 0 0.75rem; border-radius: 0.375rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.825rem; font-weight: 600; text-decoration: none; box-sizing: border-box; transition: all 0.2s ease; }
           .btn-telegram { background-color: #229ed9; color: #ffffff; border: 1px solid #1c8bc0; }
           .btn-telegram:hover { background-color: #1c8cc3; color: #ffffff; }
           .btn-github { background-color: #2c251e; color: #ffffff; border: 1px solid #1a1612; }
           .btn-github:hover { background-color: #1a1612; color: #ffffff; }
-          .subtitle { text-align: center; font-size: 0.95rem; color: #6e6154; margin-top: 0.2rem; margin-bottom: 1rem; }
+          .site-header .subtitle { text-align: left; font-size: 0.95rem; color: #6e6154; margin-top: 0.4rem; max-width: 28rem; line-height: 1.45; }
           hr { border: 0; border-top: 1px solid #dfd5c6; margin-bottom: 2rem; }
           .step-card { background: rgba(255, 255, 255, 0.75); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }
           .step-card h3 { margin-top: 0; margin-bottom: 0.5rem; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; }
@@ -404,19 +405,21 @@ internal fun managementDocument(title: String, body: String): String {
       </head>
       <body>
         <header class="site-header">
-          <div class="title">nuecagram</div>
-          <div class="right-meta">
-            <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener" class="header-btn btn-telegram" aria-label="Open Telegram Bot">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.68-.55.84-1.12.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.21-3.05 5.56-5.02c.24-.22-.05-.34-.37-.13l-6.87 4.33-2.96-.92c-.64-.2-.65-.64.13-.95l11.57-4.46c.54-.2 1.01.13.89.92z"/></svg>
-              <span>@NuecagramBot</span>
-            </a>
-            <a href="https://github.com/raquezha/nuecagram" target="_blank" rel="noopener" class="header-btn btn-github" aria-label="GitHub Repository">
-              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-              <span>v${version.html()}</span>
-            </a>
+          <div class="header-top">
+            <div class="title">nuecagram</div>
+            <div class="right-meta">
+              <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener" class="header-btn btn-telegram" aria-label="Open Telegram Bot">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.68-.55.84-1.12.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.21-3.05 5.56-5.02c.24-.22-.05-.34-.37-.13l-6.87 4.33-2.96-.92c-.64-.2-.65-.64.13-.95l11.57-4.46c.54-.2 1.01.13.89.92z"/></svg>
+                <span>@NuecagramBot</span>
+              </a>
+              <a href="https://github.com/raquezha/nuecagram" target="_blank" rel="noopener" class="header-btn btn-github" aria-label="GitHub Repository">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+                <span>v${version.html()}</span>
+              </a>
+            </div>
           </div>
+          <div class="subtitle">Instant GitLab alerts in Telegram.</div>
         </header>
-        <div class="subtitle">Instant GitLab pipeline and code alerts delivered to Telegram team chats</div>
         <hr>
         $body
       </body>
