@@ -61,7 +61,7 @@ fun Route.platformAdminRouting(basePath: String) {
             call.respondManagementHtml(
                 status = HttpStatusCode.TooManyRequests,
                 title = "Try again later",
-                body = "<h1>Try again later</h1><p>Too many failed login attempts.</p>",
+                body = authMessageHtml("Try again later", "Too many failed login attempts."),
             )
             return@post
         }
@@ -72,7 +72,7 @@ fun Route.platformAdminRouting(basePath: String) {
             call.respondManagementHtml(
                 status = HttpStatusCode.Forbidden,
                 title = "Request rejected",
-                body = "<h1>Request rejected</h1><p>Reload the login page and try again.</p>",
+                body = authMessageHtml("Request rejected", "Reload the login page and try again."),
             )
             return@post
         }
@@ -147,6 +147,7 @@ fun Route.platformAdminRouting(basePath: String) {
                     installations = installationRepository.platformAdminInstallations(),
                     auditEvents = installationRepository.platformAdminAuditEvents(),
                 ),
+            rightHeaderHtml = adminLogoutHeaderButton(basePath, csrf),
         )
     }
 
@@ -157,7 +158,7 @@ fun Route.platformAdminRouting(basePath: String) {
             call.respondManagementHtml(
                 status = HttpStatusCode.Forbidden,
                 title = "Request rejected",
-                body = "<h1>Request rejected</h1><p>The session or CSRF token is invalid.</p>",
+                body = authMessageHtml("Request rejected", "The session or CSRF token is invalid."),
             )
             return@post
         }
@@ -220,22 +221,54 @@ private fun constantTimeEquals(left: String, right: String): Boolean =
             right.toByteArray(Charsets.UTF_8),
         )
 
+private fun adminLogoutHeaderButton(basePath: String, csrf: String): String =
+    """
+    <form method="post" action="${(basePath + "/admin/logout").html()}" class="header-form">
+      <input type="hidden" name="csrf" value="${csrf.html()}">
+      <button type="submit" class="header-btn btn-logout" aria-label="Log out">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Log out</span>
+      </button>
+    </form>
+    """.trimIndent()
+
+private fun authMessageHtml(title: String, description: String): String =
+    """
+    <div class="auth-card">
+      <h2>${title.html()}</h2>
+      <p class="auth-desc">${description.html()}</p>
+    </div>
+    """.trimIndent()
+
 private fun adminLoginHtml(basePath: String, csrf: String, failed: Boolean = false): String =
     buildString {
-        append("<h1>Platform administration</h1>")
-        if (failed) append("<p>Login failed.</p>")
-        append("<form method=\"post\" action=\"${(basePath + "/admin/login").html()}\">")
+        append("<div class=\"auth-card\">")
+        append("<h2>Platform Login</h2>")
+        append("<p class=\"auth-desc\">Enter admin password to access system installations & audit logs.</p>")
+        if (failed) {
+            append("<div class=\"auth-error\">Invalid admin password. Please try again.</div>")
+        }
+        append("<form method=\"post\" action=\"${(basePath + "/admin/login").html()}\" class=\"auth-form\">")
         append("<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">")
-        append("<label>Password <input type=\"password\" name=\"password\" required></label>")
-        append("<button type=\"submit\">Log in</button></form>")
+        append("<div class=\"form-group\">")
+        append("<label for=\"admin-password\">Platform Password</label>")
+        append("<input type=\"password\" id=\"admin-password\" name=\"password\" ")
+        append("placeholder=\"Enter admin password\" required class=\"input-text\">")
+        append("</div>")
+        append("<button type=\"submit\" class=\"btn-primary\">Log in to Platform</button>")
+        append("</form></div>")
     }
 
 private fun adminLoginRequiredHtml(basePath: String): String =
     """
-    <h1>Platform login required</h1>
-    <p><a href="${(basePath + "/admin/login").html()}">Log in</a></p>
+    <div class="auth-card" style="text-align: center;">
+      <h2>Platform Session Expired</h2>
+      <p class="auth-desc">Please log in to continue accessing platform administration.</p>
+      <a href="${(basePath + "/admin/login").html()}" class="btn-docs" style="display: inline-flex; justify-content: center; width: 100%;">Log In</a>
+    </div>
     """.trimIndent()
 
+@Suppress("LongMethod")
 private fun platformAdminHtml(
     basePath: String,
     csrf: String,
@@ -243,18 +276,53 @@ private fun platformAdminHtml(
     auditEvents: List<PlatformAdminAuditRecord>,
 ): String =
     buildString {
-        append("<h1>Platform administration</h1>")
-        append("<h2>Installations</h2><table><thead><tr>")
-        append("<th>ID</th><th>GitLab</th><th>Project</th><th>Muted</th>")
+        append("<section class=\"admin-shell\">")
+        append("<div class=\"admin-hero\">")
+        append("<span class=\"admin-kicker\">Platform administration</span>")
+        append("<h1>Operations dashboard</h1>")
+        append("<p>Inspect active installations, review recent audit activity, and sign out when you are done.</p>")
+        append("<div class=\"admin-meta\">")
+        append("<div class=\"admin-meta-card meta-installations\"><strong>Installations</strong>")
+        append("<div class=\"stat-val\">${installations.size}</div></div>")
+        append("<div class=\"admin-meta-card meta-audit\"><strong>Audit events</strong>")
+        append("<div class=\"stat-val\">${auditEvents.size}</div></div>")
+        append("<div class=\"admin-meta-card meta-recovery\"><strong>Recovery</strong>")
+        append("<div class=\"stat-val\" style=\"font-size: 0.95rem;\">Telegram verified flow</div></div>")
+        append("</div></div>")
+        append("<div class=\"admin-panel\"><h3>Installations</h3><div class=\"table-wrapper\"><table><thead><tr>")
+        append("<th>ID</th><th>GitLab</th><th>Project</th><th>Status</th>")
         append("</tr></thead><tbody>")
         installations.forEach { installation ->
+            val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
+            val gitlabCell =
+                if (gitlabUrl.startsWith("http")) {
+                    "<a href=\"${gitlabUrl.html()}\" target=\"_blank\" rel=\"noopener\" class=\"table-link\">" +
+                        "<span>${gitlabUrl.html()}</span>" +
+                        "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" " +
+                        "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" " +
+                        "stroke-linejoin=\"round\" style=\"margin-left: 0.35rem;\">" +
+                        "<path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/>" +
+                        "<polyline points=\"15 3 21 3 21 9\"/>" +
+                        "<line x1=\"10\" y1=\"14\" x2=\"21\" y2=\"3\"/></svg></a>"
+                } else {
+                    gitlabUrl.html()
+                }
+            val projectCell =
+                installation.gitlabProjectId?.let { "<code>$it</code>" }
+                    ?: "<span style=\"color:#6e6154;\">Group-level</span>"
+            val statusCell =
+                if (installation.muted) {
+                    "<span class=\"status-badge status-muted\"><span class=\"status-dot\"></span>Muted</span>"
+                } else {
+                    "<span class=\"status-badge status-active\"><span class=\"status-dot\"></span>Active</span>"
+                }
             append("<tr><td><code>${installation.id.toString().html()}</code></td>")
-            append("<td>${installation.gitlabBaseUrl.redactedUrl().html()}</td>")
-            append("<td>${installation.gitlabProjectId?.toString()?.html().orEmpty()}</td>")
-            append("<td>${if (installation.muted) "yes" else "no"}</td></tr>")
+            append("<td>$gitlabCell</td>")
+            append("<td>$projectCell</td>")
+            append("<td>$statusCell</td></tr>")
         }
-        append("</tbody></table>")
-        append("<h2>Recent audit events</h2><table><thead><tr>")
+        append("</tbody></table></div></div>")
+        append("<div class=\"admin-panel\"><h3>Recent audit events</h3><div class=\"table-wrapper\"><table><thead><tr>")
         append("<th>Time</th><th>Installation</th><th>Action</th>")
         append("</tr></thead><tbody>")
         auditEvents.forEach { event ->
@@ -262,12 +330,16 @@ private fun platformAdminHtml(
             append("<td>${event.installationId?.toString()?.html().orEmpty()}</td>")
             append("<td>${event.action.html()}</td></tr>")
         }
-        append("</tbody></table>")
-        append("<h2>Recovery</h2><p>Credential recovery is delivered only through ")
-        append("the verified Telegram administrator flow.</p>")
+        append("</tbody></table></div></div>")
+        append("<div class=\"admin-panel\"><h3>Recovery</h3>")
+        append("<p>Credential recovery is delivered only through the verified Telegram administrator flow.</p>")
         append("<form method=\"post\" action=\"${(basePath + "/admin/logout").html()}\">")
         append("<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">")
-        append("<button type=\"submit\">Log out</button></form>")
+        append(
+            "<button type=\"submit\" class=\"btn-primary\" style=\"max-width: 12rem;\">" +
+                "Log out</button></form></div>",
+        )
+        append("</section>")
     }
 
 private fun String.redactedUrl(): String =

@@ -203,10 +203,11 @@ internal suspend fun ApplicationCall.respondManagementHtml(
     title: String,
     body: String,
     status: HttpStatusCode = HttpStatusCode.OK,
+    rightHeaderHtml: String? = null,
 ) {
     appendSecurityHeaders()
     respondText(
-        managementDocument(title, body),
+        managementDocument(title, body, rightHeaderHtml),
         ContentType.Text.Html,
         status,
     )
@@ -322,17 +323,21 @@ private fun onboardingHtml(basePath: String): String =
         <h4>Operations & Setup Guide</h4>
         <p>Complete self-hosting guide, webhook configuration, and system architecture.</p>
       </div>
-      <a href="${(basePath + "/docs").html()}" class="btn-docs">View Documentation &rarr;</a>
+      <a href="${(basePath + "/docs").html()}" class="btn-docs">
+        <span>View Documentation</span>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.4rem;"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
     </div>
     """.trimIndent()
 
 private fun recoveryHtml(basePath: String): String =
     """
-    <h1>Recovery</h1>
-    <p>This link is missing, expired, or already used.</p>
-    <p>Use Telegram private <code>/start</code>, then run <code>/manage &lt;installation-id&gt;</code>
-    or <code>/rotate &lt;installation-id&gt;</code> in the installation group for a fresh management link.</p>
-    <p><a href="${basePath.html()}">Back to setup</a></p>
+    <section class="auth-card recovery-card">
+      <h1>Recovery</h1>
+      <p class="auth-desc">This link is missing, expired, or already used.</p>
+      <p>Use Telegram private <code>/start</code>, then run <code>/manage &lt;installation-id&gt;</code> or <code>/rotate &lt;installation-id&gt;</code> in the installation group for a fresh management link.</p>
+      <p><a href="${basePath.html()}">Back to setup</a></p>
+    </section>
     """.trimIndent()
 
 private fun manageHtml(
@@ -341,7 +346,9 @@ private fun manageHtml(
     csrf: String,
 ): String =
     buildString {
-        append("<h1>Manage installation</h1>")
+        append("<section class=\"admin-shell\">")
+        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #2b7fa1;\">")
+        append("<h3>Installation details</h3>")
         append("<p><strong>Installation:</strong> <code>${installation.id.toString().html()}</code></p>")
         append("<p><strong>GitLab:</strong> ${installation.gitlabBaseUrl.html()}</p>")
         installation.gitlabProjectId?.let {
@@ -351,14 +358,19 @@ private fun manageHtml(
             append("<p><strong>Topic:</strong> $it</p>")
         }
         append("<p><strong>Muted:</strong> ${if (installation.muted) "yes" else "no"}</p>")
-        append("<h2>Rotate credential</h2>")
+        append("</div>")
+        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #6b5b95;\">")
+        append("<h3>Rotate credential</h3>")
         append("<p>The new GitLab credential is shown once, on the next page only.</p>")
         append(
             "<form method=\"post\" action=\"${(basePath + "/manage/rotate").html()}\">" +
                 "<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">" +
-                "<button type=\"submit\">Rotate credential</button></form>",
+                "<button type=\"submit\" class=\"btn-primary\" style=\"max-width: 14rem;\">" +
+                "Rotate credential</button></form>",
         )
-        append("<h2>Recovery</h2>")
+        append("</div>")
+        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #3b8b68;\">")
+        append("<h3>Recovery</h3>")
         append(
             "<p>Lost this session? Use private <code>/start</code>, then <code>/manage " +
                 "${installation.id.toString().html()}</code> in the installation group.</p>",
@@ -366,8 +378,10 @@ private fun manageHtml(
         append(
             "<form method=\"post\" action=\"${(basePath + "/manage/logout").html()}\">" +
                 "<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">" +
-                "<button type=\"submit\">Log out</button></form>",
+                "<button type=\"submit\" class=\"btn-logout\" style=\"padding: 0.6rem 1.2rem; " +
+                "min-height: 2.4rem;\">Log out</button></form>",
         )
+        append("</div></section>")
     }
 
 private fun rotatedHtml(
@@ -376,17 +390,25 @@ private fun rotatedHtml(
     credential: String,
 ): String =
     buildString {
-        append("<h1>Credential rotated</h1>")
+        append("<section class=\"admin-shell\">")
+        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #3b8b68;\">")
+        append("<h3>Credential rotated</h3>")
         append("<p><strong>Installation:</strong> <code>${installation.id.toString().html()}</code></p>")
         append("<p><strong>GitLab credential:</strong> <code>${credential.html()}</code></p>")
         append("<p>Store it now. This page is the only place the raw credential is shown.</p>")
         append(
-            "<p><a href=\"${(basePath + "/manage").html()}\">Return to management</a></p>",
+            "<p><a href=\"${(basePath + "/manage").html()}\" class=\"btn-docs\">" +
+                "Return to management</a></p>",
         )
+        append("</div></section>")
     }
 
 @Suppress("LongMethod")
-internal fun managementDocument(title: String, body: String): String {
+internal fun managementDocument(
+    title: String,
+    body: String,
+    rightHeaderHtml: String? = null,
+): String {
     val version = net.raquezha.nuecagram.appVersion()
     return """
     <!doctype html>
@@ -399,8 +421,8 @@ internal fun managementDocument(title: String, body: String): String {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
         <style>
-          html { background-color: #eee4d5; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.4) 0%, rgba(205,185,160,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1600'%3E%3Cfilter id='organic-crunchy'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.005 0.011' numOctaves='3' result='folds'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.025 0.045' numOctaves='5' result='grain'/%3E%3CfeComposite in='folds' in2='grain' operator='arithmetic' k1='0.5' k2='0.5' k3='0' k4='0' result='combined'/%3E%3CfeDiffuseLighting in='combined' lighting-color='%23ffffff' surfaceScale='12' result='diffuse'%3E%3CfeDistantLight azimuth='55' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='combined' surfaceScale='9' specularConstant='1.2' specularExponent='8' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='55' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.85' k3='0.85' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.88' intercept='0.12'/%3E%3CfeFuncG type='linear' slope='0.84' intercept='0.12'/%3E%3CfeFuncB type='linear' slope='0.78' intercept='0.12'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23organic-crunchy)' opacity='0.48'/%3E%3C/svg%3E"); background-repeat: repeat; min-height: 100vh; padding: 2rem 1rem; box-sizing: border-box; }
-          body { font-family: 'Reddit Mono', monospace; margin: 1rem auto; max-width: 48rem; line-height: 1.6; padding: 2.5rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.015 0.035' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='14' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='12' specularConstant='1.8' specularExponent='6' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.8' k3='0.8' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.85' intercept='0.15'/%3E%3CfeFuncG type='linear' slope='0.82' intercept='0.15'/%3E%3CfeFuncB type='linear' slope='0.75' intercept='0.15'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.65'/%3E%3C/svg%3E"); border: 1px solid #c8b9a6; border-radius: 0.75rem; box-shadow: 0 20px 60px rgba(45, 30, 15, 0.25), inset 0 0 100px rgba(195, 175, 150, 0.2); }
+          html { background-color: #eee4d5; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.4) 0%, rgba(205,185,160,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1600'%3E%3Cfilter id='organic-crunchy'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.005 0.011' numOctaves='3' result='folds'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.025 0.045' numOctaves='5' result='grain'/%3E%3CfeComposite in='folds' in2='grain' operator='arithmetic' k1='0.5' k2='0.5' k3='0' k4='0' result='combined'/%3E%3CfeDiffuseLighting in='combined' lighting-color='%23ffffff' surfaceScale='12' result='diffuse'%3E%3CfeDistantLight azimuth='55' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='combined' surfaceScale='9' specularConstant='1.2' specularExponent='8' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='55' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.85' k3='0.85' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.88' intercept='0.12'/%3E%3CfeFuncG type='linear' slope='0.84' intercept='0.12'/%3E%3CfeFuncB type='linear' slope='0.78' intercept='0.12'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23organic-crunchy)' opacity='0.48'/%3E%3C/svg%3E"); background-repeat: repeat; min-height: 100vh; padding: 0.75rem; box-sizing: border-box; }
+          body { font-family: 'Reddit Mono', monospace; margin: 0 auto; max-width: 48rem; line-height: 1.6; padding: 1.25rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.015 0.035' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='14' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='12' specularConstant='1.8' specularExponent='6' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.8' k3='0.8' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.85' intercept='0.15'/%3E%3CfeFuncG type='linear' slope='0.82' intercept='0.15'/%3E%3CfeFuncB type='linear' slope='0.75' intercept='0.15'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.65'/%3E%3C/svg%3E"); border: 1px solid #c8b9a6; border-radius: 0.75rem; box-shadow: 0 20px 60px rgba(45, 30, 15, 0.25), inset 0 0 100px rgba(195, 175, 150, 0.2); }
           code { font-family: 'Reddit Mono', monospace; background: #eae1d5; color: #8b3a00; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
           code.cmd { font-family: 'Reddit Mono', monospace; background: #229ed9; color: #ffffff; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-weight: 600; font-size: 0.9em; }
           .cmd-label { display: inline-block; font-family: 'Space Grotesk', sans-serif; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: #1c8bc0; color: #ffffff; padding: 0.15rem 0.4rem; border-radius: 0.25rem; margin-right: 0.3rem; }
@@ -409,24 +431,97 @@ internal fun managementDocument(title: String, body: String): String {
           button { font-family: 'Space Grotesk', sans-serif; font-weight: 600; padding: 0.5rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s ease; }
           button:hover { background: #0088cc; }
           form { margin: 1rem 0; }
+          .header-form { margin: 0; padding: 0; display: inline-flex; align-items: center; height: 36px; }
           .site-header { margin-bottom: 1rem; }
-          .site-header .header-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-          .site-header .title { font-family: 'Space Grotesk', sans-serif; font-size: 2.4rem; font-weight: 700; margin: 0; text-transform: lowercase; letter-spacing: -0.03em; color: #1a1612; }
-          .site-header .right-meta { display: flex; align-items: center; gap: 0.5rem; }
-          .header-btn { display: inline-flex; align-items: center; gap: 0.4rem; height: 32px; padding: 0 0.75rem; border-radius: 0.375rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.825rem; font-weight: 600; text-decoration: none; box-sizing: border-box; transition: all 0.2s ease; }
-          .btn-telegram { background-color: #229ed9; color: #ffffff; border: 1px solid #1c8bc0; }
+          .site-header .header-top { display: flex; flex-direction: column; align-items: stretch; gap: 0.9rem; }
+          .site-header .title { font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; margin: 0; text-transform: lowercase; letter-spacing: -0.03em; color: #1a1612; text-align: center; }
+          .site-header .right-meta { display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; }
+          .header-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 36px; padding: 0 0.85rem; border-radius: 0.375rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; text-decoration: none; box-sizing: border-box; transition: all 0.2s ease; line-height: 1; border: 1px solid transparent; margin: 0; vertical-align: middle; }
+          .btn-telegram { background-color: #229ed9; color: #ffffff; border-color: #1c8bc0; }
           .btn-telegram:hover { background-color: #1c8cc3; color: #ffffff; }
-          .btn-github { background-color: #2c251e; color: #ffffff; border: 1px solid #1a1612; }
+          .btn-github { background-color: #2c251e; color: #ffffff; border-color: #1a1612; }
           .btn-github:hover { background-color: #1a1612; color: #ffffff; }
-          .site-header .subtitle { text-align: left; font-size: 0.95rem; color: #6e6154; margin-top: 0.4rem; max-width: 28rem; line-height: 1.45; }
-          hr { border: 0; border-top: 1px solid #dfd5c6; margin-bottom: 2rem; }
-          .step-card { background: rgba(255, 255, 255, 0.85); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }
+          .btn-logout { background-color: #ffffff; color: #a62b1e; border-color: #dfd5c6; cursor: pointer; }
+          .btn-logout:hover { background-color: #a62b1e; color: #ffffff; border-color: #a62b1e; }
+          *:focus-visible { outline: 2px solid #2b7fa1; outline-offset: 2px; }
+          .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; }
+          .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+          .status-active { color: #2a684d; }
+          .status-active .status-dot { background: #2a684d; box-shadow: 0 0 0 2px rgba(42,104,77,0.18); }
+          .status-muted { color: #a62b1e; }
+          .status-muted .status-dot { background: #a62b1e; }
+          .empty-state { padding: 2rem; text-align: center; color: #6e6154; font-size: 0.9rem; }
+          .site-header .subtitle { text-align: center; font-size: 0.95rem; color: #6e6154; margin-top: 0.4rem; line-height: 1.45; }
+          hr { border: none; height: 1px; background-color: #dfd5c6; margin: 1.25rem 0 1.5rem 0; }
+          .table-link { display: inline-flex; align-items: center; color: #2b7fa1; font-weight: 600; text-decoration: none; transition: color 0.15s ease; }
+          .table-link:hover { color: #0088cc; text-decoration: underline; }
+          .step-card { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-left: 4px solid #2b7fa1; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(45, 30, 15, 0.03); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+          .step-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(45, 30, 15, 0.06); }
+          .step-card:nth-of-type(1) { border-left-color: #2b7fa1; }
+          .step-card:nth-of-type(2) { border-left-color: #6b5b95; }
+          .step-card:nth-of-type(3) { border-left-color: #3b8b68; }
           .step-card h3 { margin-top: 0; margin-bottom: 0.5rem; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; }
-          .docs-card { display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.85); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 1.25rem; margin-top: 1rem; gap: 1rem; }
+          .docs-card { display: flex; flex-direction: column; align-items: stretch; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-left: 4px solid #2c251e; border-radius: 0.5rem; padding: 1.25rem; margin-top: 1rem; gap: 1rem; box-shadow: 0 2px 8px rgba(45, 30, 15, 0.03); }
           .docs-card h4 { margin: 0 0 0.3rem 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; color: #1a1612; }
           .docs-card p { margin: 0; font-size: 0.85rem; color: #6e6154; }
           .btn-docs { display: inline-flex; align-items: center; white-space: nowrap; background: #2c251e; color: #ffffff; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; padding: 0.6rem 1rem; border-radius: 0.375rem; text-decoration: none; transition: background 0.2s ease; }
           .btn-docs:hover { background: #0088cc; color: #ffffff; }
+          .auth-card { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-left: 4px solid #2b7fa1; border-radius: 0.5rem; padding: 1.25rem; max-width: 26rem; margin: 1.5rem auto; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
+          .auth-card h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; margin-top: 0; margin-bottom: 0.4rem; color: #1a1612; }
+          .recovery-card { max-width: 34rem; border-left-color: #a62b1e; }
+          .recovery-card h1 { font-family: 'Space Grotesk', sans-serif; font-size: 2rem; line-height: 1.05; margin: 0 0 0.5rem 0; color: #1a1612; }
+          .recovery-card .auth-desc { margin-bottom: 1rem; }
+          .recovery-card p:last-child { margin-bottom: 0; }
+          .auth-desc { font-size: 0.85rem; color: #6e6154; margin-bottom: 1.5rem; }
+          .auth-error { background: #fdf2f2; color: #c53030; border: 1px solid #feb2b2; padding: 0.6rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; margin-bottom: 1rem; }
+          .auth-form { display: flex; flex-direction: column; gap: 1.25rem; }
+          .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+          .form-group label { font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; color: #1a1612; }
+          .input-text { font-family: 'Reddit Mono', monospace; padding: 0.6rem 0.8rem; border: 1px solid #c8b9a6; border-radius: 0.375rem; font-size: 0.95rem; background: #ffffff; box-sizing: border-box; width: 100%; }
+          .input-text:focus { outline: none; border-color: #0088cc; box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.15); }
+          .btn-primary { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.95rem; padding: 0.7rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; width: 100%; transition: background 0.2s ease; }
+          .btn-primary:hover { background: #0088cc; }
+          .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; }
+          table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
+          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
+          td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
+          tr:last-child td { border-bottom: none; }
+          tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
+          .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
+          .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
+          .site-footer a:hover { text-decoration: underline; }
+          .admin-page { max-width: 56rem; }
+          .admin-spacer { height: 0.25rem; }
+          .admin-shell { display: grid; gap: 1rem; }
+          .admin-hero { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
+          .admin-kicker { display: inline-block; margin-bottom: 0.4rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2b7fa1; }
+          .admin-hero h1, .admin-hero h2 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; color: #1a1612; }
+          .admin-hero p { margin: 0.4rem 0 0 0; font-size: 0.9rem; color: #6e6154; }
+          .admin-panel { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
+          .admin-panel h3 { margin: 0 0 0.75rem 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; }
+          .admin-meta { display: grid; gap: 0.75rem; margin-top: 1rem; }
+          .admin-meta-card { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 0.85rem 1rem; color: #2c251e; box-shadow: 0 2px 6px rgba(45, 30, 15, 0.03); }
+          .admin-meta-card.meta-installations { border-left: 4px solid #2b7fa1; }
+          .admin-meta-card.meta-audit { border-left: 4px solid #6b5b95; }
+          .admin-meta-card.meta-recovery { border-left: 4px solid #3b8b68; }
+          .admin-meta-card strong { display: block; margin-bottom: 0.25rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.725rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6e6154; }
+          .admin-meta-card.meta-installations strong { color: #1d617d; }
+          .admin-meta-card.meta-audit strong { color: #534575; }
+          .admin-meta-card.meta-recovery strong { color: #2a684d; }
+          .admin-meta-card .stat-val { font-family: 'Space Grotesk', sans-serif; font-size: 1.4rem; font-weight: 700; color: #1a1612; line-height: 1.2; }
+          @media (min-width: 720px) {
+            html { padding: 2rem 1rem; }
+            body { margin: 1rem auto; padding: 2.5rem; }
+            .site-header .header-top { flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; }
+            .site-header .title { font-size: 2.4rem; text-align: left; }
+            .site-header .right-meta { flex-direction: row; align-items: center; gap: 0.5rem; }
+            .site-header .subtitle { text-align: left; max-width: 28rem; }
+            .docs-card { flex-direction: row; align-items: center; justify-content: space-between; }
+            .auth-card { padding: 2rem; margin: 2rem auto; }
+            .admin-shell { gap: 1.25rem; }
+            .admin-hero { padding: 1.6rem; }
+            .admin-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          }
         </style>
       </head>
       <body>
@@ -442,12 +537,16 @@ internal fun managementDocument(title: String, body: String): String {
                 <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
                 <span>v${version.html()}</span>
               </a>
+              ${rightHeaderHtml.orEmpty()}
             </div>
           </div>
           <div class="subtitle">Instant GitLab alerts in Telegram.</div>
         </header>
         <hr>
         $body
+        <footer class="site-footer">
+          Crafted by <a href="https://github.com/raquezha" target="_blank" rel="noopener">@raquezha</a> &bull; &copy; 2026 Nuecagram &bull; Open Source under MIT License
+        </footer>
       </body>
     </html>
     """.trimIndent()
