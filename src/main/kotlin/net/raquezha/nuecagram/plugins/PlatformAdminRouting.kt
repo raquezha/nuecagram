@@ -332,13 +332,7 @@ private fun platformAdminHtml(
         }
         append("</tbody></table></div></div>")
         append("<div class=\"admin-panel\"><h3>Recovery</h3>")
-        append("<p>Credential recovery is delivered only through the verified Telegram administrator flow.</p>")
-        append("<form method=\"post\" action=\"${(basePath + "/admin/logout").html()}\">")
-        append("<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">")
-        append(
-            "<button type=\"submit\" class=\"btn-primary\" style=\"max-width: 12rem;\">" +
-                "Log out</button></form></div>",
-        )
+        append("<p>Credential recovery is delivered only through the verified Telegram administrator flow.</p></div>")
         append("</section>")
     }
 
