@@ -1,6 +1,7 @@
 package net.raquezha.nuecagram
 
 import io.ktor.client.request.get
+import io.ktor.client.request.head
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -40,6 +41,7 @@ class ApplicationTest {
             }
             assertEquals(HttpStatusCode.OK, client.get("/nuecagram/health/live").status)
             assertEquals(HttpStatusCode.OK, client.get("/health/live").status)
+            assertEquals(HttpStatusCode.OK, client.head("/health/live").status)
             val readyStatus = client.get("/health/ready").status
             org.junit.Assert.assertTrue(
                 readyStatus == HttpStatusCode.OK || readyStatus == HttpStatusCode.ServiceUnavailable,

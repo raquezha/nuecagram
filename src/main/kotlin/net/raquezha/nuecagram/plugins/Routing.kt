@@ -7,6 +7,7 @@ import io.ktor.server.application.*
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
+import io.ktor.server.routing.head
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.delay
@@ -27,6 +28,39 @@ private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 
 private fun Application.healthPath() = configuredRoute("/health")
 
+private fun io.ktor.server.routing.Route.healthRouting(
+    healthPath: String,
+    databaseFactory: DatabaseFactory,
+) {
+    get("$healthPath/live") {
+        call.respond(OK)
+    }
+    head("$healthPath/live") {
+        call.respond(OK)
+    }
+    get("$healthPath/ready") {
+        call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+    }
+    head("$healthPath/ready") {
+        call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+    }
+
+    if (healthPath != "/health") {
+        get("/health/live") {
+            call.respond(OK)
+        }
+        head("/health/live") {
+            call.respond(OK)
+        }
+        get("/health/ready") {
+            call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+        }
+        head("/health/ready") {
+            call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
+        }
+    }
+}
+
 @Suppress("LongMethod")
 fun Application.configureRouting() {
     val databaseFactory by inject<DatabaseFactory>()
@@ -36,24 +70,7 @@ fun Application.configureRouting() {
     val logger by inject<KLogger>()
 
     routing {
-        val healthPath = this@configureRouting.healthPath()
-        get("$healthPath/live") {
-            call.respond(OK)
-        }
-
-        get("$healthPath/ready") {
-            call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
-        }
-
-        if (healthPath != "/health") {
-            get("/health/live") {
-                call.respond(OK)
-            }
-
-            get("/health/ready") {
-                call.respond(if (databaseFactory.isReady()) OK else ServiceUnavailable)
-            }
-        }
+        healthRouting(this@configureRouting.healthPath(), databaseFactory)
 
         get("/") {
             call.respondText("This application is made to receive webhooks request and send telegram notification")
