@@ -383,7 +383,7 @@ internal fun managementDocument(title: String, body: String): String {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Reddit Mono', monospace; margin: 2rem auto; max-width: 48rem; line-height: 1.6; padding: 0 1rem; color: #24292e; }
+          body { font-family: 'Reddit Mono', monospace; margin: 2rem auto; max-width: 48rem; line-height: 1.6; padding: 2rem; color: #24292e; background-color: #faf8f5; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='parchment'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.03' numOctaves='4' result='noise'/%3E%3CfeColorMatrix type='matrix' values='1 0 0 0 0.98 0 1 0 0 0.96 0 0 1 0 0.93 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23parchment)'/%3E%3C/svg%3E"); background-repeat: repeat; border-radius: 0.75rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); }
           code { font-family: 'Reddit Mono', monospace; background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
           button { font-family: 'Reddit Mono', monospace; padding: 0.6rem 1rem; }
           form { margin: 1rem 0; }
