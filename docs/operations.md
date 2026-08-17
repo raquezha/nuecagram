@@ -41,17 +41,10 @@ Terminate TLS at a reverse proxy and preserve the complete public path:
 https://example.com/nuecagram -> http://127.0.0.1:18080/nuecagram
 ```
 
-Example Caddy route (including docs proxy to GitHub Pages):
+Example Caddy route:
 
 ```caddyfile
-android.nweca.com {
-    handle_path /nuecagram/docs* {
-        rewrite * /nuecagram{path}
-        reverse_proxy https://raquezha.github.io {
-            header_up Host raquezha.github.io
-        }
-    }
-
+example.com {
     handle /nuecagram* {
         reverse_proxy 127.0.0.1:18080
     }

@@ -1,7 +1,7 @@
 # Nuecagram
 
 [![GitHub Release](https://img.shields.io/github/v/release/raquezha/nuecagram?color=blue)](https://github.com/raquezha/nuecagram/releases)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/raquezha/nuecagram/deploy.yml)](https://github.com/raquezha/nuecagram/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/raquezha/nuecagram/docker-deploy.yml?branch=main&label=production)](https://github.com/raquezha/nuecagram/actions)
 [![License](https://img.shields.io/github/license/raquezha/nuecagram)](LICENSE)
 
 Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted instance can serve multiple GitLab projects through DB-backed installations, per-installation webhook secrets, and Telegram administrator onboarding.
