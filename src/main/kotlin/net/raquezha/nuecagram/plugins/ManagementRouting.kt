@@ -284,19 +284,41 @@ private fun managementSessionExpiry(): Instant = Instant.now().plus(SESSION_TTL_
 
 private fun onboardingHtml(basePath: String): String =
     """
-    <h1>Nuecagram Onboarding</h1>
-    <p>There are two ways to set up and manage Nuecagram notifications:</p>
+    <div style="text-align: center; margin-bottom: 2rem;">
+      <p style="font-size: 1.1rem; color: #444; margin-bottom: 1.5rem;">
+        Get instant GitLab push, pipeline, merge request, and issue updates delivered directly to your Telegram groups or forum topics.
+      </p>
+      <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener" class="btn-telegram">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.68-.55.84-1.12.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.21-3.05 5.56-5.02c.24-.22-.05-.34-.37-.13l-6.87 4.33-2.96-.92c-.64-.2-.65-.64.13-.95l11.57-4.46c.54-.2 1.01.13.89.92z"/></svg>
+        Open @NuecagramBot in Telegram
+      </a>
+    </div>
 
-    <h2>1. Telegram Bot Setup (Recommended)</h2>
-    <p>Start a private chat with the bot (send <code>/start</code>), then in your destination Telegram group or forum topic run:</p>
-    <p><code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code></p>
-    <p>Nuecagram will privately send your webhook secret token and a direct management link.</p>
+    <h2>How it Works in 3 Easy Steps</h2>
 
-    <h2>2. Web Management Setup</h2>
-    <p>Use your single-use management link (issued via Telegram <code>/manage &lt;installation-id&gt;</code>) to access <code>${(basePath + "/manage").html()}</code> to view status or rotate secrets.</p>
+    <div class="step-card">
+      <h3>Step 1: Add Bot to Telegram Group</h3>
+      <p>Add <strong>@NuecagramBot</strong> to your destination Telegram group or forum topic and promote it to <strong>Administrator</strong>.</p>
+    </div>
+
+    <div class="step-card">
+      <h3>Step 2: Start Private Onboarding</h3>
+      <p>Open a private chat with <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> and send <code>/start</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <h3>Step 3: Connect your GitLab Repository</h3>
+      <p>In your Telegram group (or forum topic), run:</p>
+      <p><code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code></p>
+      <p>For example: <code>/setup https://gitlab.com 12345678</code></p>
+      <p style="margin-bottom: 0;">Nuecagram will send your secret webhook URL and token directly to your private chat.</p>
+    </div>
+
+    <h2>Managing your Setup</h2>
+    <p>To rotate secrets, check status, or mute notifications, send <code>/manage &lt;installation-id&gt;</code> in your Telegram group to receive a secure, single-use web link at <code>${(basePath + "/manage").html()}</code>.</p>
 
     <h2>Documentation</h2>
-    <p>View full system documentation at <a href="${(basePath + "/docs").html()}">${(basePath + "/docs").html()}</a>.</p>
+    <p>Read the full operations and integration guide at <a href="${(basePath + "/docs").html()}">${(basePath + "/docs").html()}</a>.</p>
     """.trimIndent()
 
 private fun recoveryHtml(basePath: String): String =
@@ -382,6 +404,10 @@ internal fun managementDocument(title: String, body: String): String {
           .version-badge { background: #007bc7; color: #ffffff; font-family: 'Reddit Mono', monospace; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 0.25rem; }
           .subtitle { text-align: center; font-size: 0.95rem; color: #586069; margin-top: 0.2rem; margin-bottom: 1rem; }
           hr { border: 0; border-top: 1px solid #eaeaea; margin-bottom: 2rem; }
+          .btn-telegram { display: inline-flex; align-items: center; gap: 0.5rem; background-color: #0088cc; color: #ffffff; font-family: 'Space Grotesk', sans-serif; font-size: 1rem; font-weight: 600; padding: 0.75rem 1.25rem; border-radius: 0.5rem; text-decoration: none; transition: background-color 0.2s ease; }
+          .btn-telegram:hover { background-color: #006699; }
+          .step-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+          .step-card h3 { margin-top: 0; margin-bottom: 0.5rem; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; }
         </style>
       </head>
       <body>
