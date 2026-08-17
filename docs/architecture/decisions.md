@@ -50,3 +50,10 @@ This document records the key architectural choices behind Nuecagram's design.
 - **Context**: GitHub Actions runners are transitioning runner runtimes to Node 24, causing deprecation warnings on legacy Node 20 actions.
 - **Decision**: Standardize top-level environment configuration across all repository workflows using `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` aligned with `raquezha/nothing`.
 - **Consequences**: Clean CI execution logs with zero Node.js runner deprecation noise.
+
+## 8. Command Center Dashboard with Dedicated Workstation Routes
+
+- **Status**: Accepted
+- **Context**: Dumping hundreds of data rows onto a single `/admin` dashboard degrades server rendering speed and creates visual clutter as the system scales to thousands of installations and audit events.
+- **Decision**: Structure the platform administration interface into a high-signal Command Center (`/admin`) presenting metrics and 5 recent preview items, supported by dedicated server-paginated workstations (`/admin/installations` and `/admin/audit`) powered by URL query parameters (`search`, `status`, `action`, `page`).
+- **Consequences**: Sub-50ms server rendering, sub-5ms database queries (`LIMIT/OFFSET`), zero-JS CSP security compliance (`default-src 'none'`), native URL shareability, and infinite database scalability.
