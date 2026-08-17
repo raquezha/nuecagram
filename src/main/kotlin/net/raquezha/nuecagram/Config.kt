@@ -11,6 +11,9 @@ data class Config(
     val port: Int,
 )
 
+fun appVersion(): String =
+    object {}.javaClass.getResource("/version.txt")?.readText()?.trim() ?: "0.12.0"
+
 fun configuredPublicUrl(): String =
     normalizedPublicUrl(
         System.getProperty("nuecagram.publicUrl") ?: System.getenv("NUECAGRAM_PUBLIC_URL") ?: defaultPublicUrl(),

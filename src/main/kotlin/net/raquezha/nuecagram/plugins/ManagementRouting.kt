@@ -358,39 +358,49 @@ private fun rotatedHtml(
         )
     }
 
-internal fun managementDocument(title: String, body: String): String =
-    """
+internal fun managementDocument(title: String, body: String): String {
+    val version = net.raquezha.nuecagram.appVersion()
+    return """
     <!doctype html>
     <html lang="en">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>${title.html()}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
         <style>
-          body { font-family: sans-serif; margin: 2rem auto; max-width: 48rem; line-height: 1.5; padding: 0 1rem; }
-          code { background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
-          button { font: inherit; padding: 0.6rem 1rem; }
+          body { font-family: 'Reddit Mono', monospace; margin: 2rem auto; max-width: 48rem; line-height: 1.6; padding: 0 1rem; color: #24292e; }
+          code { font-family: 'Reddit Mono', monospace; background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
+          button { font-family: 'Reddit Mono', monospace; padding: 0.6rem 1rem; }
           form { margin: 1rem 0; }
-          .site-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 1rem; border-bottom: 1px solid #eaeaea; margin-bottom: 2rem; }
-          .site-header .title { font-size: 1.5rem; font-weight: bold; text-align: center; flex-grow: 1; margin: 0; }
-          .site-header .right-meta { display: flex; align-items: center; gap: 0.5rem; }
+          .site-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 0.5rem; }
+          .site-header .title { font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; text-align: center; flex-grow: 1; margin: 0; text-transform: lowercase; }
+          .site-header .right-meta { display: flex; align-items: center; gap: 0.6rem; }
           .site-header .right-meta a { display: inline-flex; align-items: center; gap: 0.4rem; text-decoration: none; color: inherit; }
+          .version-badge { background: #007bc7; color: #ffffff; font-family: 'Reddit Mono', monospace; font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 0.25rem; }
+          .subtitle { text-align: center; font-size: 0.95rem; color: #586069; margin-top: 0.2rem; margin-bottom: 1rem; }
+          hr { border: 0; border-top: 1px solid #eaeaea; margin-bottom: 2rem; }
         </style>
       </head>
       <body>
         <header class="site-header">
-          <div class="title">Nuecagram</div>
+          <div class="title">nuecagram</div>
           <div class="right-meta">
             <a href="https://github.com/raquezha/nuecagram" target="_blank" rel="noopener" aria-label="GitHub Repository">
-              <img src="https://img.shields.io/github/v/release/raquezha/nuecagram?label=version&color=blue" alt="Version">
+              <span class="version-badge">v${version.html()}</span>
               <svg viewBox="0 0 16 16" width="20" height="20" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
             </a>
           </div>
         </header>
+        <div class="subtitle">Self-hosted GitLab-to-Telegram notification service</div>
+        <hr>
         $body
       </body>
     </html>
     """.trimIndent()
+}
 
 internal fun String.html(): String =
     replace("&", "&amp;")
