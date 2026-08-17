@@ -416,6 +416,8 @@ internal fun managementDocument(
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#eee4d5">
+        <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232c251e'/%3E%3Cpath d='M10 22V10l12 12V10' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
         <title>${title.html()}</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -481,7 +483,11 @@ internal fun managementDocument(
           .input-text:focus { outline: none; border-color: #0088cc; box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.15); }
           .btn-primary { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.95rem; padding: 0.7rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; width: 100%; transition: background 0.2s ease; }
           .btn-primary:hover { background: #0088cc; }
-          .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; }
+          .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; -webkit-overflow-scrolling: touch; }
+          .table-wrapper::-webkit-scrollbar { height: 6px; }
+          .table-wrapper::-webkit-scrollbar-track { background: #eee4d5; border-radius: 3px; }
+          .table-wrapper::-webkit-scrollbar-thumb { background: #c8b9a6; border-radius: 3px; }
+          .table-wrapper::-webkit-scrollbar-thumb:hover { background: #a89986; }
           table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
           th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
           td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
