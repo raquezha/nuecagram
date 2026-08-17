@@ -284,31 +284,46 @@ private fun managementSessionExpiry(): Instant = Instant.now().plus(SESSION_TTL_
 
 private fun onboardingHtml(basePath: String): String =
     """
-    <h2>How to Start in 3 Steps</h2>
+    <h2>How to Start in 3 Easy Steps</h2>
 
     <div class="step-card">
-      <h3>Step 1: Add Bot to Telegram Group</h3>
-      <p>Add <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> to your destination Telegram group or forum topic and promote it to <strong>Administrator</strong>.</p>
+      <div class="step-header">
+        <span class="step-num">1</span>
+        <h3>Add Bot to Telegram Group</h3>
+      </div>
+      <p>Add <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> to your destination Telegram group or forum topic, then promote it to <strong>Administrator</strong>.</p>
     </div>
 
     <div class="step-card">
-      <h3>Step 2: Start Private Onboarding</h3>
-      <p>Open a private chat with <strong>@NuecagramBot</strong> and send <code>/start</code>.</p>
+      <div class="step-header">
+        <span class="step-num">2</span>
+        <h3>Start Private Onboarding</h3>
+      </div>
+      <p>Send a private message to <strong>@NuecagramBot</strong> and click <strong>Start</strong> (or send <code class="cmd">/start</code>).</p>
     </div>
 
     <div class="step-card">
-      <h3>Step 3: Connect your GitLab Repository</h3>
-      <p>In your Telegram group (or forum topic), run:</p>
-      <p><code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code></p>
-      <p>For example: <code>/setup https://gitlab.com 12345678</code></p>
-      <p style="margin-bottom: 0;">Nuecagram will send your secret webhook URL and token directly to your private chat.</p>
+      <div class="step-header">
+        <span class="step-num">3</span>
+        <h3>Connect your GitLab Repository</h3>
+      </div>
+      <p>Inside your Telegram group or forum topic, send this command:</p>
+      <p><span class="cmd-label">Telegram Command</span> <code class="cmd">/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code></p>
+      <p><em>Example:</em> <code class="cmd">/setup https://gitlab.com 12345678</code></p>
+      <p style="margin-bottom: 0;">Nuecagram will privately send your secret webhook URL and token directly to your private chat.</p>
     </div>
 
-    <h2>Managing your Setup</h2>
-    <p>To rotate secrets, check status, or mute notifications, send <code>/manage &lt;installation-id&gt;</code> in your Telegram group to receive a secure, single-use web link at <code>${(basePath + "/manage").html()}</code>.</p>
+    <h2>Managing Your Notifications</h2>
+    <p>To rotate secrets, check status, or mute notifications, send <code class="cmd">/manage &lt;installation-id&gt;</code> inside your Telegram group. The bot will privately send you a single-use link to your web management dashboard.</p>
 
-    <h2>Documentation</h2>
-    <p>Read the full operations and integration guide at <a href="${(basePath + "/docs").html()}">${(basePath + "/docs").html()}</a>.</p>
+    <h2>Documentation & Resources</h2>
+    <div class="docs-card">
+      <div class="docs-info">
+        <h4>Operations & Setup Guide</h4>
+        <p>Complete self-hosting guide, webhook configuration, and system architecture.</p>
+      </div>
+      <a href="${(basePath + "/docs").html()}" class="btn-docs">View Documentation &rarr;</a>
+    </div>
     """.trimIndent()
 
 private fun recoveryHtml(basePath: String): String =
@@ -370,6 +385,7 @@ private fun rotatedHtml(
         )
     }
 
+@Suppress("LongMethod")
 internal fun managementDocument(title: String, body: String): String {
     val version = net.raquezha.nuecagram.appVersion()
     return """
@@ -383,8 +399,13 @@ internal fun managementDocument(title: String, body: String): String {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Reddit Mono', monospace; margin: 3rem auto; max-width: 48rem; line-height: 1.6; padding: 2.5rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.4) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.015 0.035' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='14' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='12' specularConstant='1.8' specularExponent='6' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.8' k3='0.8' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.85' intercept='0.15'/%3E%3CfeFuncG type='linear' slope='0.82' intercept='0.15'/%3E%3CfeFuncB type='linear' slope='0.75' intercept='0.15'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.65'/%3E%3C/svg%3E"); border: 1px solid #dfd5c6; border-radius: 0.5rem; box-shadow: 0 16px 50px rgba(60, 45, 25, 0.1), inset 0 0 100px rgba(195, 175, 150, 0.2); }
+          html { background-color: #eadecd; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.3) 0%, rgba(200,180,155,0.4) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='800'%3E%3Cfilter id='crunchy-paper'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.035 0.06' numOctaves='7' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='22' result='diffuse'%3E%3CfeDistantLight azimuth='30' elevation='25'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='18' specularConstant='2.5' specularExponent='4' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='30' elevation='25'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.9' k3='0.9' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.8' intercept='0.18'/%3E%3CfeFuncG type='linear' slope='0.75' intercept='0.18'/%3E%3CfeFuncB type='linear' slope='0.68' intercept='0.18'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crunchy-paper)' opacity='0.75'/%3E%3C/svg%3E"); background-repeat: repeat; min-height: 100vh; padding: 2rem 1rem; box-sizing: border-box; }
+          body { font-family: 'Reddit Mono', monospace; margin: 1rem auto; max-width: 48rem; line-height: 1.6; padding: 2.5rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.015 0.035' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='14' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='12' specularConstant='1.8' specularExponent='6' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.8' k3='0.8' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.85' intercept='0.15'/%3E%3CfeFuncG type='linear' slope='0.82' intercept='0.15'/%3E%3CfeFuncB type='linear' slope='0.75' intercept='0.15'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.65'/%3E%3C/svg%3E"); border: 1px solid #c8b9a6; border-radius: 0.75rem; box-shadow: 0 20px 60px rgba(45, 30, 15, 0.25), inset 0 0 100px rgba(195, 175, 150, 0.2); }
           code { font-family: 'Reddit Mono', monospace; background: #eae1d5; color: #8b3a00; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
+          code.cmd { font-family: 'Reddit Mono', monospace; background: #229ed9; color: #ffffff; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-weight: 600; font-size: 0.9em; }
+          .cmd-label { display: inline-block; font-family: 'Space Grotesk', sans-serif; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: #1c8bc0; color: #ffffff; padding: 0.15rem 0.4rem; border-radius: 0.25rem; margin-right: 0.3rem; }
+          .step-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
+          .step-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #2c251e; color: #ffffff; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 700; border-radius: 50%; }
           button { font-family: 'Space Grotesk', sans-serif; font-weight: 600; padding: 0.5rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s ease; }
           button:hover { background: #0088cc; }
           form { margin: 1rem 0; }
@@ -399,8 +420,13 @@ internal fun managementDocument(title: String, body: String): String {
           .btn-github:hover { background-color: #1a1612; color: #ffffff; }
           .site-header .subtitle { text-align: left; font-size: 0.95rem; color: #6e6154; margin-top: 0.4rem; max-width: 28rem; line-height: 1.45; }
           hr { border: 0; border-top: 1px solid #dfd5c6; margin-bottom: 2rem; }
-          .step-card { background: rgba(255, 255, 255, 0.75); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }
+          .step-card { background: rgba(255, 255, 255, 0.85); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02); }
           .step-card h3 { margin-top: 0; margin-bottom: 0.5rem; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; }
+          .docs-card { display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.85); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 1.25rem; margin-top: 1rem; gap: 1rem; }
+          .docs-card h4 { margin: 0 0 0.3rem 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.05rem; color: #1a1612; }
+          .docs-card p { margin: 0; font-size: 0.85rem; color: #6e6154; }
+          .btn-docs { display: inline-flex; align-items: center; white-space: nowrap; background: #2c251e; color: #ffffff; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; padding: 0.6rem 1rem; border-radius: 0.375rem; text-decoration: none; transition: background 0.2s ease; }
+          .btn-docs:hover { background: #0088cc; color: #ffffff; }
         </style>
       </head>
       <body>
