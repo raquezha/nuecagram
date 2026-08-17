@@ -49,7 +49,7 @@ jobs:
           echo "sha_tag=$sha_tag" >> "$GITHUB_OUTPUT"
 
       - name: Checkout commit
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.sha_tag.outputs.target_sha }}
           fetch-depth: 0
