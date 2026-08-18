@@ -295,7 +295,112 @@ To ensure zero regression for existing deployments, slash commands remain fully 
 
 ---
 
-## 7. Implementation Slices Validation (#102 - #105)
+## 7. Product Behavior Specification
+
+The HTML preview is an illustrative product mockup, not a reproduction of Telegram's native chrome. In production, Telegram owns the top bar, safe areas, theme colors, and bottom button. Nuecagram renders only the Mini App content and configures Telegram's WebApp controls through the official SDK.
+
+### 7.1 Happy Path: Existing Installation
+
+1. An administrator opens Nuecagram from the bot menu or a Web App launch button.
+2. The Mini App calls `Telegram.WebApp.ready()` and sends the raw `Telegram.WebApp.initData` to `POST /api/webapp/auth`.
+3. The backend validates `hash`, `auth_date`, and the Telegram user. The client never sends `initDataUnsafe` as proof of identity.
+4. The backend resolves the launch context and returns the authorized user, context, installations, and a short-lived session.
+5. The dashboard shows the current group/topic when context is available; otherwise it shows the user's accessible installations.
+6. The administrator opens an installation detail view.
+7. The administrator selects **Test**, **Mute/Unmute**, or **Rotate**.
+8. Destructive or delivery-affecting actions show an explicit confirmation dialog.
+9. The backend re-checks session authorization, installation ownership/context, CSRF, and current state before changing anything.
+10. The UI shows a pending state, then success or recoverable failure. Every completed action creates an audit event.
+11. The user can navigate back with Telegram's `BackButton`, close the Mini App, or return to the dashboard.
+
+### 7.2 Happy Path: New Installation
+
+1. The administrator opens the dashboard and sees **No installations yet** or taps **Add installation**.
+2. The wizard displays the resolved Telegram destination. A topic-launched setup keeps the topic locked; a DM-launched setup requires an explicit destination picker.
+3. The administrator enters and validates the GitLab base URL and project ID.
+4. The client displays a review step: GitLab target, Telegram chat/topic, and notification scope.
+5. On confirmation, the backend authorizes the user again, creates the installation, issues the webhook secret, and records `webapp_setup`.
+6. The credential screen displays the raw secret once, with webhook URL, copy buttons, GitLab instructions, and a warning that it cannot be recovered.
+7. The user copies the secret or chooses **Send setup details to my private chat**. The backend never places the secret in a group message, URL, browser history, logs, or analytics payload.
+8. The user confirms **I saved the secret**. The UI returns to the installation detail screen and shows only masked credential metadata.
+9. A test delivery is offered after setup, with clear success/failure feedback.
+
+### 7.3 Launch and Context Rules
+
+| Context | Initial view | Allowed scope | Missing-context behavior |
+|---|---|---|---|
+| Group main chat | Group installations | Installations bound to that chat | Show empty state with **Add installation** |
+| Forum topic | Topic installation(s) | Exact `telegramChatId + telegramTopicId` | Offer **View all group installations** only after explicit action |
+| Private DM | Installation picker | Installations for which the user is an authorized administrator | Require destination selection for setup |
+| No valid launch context | Account/installation picker | Only server-authorized installations | Never infer a group or topic from client-provided values |
+
+A Telegram Mini App launch does not guarantee that the originating group topic is present in `initData`. Group/topic context must therefore come from a server-issued, short-lived, single-use launch state or an explicitly supported Telegram launch field, and must be treated as a hint until verified against the authenticated user and installation record.
+
+### 7.4 Required Screen States
+
+Every screen needs these states, not just the successful response:
+
+- **Loading**: skeleton or Telegram MainButton progress state; controls disabled.
+- **Empty**: no accessible installations, no installations in current topic, or no selectable destination.
+- **Unauthorized**: invalid Telegram signature, expired `auth_date`, non-admin, revoked session, or wrong installation context.
+- **DM bootstrap required**: sensitive setup/rotation cannot continue until the user starts the bot privately.
+- **Validation error**: invalid HTTPS GitLab URL, missing/invalid project ID, unsupported target, or duplicate installation.
+- **Conflict**: installation changed or was muted/rotated elsewhere; refresh before retrying.
+- **Network/server error**: preserve form data where safe, explain retry, never claim an action succeeded without a confirmed response.
+- **Success**: visible result plus next action; do not rely only on a toast.
+- **Credential revealed**: one-time display with copy, private-DM delivery, save confirmation, and no raw secret after navigation.
+- **Expired session**: clear local state and require a fresh Telegram launch/authentication.
+
+### 7.5 Action Confirmation Rules
+
+| Action | Confirmation | Success result | Failure recovery |
+|---|---|---|---|
+| Test delivery | No confirmation, but show target | Delivery accepted and target shown | Retry button; no duplicate claim |
+| Mute | Confirm impact and current state | Status becomes Muted | Refresh installation |
+| Unmute | Confirm notifications resume | Status becomes Active | Refresh installation |
+| Rotate secret | Strong confirmation warning old token stops working | Show new token once | Keep old state if issuance fails |
+| Create installation | Review GitLab and Telegram destination | Show one-time credential screen | Do not create a partial installation |
+| Leave with unsaved form | Telegram popup confirmation | Return to previous screen | Stay on form |
+
+### 7.6 Telegram Mini App Runtime Requirements
+
+Use the official Telegram Web Apps SDK and support:
+
+- `Telegram.WebApp.ready()` after the initial shell is usable.
+- `Telegram.WebApp.expand()` where supported; layout must still work collapsed.
+- `Telegram.WebApp.BackButton` for detail, wizard, and confirmation navigation.
+- `Telegram.WebApp.MainButton` only for the current primary action; hide it on read-only screens.
+- `Telegram.WebApp.SecondaryButton` only where a secondary action is genuinely needed.
+- `Telegram.WebApp.showPopup()` for confirmations and `showAlert()` for blocking errors where appropriate.
+- `themeChanged`, `viewportChanged`, `safeAreaChanged`, and `contentSafeAreaChanged` so content remains usable on dark mode, keyboards, notches, and orientation changes.
+- `Telegram.WebApp.disableVerticalSwipes` only if the screen has a justified gesture conflict; do not disable normal Telegram navigation by default.
+- `Telegram.WebApp.close()` only after explicit completion or cancellation.
+- `Telegram.WebApp.onEvent('activated'/'deactivated')` to refresh stale installation state on re-entry.
+
+The page must not require JavaScript-disabled support inside Telegram, but all destructive operations remain protected server-side. Use `themeParams` and Telegram CSS variables instead of assuming the user's theme is light.
+
+### 7.7 Authentication and Trust Rules
+
+- Send the exact raw `initData` string to the backend; do not reconstruct it from parsed values.
+- Validate the official HMAC-SHA-256 algorithm using the bot token and constant `WebAppData`.
+- Compare hashes in constant time.
+- Validate `auth_date` against a short configured freshness window and reject replayed launch states.
+- Treat `initDataUnsafe`, URL query parameters, `start_param`, and client-supplied chat/topic IDs as untrusted hints.
+- Bind the authenticated Telegram user to every server session and re-check group administrator status for group-scoped actions.
+- Do not expose the bot token, raw database credentials, webhook secret, or management token to browser logs or third-party scripts.
+- Use HTTPS, `Cache-Control: no-store`, restrictive CSP, `Referrer-Policy: no-referrer`, and secure, short-lived cookies.
+- Log action type and actor identity, never raw credentials or `initData`.
+
+### 7.8 Accessibility and Mobile Requirements
+
+- Minimum 44px touch targets for primary controls.
+- Visible keyboard focus and sufficient contrast in light and dark Telegram themes.
+- Labels must remain visible; do not use placeholder text as the only label.
+- Error text must be adjacent to the invalid field and announced accessibly.
+- Support narrow screens, dynamic viewport height, keyboard opening, safe-area insets, and long GitLab URLs without horizontal scrolling.
+- Keep the primary action reachable without requiring a precise swipe gesture.
+
+## 8. Implementation Slices Validation (#102 - #105)
 
 The implementation of Telegram Web App-first UX is decomposed into four sequential, testable task issues:
 
