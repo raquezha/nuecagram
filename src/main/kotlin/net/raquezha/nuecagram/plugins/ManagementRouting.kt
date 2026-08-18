@@ -483,6 +483,37 @@ internal fun managementDocument(
           .form-group label { font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; color: #1a1612; }
           .input-text { font-family: 'Reddit Mono', monospace; padding: 0.6rem 0.8rem; border: 1px solid #c8b9a6; border-radius: 0.375rem; font-size: 0.95rem; background: #ffffff; box-sizing: border-box; width: 100%; }
           .input-text:focus { outline: none; border-color: #0088cc; box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.15); }
+          .search-toolbar-panel { padding: 0.85rem 1rem; }
+          .toolbar-form { display: flex; flex-direction: column; gap: 0.75rem; margin: 0; }
+          .search-input-group { position: relative; flex: 1; display: flex; align-items: center; }
+          .search-icon { position: absolute; left: 0.75rem; color: #8c7f70; display: flex; align-items: center; pointer-events: none; }
+          .search-clear-btn { position: absolute; right: 0.6rem; color: #8c7f70; display: flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; text-decoration: none; transition: all 0.15s ease; }
+          .search-clear-btn:hover { color: #1a1612; background: #eae1d5; text-decoration: none; }
+          .input-search { font-family: 'Reddit Mono', monospace; padding: 0.55rem 2.2rem 0.55rem 2.2rem; border: 1px solid #c8b9a6; border-radius: 0.375rem; font-size: 0.875rem; background: #ffffff; width: 100%; box-sizing: border-box; transition: all 0.15s ease; }
+          .input-search:focus { outline: none; border-color: #2b7fa1; box-shadow: 0 0 0 3px rgba(43, 127, 161, 0.15); }
+          .segmented-control { display: inline-flex; background: #eae1d5; border-radius: 0.375rem; padding: 2px; gap: 2px; align-self: flex-start; }
+          .segmented-btn { padding: 0.35rem 0.75rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.8rem; font-weight: 600; color: #6e6154; text-decoration: none; border-radius: 0.25rem; transition: all 0.15s ease; border: none; background: transparent; cursor: pointer; }
+          .segmented-btn:hover { color: #1a1612; text-decoration: none; }
+          .segmented-btn-active { background: #ffffff; color: #1a1612; box-shadow: 0 1px 3px rgba(45, 30, 15, 0.1); }
+          .segmented-btn-active:hover { color: #1a1612; }
+          .table-panel { padding: 0; overflow: hidden; }
+          .table-header-bar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem 0.75rem 1.25rem; border-bottom: 1px solid #eee4d5; }
+          .table-header-bar h3 { margin: 0; }
+          .results-count { font-size: 0.8rem; font-weight: 600; color: #8c7f70; text-transform: uppercase; letter-spacing: 0.04em; }
+          .table-panel .table-wrapper { margin: 0; border: none; }
+          .table-panel table { border: none; border-radius: 0; }
+          .table-footer-bar { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; padding: 0.85rem 1.25rem; border-top: 1px solid #dfd5c6; background: rgba(246, 242, 236, 0.6); }
+          .pagination-info { font-size: 0.8rem; color: #6e6154; font-weight: 500; }
+          .pagination-controls { display: flex; align-items: center; gap: 0.5rem; }
+          .page-indicator { font-size: 0.8rem; font-weight: 600; color: #1a1612; padding: 0 0.4rem; }
+          .btn-pag { display: inline-flex; align-items: center; justify-content: center; min-width: 2.2rem; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; border: 1px solid #c8b9a6; background: #ffffff; color: #2c251e; font-family: 'Space Grotesk', sans-serif; font-size: 0.8rem; font-weight: 600; text-decoration: none; transition: all 0.15s ease; box-shadow: 0 1px 2px rgba(45, 30, 15, 0.04); }
+          .btn-pag:hover { background: #2c251e; color: #ffffff; border-color: #2c251e; text-decoration: none; }
+          .btn-pag-disabled { background: #eee4d5; color: #a89986; border-color: #dfd5c6; box-shadow: none; cursor: not-allowed; }
+          .filter-chip-group { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: -0.15rem; }
+          .filter-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 2rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid #d6ccbf; background: #f6f2ec; color: #5c5146; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; text-decoration: none; box-shadow: 0 1px 2px rgba(45, 30, 15, 0.05); transition: all 0.18s ease; }
+          .filter-chip:hover { color: #2b7fa1; border-color: #9bc8da; background: #f7fbfd; text-decoration: none; box-shadow: 0 2px 6px rgba(43, 127, 161, 0.12); }
+          .filter-chip-active { border-color: #1c8bc0; background: #229ed9; color: #ffffff; box-shadow: 0 4px 12px rgba(34, 158, 217, 0.22); }
+          .filter-chip-active:hover { color: #ffffff; border-color: #1c8bc0; background: #1c8cc3; }
           .btn-primary { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.95rem; padding: 0.7rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; width: 100%; transition: background 0.2s ease; }
           .btn-primary:hover { background: #0088cc; }
           .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; -webkit-overflow-scrolling: touch; }
@@ -529,6 +560,9 @@ internal fun managementDocument(
             .admin-shell { gap: 1.25rem; }
             .admin-hero { padding: 1.6rem; }
             .admin-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .toolbar-form { flex-direction: row; align-items: center; }
+            .segmented-control { align-self: auto; }
+            .table-footer-bar { flex-direction: row; justify-content: space-between; }
           }
         </style>
       </head>
