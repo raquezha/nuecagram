@@ -9,3 +9,4 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification gateway designed for 
 - [Dependency & Import Rules](dependency-rules.md) — Direction of dependencies, layer isolation, and prohibited couplings.
 - [Automated Dependency Maintenance](dependency-maintenance.md) — Renovate policy, surface coverage, and grouping rules.
 - [Architectural Decisions](decisions.md) — Key design decisions and trade-offs.
+- [Telegram Web App Design Specification](../telegram-webapp-design-spec.md) — Product and technical spec for Telegram Web App-first UX (#100/#101).
