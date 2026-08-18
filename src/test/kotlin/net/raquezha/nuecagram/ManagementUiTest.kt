@@ -19,6 +19,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class ManagementUiTest : BaseEventTestHelper() {
     @Before
     fun resetBasePath() {
@@ -69,8 +70,13 @@ class ManagementUiTest : BaseEventTestHelper() {
                 }
 
             assertThat(page.status).isEqualTo(HttpStatusCode.OK)
-            assertThat(page.bodyAsText()).contains(installation.id.toString())
-            assertThat(page.bodyAsText()).doesNotContain(link)
+            val body = page.bodyAsText()
+            assertThat(body).contains("Installation Workstation")
+            assertThat(body).contains(installation.id.toString().take(8))
+            assertThat(body).contains("target=\"_blank\"")
+            assertThat(body).contains("rel=\"noopener\"")
+            assertThat(body).contains("Log out")
+            assertThat(body).doesNotContain(link)
         }
 
     @Test
@@ -130,8 +136,71 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(
                 response.headers["Strict-Transport-Security"],
             ).isEqualTo("max-age=31536000; includeSubDomains")
-            assertThat(response.bodyAsText()).contains("Recovery")
-            assertThat(response.bodyAsText()).contains("/manage ${installation.id}")
+            assertThat(response.bodyAsText()).contains("session")
+            assertThat(response.bodyAsText()).contains("/manage ${installation.id.toString().take(8)}")
+        }
+
+    @Test
+    fun muteToggleUpdatesInstallationStateAndRendersBadge() =
+        testApplication {
+            configureTestApplication()
+            val session = exchangeSessionCookie(client.config { followRedirects = false })
+            val noRedirectClient = client.config { followRedirects = false }
+
+            val initialPage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+            val csrf = hiddenValue(initialPage.bodyAsText(), "csrf")
+
+            val muteResponse =
+                noRedirectClient.post("${basePath()}/manage/mute") {
+                    header(HttpHeaders.Cookie, session)
+                    setBody(
+                        FormDataContent(
+                            Parameters.build {
+                                append("csrf", csrf)
+                                append("muted", "true")
+                            },
+                        ),
+                    )
+                }
+
+            assertThat(muteResponse.status).isEqualTo(HttpStatusCode.Found)
+            assertThat(muteResponse.headers[HttpHeaders.Location]).isEqualTo("${basePath()}/manage")
+
+            val mutedPage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+
+            val mutedBody = mutedPage.bodyAsText()
+            assertThat(mutedBody).contains("Muted")
+            assertThat(mutedBody).contains("Unmute notifications")
+
+            val unmuteResponse =
+                noRedirectClient.post("${basePath()}/manage/mute") {
+                    header(HttpHeaders.Cookie, session)
+                    setBody(
+                        FormDataContent(
+                            Parameters.build {
+                                append("csrf", csrf)
+                                append("muted", "false")
+                            },
+                        ),
+                    )
+                }
+
+            assertThat(unmuteResponse.status).isEqualTo(HttpStatusCode.Found)
+
+            val unmutedPage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+
+            val unmutedBody = unmutedPage.bodyAsText()
+            assertThat(unmutedBody).contains("Active")
+            assertThat(unmutedBody).contains("Mute notifications")
         }
 
     @Test
@@ -223,6 +292,28 @@ class ManagementUiTest : BaseEventTestHelper() {
             val setCookie = response.headers[HttpHeaders.SetCookie].orEmpty()
             assertThat(setCookie).contains("Max-Age=0")
             assertThat(setCookie).contains("Secure")
+        }
+
+    @Test
+    fun dumpSampleHtmlFiles() =
+        testApplication {
+            configureTestApplication()
+            val session = exchangeSessionCookie(client.config { followRedirects = false })
+
+            val onboarding = client.get("${basePath()}/setup").bodyAsText()
+            val dashboard =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                    header("X-Forwarded-Proto", "https")
+                }.bodyAsText()
+            val recovery = client.get("${basePath()}/manage/invalid-token").bodyAsText()
+
+            runCatching {
+                val dir = java.io.File("samples").apply { mkdirs() }
+                java.io.File(dir, "manage-onboarding.html").writeText(onboarding)
+                java.io.File(dir, "manage-dashboard.html").writeText(dashboard)
+                java.io.File(dir, "manage-recovery.html").writeText(recovery)
+            }
         }
 
     @Test

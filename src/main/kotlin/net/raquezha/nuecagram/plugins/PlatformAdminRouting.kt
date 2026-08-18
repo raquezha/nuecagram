@@ -938,7 +938,7 @@ private fun String?.toPositivePage(): Long = this?.toLongOrNull()?.takeIf { it >
 
 private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8)
 
-private fun String.redactedUrl(): String =
+internal fun String.redactedUrl(): String =
     runCatching {
         val uri = URI(this)
         require(uri.scheme in setOf("http", "https") && uri.host != null)

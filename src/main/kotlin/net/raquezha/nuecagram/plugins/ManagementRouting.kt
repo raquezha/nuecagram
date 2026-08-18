@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package net.raquezha.nuecagram.plugins
 
 import io.ktor.http.ContentType
@@ -12,6 +14,31 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlinx.html.a
+import kotlinx.html.button
+import kotlinx.html.code
+import kotlinx.html.details
+import kotlinx.html.div
+import kotlinx.html.em
+import kotlinx.html.form
+import kotlinx.html.h1
+import kotlinx.html.h2
+import kotlinx.html.h3
+import kotlinx.html.h4
+import kotlinx.html.hiddenInput
+import kotlinx.html.p
+import kotlinx.html.section
+import kotlinx.html.span
+import kotlinx.html.stream.createHTML
+import kotlinx.html.strong
+import kotlinx.html.summary
+import kotlinx.html.table
+import kotlinx.html.tbody
+import kotlinx.html.td
+import kotlinx.html.th
+import kotlinx.html.thead
+import kotlinx.html.tr
+import kotlinx.html.unsafe
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import org.koin.ktor.ext.inject
@@ -21,8 +48,9 @@ private const val CSRF_COOKIE_NAME = "nuecagram_manage_csrf"
 private const val SESSION_TTL_HOURS = 8L
 private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
 private const val ROTATION_GRACE_MINUTES = 0L
+private const val SHORT_ID_LENGTH = 8
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 fun Route.managementRouting(basePath: String) {
     val installationRepository by inject<InstallationRepository>()
 
@@ -119,6 +147,7 @@ fun Route.managementRouting(basePath: String) {
         call.respondManagementHtml(
             title = "Manage installation",
             body = manageHtml(basePath, installation, csrf),
+            rightHeaderHtml = manageLogoutHeaderButton(basePath, csrf),
         )
     }
 
@@ -138,7 +167,7 @@ fun Route.managementRouting(basePath: String) {
             call.respondManagementHtml(
                 status = HttpStatusCode.Forbidden,
                 title = "Request rejected",
-                body = "<h1>Request rejected</h1><p>The CSRF token is invalid.</p>",
+                body = rejectionHtml("Request rejected", "The CSRF token is invalid."),
             )
             return@post
         }
@@ -169,6 +198,49 @@ fun Route.managementRouting(basePath: String) {
         )
     }
 
+    post("$basePath/manage/mute") {
+        val session = call.managementSession(installationRepository)
+        if (session == null) {
+            call.clearManagementSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.Unauthorized,
+                title = "Session required",
+                body = recoveryHtml(basePath),
+            )
+            return@post
+        }
+        val form = call.receiveParameters()
+        val csrf = form["csrf"].orEmpty()
+        if (!installationRepository.verifyManagementCsrf(session, csrf)) {
+            call.respondManagementHtml(
+                status = HttpStatusCode.Forbidden,
+                title = "Request rejected",
+                body = rejectionHtml("Request rejected", "The CSRF token is invalid."),
+            )
+            return@post
+        }
+        val installation = installationRepository.installationAdminContext(session.installationId)
+        if (installation == null) {
+            call.clearManagementSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.NotFound,
+                title = "Installation unavailable",
+                body = recoveryHtml(basePath),
+            )
+            return@post
+        }
+        val muted = form["muted"]?.lowercase() == "true"
+        installationRepository.setMuted(installation.id, muted)
+        installationRepository.writeAuditEvent(
+            installationId = installation.id,
+            actorType = "management_session",
+            actorId = session.sessionId.toString(),
+            action = if (muted) "management_mute" else "management_unmute",
+        )
+        call.appendSecurityHeaders()
+        call.respondRedirect("$basePath/manage")
+    }
+
     post("$basePath/manage/logout") {
         val session = call.managementSession(installationRepository)
         val csrf = call.receiveParameters()["csrf"].orEmpty()
@@ -176,7 +248,7 @@ fun Route.managementRouting(basePath: String) {
             call.respondManagementHtml(
                 status = HttpStatusCode.Forbidden,
                 title = "Request rejected",
-                body = "<h1>Request rejected</h1><p>The session or CSRF token is invalid.</p>",
+                body = rejectionHtml("Request rejected", "The session or CSRF token is invalid."),
             )
             return@post
         }
@@ -283,125 +355,328 @@ private fun buildExpiredSessionCookie(basePath: String, secure: Boolean): String
 
 private fun managementSessionExpiry(): Instant = Instant.now().plus(SESSION_TTL_HOURS, ChronoUnit.HOURS)
 
-private fun onboardingHtml(basePath: String): String =
+private const val EXTERNAL_LINK_SVG_ICON =
+    """<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" """ +
+        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem;">""" +
+        """<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>""" +
+        """<polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>"""
+
+private fun manageLogoutHeaderButton(basePath: String, csrf: String): String =
     """
-    <h2>How to Start in 3 Easy Steps</h2>
-
-    <div class="step-card">
-      <div class="step-header">
-        <span class="step-num">1</span>
-        <h3>Add Bot to Telegram Group</h3>
-      </div>
-      <p>Add <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener"><strong>@NuecagramBot</strong></a> to your destination Telegram group or forum topic, then promote it to <strong>Administrator</strong>.</p>
-    </div>
-
-    <div class="step-card">
-      <div class="step-header">
-        <span class="step-num">2</span>
-        <h3>Start Private Onboarding</h3>
-      </div>
-      <p>Send a private message to <strong>@NuecagramBot</strong> and click <strong>Start</strong> (or send <code class="cmd">/start</code>).</p>
-    </div>
-
-    <div class="step-card">
-      <div class="step-header">
-        <span class="step-num">3</span>
-        <h3>Connect your GitLab Repository</h3>
-      </div>
-      <p>Inside your Telegram group or forum topic, send this command:</p>
-      <p><span class="cmd-label">Telegram Command</span> <code class="cmd">/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code></p>
-      <p><em>Example:</em> <code class="cmd">/setup https://gitlab.com 12345678</code></p>
-      <p style="margin-bottom: 0;">Nuecagram will privately send your secret webhook URL and token directly to your private chat.</p>
-    </div>
-
-    <h2>Managing Your Notifications</h2>
-    <p>To rotate secrets, check status, or mute notifications, send <code class="cmd">/manage &lt;installation-id&gt;</code> inside your Telegram group. The bot will privately send you a single-use link to your web management dashboard.</p>
-
-    <h2>Documentation & Resources</h2>
-    <div class="docs-card">
-      <div class="docs-info">
-        <h4>Operations & Setup Guide</h4>
-        <p>Complete self-hosting guide, webhook configuration, and system architecture.</p>
-      </div>
-      <a href="${(basePath + "/docs").html()}" class="btn-docs">
-        <span>View Documentation</span>
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.4rem;"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-      </a>
-    </div>
+    <form method="post" action="${(basePath + "/manage/logout").html()}" class="header-form">
+      <input type="hidden" name="csrf" value="${csrf.html()}">
+      <button type="submit" class="header-btn btn-logout" aria-label="Log out">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Log out</span>
+      </button>
+    </form>
     """.trimIndent()
+
+private fun rejectionHtml(title: String, message: String): String =
+    createHTML().div(classes = "auth-card") {
+        h2 { +title }
+        p(classes = "auth-desc") { +message }
+    }
+
+@Suppress("LongMethod")
+private fun onboardingHtml(basePath: String): String =
+    createHTML().div {
+        h2 { +"How to Start in 3 Easy Steps" }
+
+        div(classes = "step-card") {
+            div(classes = "step-header") {
+                span(classes = "step-num") { +"1" }
+                h3 { +"Add Bot to Telegram Group" }
+            }
+            p {
+                +"Add "
+                a(href = "https://t.me/NuecagramBot", classes = "table-link") {
+                    target = "_blank"
+                    rel = "noopener"
+                    strong { +"@NuecagramBot" }
+                }
+                +" to your destination Telegram group or forum topic, then promote it to "
+                strong { +"Administrator" }
+                +"."
+            }
+        }
+
+        div(classes = "step-card") {
+            div(classes = "step-header") {
+                span(classes = "step-num") { +"2" }
+                h3 { +"Start Private Onboarding" }
+            }
+            p {
+                +"Send a private message to "
+                strong { +"@NuecagramBot" }
+                +" and click "
+                strong { +"Start" }
+                +" (or send "
+                code(classes = "cmd") { +"/start" }
+                +")."
+            }
+        }
+
+        div(classes = "step-card") {
+            div(classes = "step-header") {
+                span(classes = "step-num") { +"3" }
+                h3 { +"Connect your GitLab Repository" }
+            }
+            p { +"Inside your Telegram group or forum topic, send this command:" }
+            p {
+                span(classes = "cmd-label") { +"Telegram Command" }
+                +" "
+                code(classes = "cmd") { +"/setup <gitlab-base-url> <project-id>" }
+            }
+            p {
+                em { +"Example:" }
+                +" "
+                code(classes = "cmd") { +"/setup https://gitlab.com 12345678" }
+            }
+            p {
+                attributes["style"] = "margin-bottom: 0;"
+                +"Nuecagram will privately send your secret webhook URL and token directly to your private chat."
+            }
+        }
+
+        h2 { +"Managing Your Notifications" }
+        p {
+            +"To rotate secrets, check status, or mute notifications, send "
+            code(classes = "cmd") { +"/manage <installation-id>" }
+            +" inside your Telegram group. "
+            +"The bot will privately send you a single-use link to your web management dashboard."
+        }
+
+        h2 { +"Documentation & Resources" }
+        div(classes = "docs-card") {
+            div(classes = "docs-info") {
+                h4 { +"Operations & Setup Guide" }
+                p { +"Complete self-hosting guide, webhook configuration, and system architecture." }
+            }
+            a(href = "$basePath/docs", classes = "btn-docs") {
+                span { +"View Documentation" }
+                unsafe {
+                    +("""<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" """ +
+                        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round" """ +
+                        """style="margin-left: 0.4rem;"><line x1="5" y1="12" x2="19" y2="12"/>""" +
+                        """<polyline points="12 5 19 12 12 19"/></svg>""")
+                }
+            }
+        }
+    }
 
 private fun recoveryHtml(basePath: String): String =
-    """
-    <section class="auth-card recovery-card">
-      <h1>Recovery</h1>
-      <p class="auth-desc">This link is missing, expired, or already used.</p>
-      <p>Use Telegram private <code>/start</code>, then run <code>/manage &lt;installation-id&gt;</code> or <code>/rotate &lt;installation-id&gt;</code> in the installation group for a fresh management link.</p>
-      <p><a href="${basePath.html()}">Back to setup</a></p>
-    </section>
-    """.trimIndent()
+    createHTML().section(classes = "auth-card recovery-card") {
+        h1 { +"Recovery" }
+        p(classes = "auth-desc") { +"This link is missing, expired, or already used." }
+        p {
+            +"Use Telegram private "
+            code { +"/start" }
+            +", then run "
+            code { +"/manage <installation-id>" }
+            +" or "
+            code { +"/rotate <installation-id>" }
+            +" in the installation group for a fresh management link."
+        }
+        p {
+            a(href = basePath.ifEmpty { "/" }) { +"Back to setup" }
+        }
+    }
 
+@Suppress("LongMethod")
 private fun manageHtml(
     basePath: String,
     installation: InstallationAdminContext,
     csrf: String,
 ): String =
-    buildString {
-        append("<section class=\"admin-shell\">")
-        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #2b7fa1;\">")
-        append("<h3>Installation details</h3>")
-        append("<p><strong>Installation:</strong> <code>${installation.id.toString().html()}</code></p>")
-        append("<p><strong>GitLab:</strong> ${installation.gitlabBaseUrl.html()}</p>")
-        installation.gitlabProjectId?.let {
-            append("<p><strong>Project:</strong> $it</p>")
+    createHTML().section(classes = "admin-shell") {
+        div(classes = "admin-hero") {
+            span(classes = "admin-kicker") { +"Installation Workstation" }
+            h1 { +"Manage Installation" }
+            p { +"Review active target metadata, rotate GitLab webhook credentials, or toggle delivery mute state." }
         }
-        installation.telegramTopicId?.let {
-            append("<p><strong>Topic:</strong> $it</p>")
+
+        div(classes = "admin-panel") {
+            h3 { +"Management Controls" }
+            div(classes = "control-rows") {
+                div(classes = "control-row") {
+                    div(classes = "control-info") {
+                        strong { +"Rotate Webhook Credential" }
+                        p {
+                            +"Revoke existing GitLab secret and issue a fresh token. "
+                            +"Displayed once immediately after rotation."
+                        }
+                    }
+                    div(classes = "control-action") {
+                        details(classes = "confirm-dialog") {
+                            summary(classes = "btn-primary") {
+                                +"Rotate credential"
+                            }
+                            div(classes = "confirm-content") {
+                                p {
+                                    +"Are you sure you want to rotate the credential? "
+                                    +"The existing secret token will be revoked immediately."
+                                }
+                                div(classes = "confirm-actions") {
+                                    form(action = "$basePath/manage/rotate", method = kotlinx.html.FormMethod.post) {
+                                        hiddenInput { name = "csrf"; value = csrf }
+                                        button(classes = "btn-primary btn-danger") {
+                                            type = kotlinx.html.ButtonType.submit
+                                            +"Confirm Rotation"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                div(classes = "control-row") {
+                    div(classes = "control-info") {
+                        strong { +"Notification Delivery" }
+                        p {
+                            if (installation.muted) {
+                                +"Notifications are currently muted. Unmute to resume alert dispatches."
+                            } else {
+                                +"Temporarily pause notification dispatches without revoking credentials."
+                            }
+                        }
+                    }
+                    div(classes = "control-action") {
+                        details(classes = "confirm-dialog") {
+                            summary(classes = if (installation.muted) "btn-primary" else "btn-secondary") {
+                                +if (installation.muted) "Unmute notifications" else "Mute notifications"
+                            }
+                            div(classes = "confirm-content") {
+                                p {
+                                    if (installation.muted) {
+                                        +"Are you sure you want to unmute notifications for this installation?"
+                                    } else {
+                                        +"Are you sure you want to mute notifications for this installation?"
+                                    }
+                                }
+                                div(classes = "confirm-actions") {
+                                    form(action = "$basePath/manage/mute", method = kotlinx.html.FormMethod.post) {
+                                        hiddenInput { name = "csrf"; value = csrf }
+                                        hiddenInput {
+                                            name = "muted"
+                                            value = if (installation.muted) "false" else "true"
+                                        }
+                                        button(classes = "btn-primary btn-danger") {
+                                            type = kotlinx.html.ButtonType.submit
+                                            +if (installation.muted) "Confirm Unmute" else "Confirm Mute"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            div(classes = "recovery-notice") {
+                span {
+                    +"Need access to this session later? Run "
+                    code { +"/manage ${installation.id.toString().take(SHORT_ID_LENGTH)}" }
+                    +" inside your Telegram group to issue a new single-use link."
+                }
+            }
         }
-        append("<p><strong>Muted:</strong> ${if (installation.muted) "yes" else "no"}</p>")
-        append("</div>")
-        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #6b5b95;\">")
-        append("<h3>Rotate credential</h3>")
-        append("<p>The new GitLab credential is shown once, on the next page only.</p>")
-        append(
-            "<form method=\"post\" action=\"${(basePath + "/manage/rotate").html()}\">" +
-                "<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">" +
-                "<button type=\"submit\" class=\"btn-primary\" style=\"max-width: 14rem;\">" +
-                "Rotate credential</button></form>",
-        )
-        append("</div>")
-        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #3b8b68;\">")
-        append("<h3>Recovery</h3>")
-        append(
-            "<p>Lost this session? Use private <code>/start</code>, then <code>/manage " +
-                "${installation.id.toString().html()}</code> in the installation group.</p>",
-        )
-        append(
-            "<form method=\"post\" action=\"${(basePath + "/manage/logout").html()}\">" +
-                "<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">" +
-                "<button type=\"submit\" class=\"btn-logout\" style=\"padding: 0.6rem 1.2rem; " +
-                "min-height: 2.4rem;\">Log out</button></form>",
-        )
-        append("</div></section>")
+
+        div(classes = "admin-panel") {
+            h3 { +"Installation Details" }
+            div(classes = "table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { +"ID" }
+                            th { +"GitLab Base URL" }
+                            th { +"Project ID" }
+                            th { +"Telegram Destination" }
+                            th { +"State" }
+                        }
+                    }
+                    tbody {
+                        tr {
+                            td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
+                            td {
+                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
+                                if (gitlabUrl.startsWith("http")) {
+                                    a(href = gitlabUrl, target = "_blank", classes = "table-link") {
+                                        rel = "noopener"
+                                        span { +gitlabUrl }
+                                        unsafe {
+                                            +EXTERNAL_LINK_SVG_ICON
+                                        }
+                                    }
+                                } else {
+                                    +gitlabUrl
+                                }
+                            }
+                            td {
+                                if (installation.gitlabProjectId != null) {
+                                    code { +installation.gitlabProjectId.toString() }
+                                } else {
+                                    span { +"Group-level" }
+                                }
+                            }
+                            td {
+                                if (installation.telegramTopicId != null) {
+                                    code { +"Topic #${installation.telegramTopicId}" }
+                                } else {
+                                    span { +"Group Chat" }
+                                }
+                            }
+                            td {
+                                if (installation.muted) {
+                                    span(classes = "status-badge status-muted") {
+                                        span(classes = "status-dot")
+                                        +"Muted"
+                                    }
+                                } else {
+                                    span(classes = "status-badge status-active") {
+                                        span(classes = "status-dot")
+                                        +"Active"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
     }
+
+
 
 private fun rotatedHtml(
     basePath: String,
     installation: InstallationAdminContext,
     credential: String,
 ): String =
-    buildString {
-        append("<section class=\"admin-shell\">")
-        append("<div class=\"admin-panel\" style=\"border-left: 4px solid #3b8b68;\">")
-        append("<h3>Credential rotated</h3>")
-        append("<p><strong>Installation:</strong> <code>${installation.id.toString().html()}</code></p>")
-        append("<p><strong>GitLab credential:</strong> <code>${credential.html()}</code></p>")
-        append("<p>Store it now. This page is the only place the raw credential is shown.</p>")
-        append(
-            "<p><a href=\"${(basePath + "/manage").html()}\" class=\"btn-docs\">" +
-                "Return to management</a></p>",
-        )
-        append("</div></section>")
+    createHTML().section(classes = "admin-shell") {
+        div(classes = "admin-panel") {
+            attributes["style"] = "border-left: 4px solid #3b8b68;"
+            h3 { +"Credential Rotated" }
+            p {
+                strong { +"Installation:" }
+                +" "
+                code { +installation.id.toString() }
+            }
+            p {
+                strong { +"GitLab credential:" }
+                +" "
+                code { +credential }
+            }
+            p { +"Store it now. This page is the only place the raw credential is shown." }
+            p {
+                a(href = "$basePath/manage", classes = "btn-docs") { +"Return to management" }
+            }
+        }
     }
+
 
 @Suppress("LongMethod")
 internal fun managementDocument(
@@ -445,6 +720,30 @@ internal fun managementDocument(
           .btn-github:hover { background-color: #1a1612; color: #ffffff; }
           .btn-logout { background-color: #ffffff; color: #a62b1e; border-color: #dfd5c6; cursor: pointer; }
           .btn-logout:hover { background-color: #a62b1e; color: #ffffff; border-color: #a62b1e; }
+          .btn-primary, .btn-secondary { display: inline-flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.875rem; padding: 0.55rem 1.1rem; border-radius: 0.375rem; border: none; cursor: pointer; transition: all 0.18s ease; box-sizing: border-box; text-decoration: none; white-space: nowrap; }
+          .btn-primary { background: #2c251e; color: #ffffff; }
+          .btn-primary:hover { background: #0088cc; color: #ffffff; }
+          .btn-secondary { background: #ffffff; color: #2c251e; border: 1px solid #c8b9a6; box-shadow: 0 1px 2px rgba(45, 30, 15, 0.04); }
+          .btn-secondary:hover { background: #2c251e; color: #ffffff; border-color: #2c251e; }
+          .btn-danger { background-color: #a62b1e; color: #ffffff; border: none; }
+          .btn-danger:hover { background-color: #7d2016; color: #ffffff; }
+          details.confirm-dialog { display: inline-block; position: relative; }
+          details.confirm-dialog summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+          details.confirm-dialog summary::-webkit-details-marker { display: none; }
+          .confirm-content { margin-top: 0.5rem; padding: 0.85rem 1rem; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 0.5rem; color: #742a2a; font-size: 0.85rem; box-shadow: 0 4px 12px rgba(166, 43, 30, 0.08); }
+          .confirm-content p { margin: 0 0 0.6rem 0; line-height: 1.4; }
+          .confirm-actions { display: flex; gap: 0.5rem; align-items: center; }
+          .control-rows { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 0.85rem; }
+          .control-row { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 0.85rem; padding: 1rem 1.25rem; background: rgba(255, 255, 255, 0.7); border: 1px solid #dfd5c6; border-radius: 0.5rem; transition: background 0.15s ease; }
+          .control-row:hover { background: rgba(255, 255, 255, 0.95); }
+          .control-info strong { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; color: #1a1612; margin-bottom: 0.2rem; }
+          .control-info p { margin: 0; font-size: 0.825rem; color: #6e6154; }
+          .control-action { flex-shrink: 0; }
+          .control-action summary { width: 11.5rem; height: 2.35rem; padding: 0; box-sizing: border-box; }
+          .recovery-notice { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.25rem; padding: 0.85rem 1.25rem; background: #eae2d6; border-radius: 0.375rem; font-size: 0.825rem; color: #5c5146; line-height: 1.45; }
+          @media (min-width: 640px) {
+            .control-row { flex-direction: row; align-items: center; }
+          }
           *:focus-visible { outline: 2px solid #2b7fa1; outline-offset: 2px; }
           .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; }
           .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -497,7 +796,7 @@ internal fun managementDocument(
           .segmented-btn-active { background: #ffffff; color: #1a1612; box-shadow: 0 1px 3px rgba(45, 30, 15, 0.1); }
           .segmented-btn-active:hover { color: #1a1612; }
           .table-panel { padding: 0; overflow: hidden; }
-          .table-header-bar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem 0.75rem 1.25rem; border-bottom: 1px solid #eee4d5; }
+          .table-header-bar { display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem 0.5rem 1.25rem; }
           .table-header-bar h3 { margin: 0; }
           .results-count { font-size: 0.8rem; font-weight: 600; color: #8c7f70; text-transform: uppercase; letter-spacing: 0.04em; }
           .table-panel .table-wrapper { margin: 0; border: none; }
@@ -514,16 +813,14 @@ internal fun managementDocument(
           .filter-chip:hover { color: #2b7fa1; border-color: #9bc8da; background: #f7fbfd; text-decoration: none; box-shadow: 0 2px 6px rgba(43, 127, 161, 0.12); }
           .filter-chip-active { border-color: #1c8bc0; background: #229ed9; color: #ffffff; box-shadow: 0 4px 12px rgba(34, 158, 217, 0.22); }
           .filter-chip-active:hover { color: #ffffff; border-color: #1c8bc0; background: #1c8cc3; }
-          .btn-primary { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.95rem; padding: 0.7rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; width: 100%; transition: background 0.2s ease; }
-          .btn-primary:hover { background: #0088cc; }
-          .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; -webkit-overflow-scrolling: touch; }
+          .table-wrapper { width: 100%; overflow-x: auto; margin-top: 0.85rem; -webkit-overflow-scrolling: touch; }
           .table-wrapper::-webkit-scrollbar { height: 6px; }
           .table-wrapper::-webkit-scrollbar-track { background: #eee4d5; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb { background: #c8b9a6; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb:hover { background: #a89986; }
           table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
-          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
-          td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
+          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1.25rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
+          td { padding: 0.75rem 1.25rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
           tr:last-child td { border-bottom: none; }
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
@@ -558,7 +855,7 @@ internal fun managementDocument(
             .docs-card { flex-direction: row; align-items: center; justify-content: space-between; }
             .auth-card { padding: 2rem; margin: 2rem auto; }
             .admin-shell { gap: 1.25rem; }
-            .admin-hero { padding: 1.6rem; }
+            .admin-hero, .admin-panel { padding: 1.5rem; }
             .admin-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .toolbar-form { flex-direction: row; align-items: center; }
             .segmented-control { align-self: auto; }
