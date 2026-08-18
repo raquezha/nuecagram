@@ -56,6 +56,11 @@ data class IssuedPlatformAdminSession(val id: UUID, val raw: String, val csrf: S
 data class PlatformAdminSessionContext(val id: UUID, val csrfDigest: ByteArray, val csrfHash: String)
 data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
 
+data class PlatformAdminInstallationsPage(
+    val items: List<InstallationAdminContext>,
+    val totalCount: Long,
+)
+
 data class MrParticipants(
     val authorUsername: String?,
     val reviewerUsernames: List<String>,
@@ -76,6 +81,16 @@ data class InstallationAdminContext(
     val telegramTopicId: Long?,
     val muted: Boolean,
 )
+
+private const val PLATFORM_ADMIN_SEARCH_FIELDS = 3
+private val PLATFORM_ADMIN_SEARCH_SQL =
+    """
+    (
+        LOWER(CAST(i.id AS text)) LIKE ? OR
+        LOWER(i.gitlab_base_url) LIKE ? OR
+        LOWER(CAST(i.gitlab_project_id AS text)) LIKE ?
+    )
+    """.trimIndent()
 
 private data class StoredCandidate(
     val id: UUID,
@@ -363,6 +378,22 @@ class InstallationRepository(
             .map { it.toAdminContext() }
     }
 
+    suspend fun platformAdminInstallationsPage(
+        search: String? = null,
+        status: String? = null,
+        limit: Int = 20,
+        offset: Long = 0,
+    ): PlatformAdminInstallationsPage =
+        databaseFactory.dbQuery { connection ->
+            val searchFilter = search?.trim()?.takeIf(String::isNotEmpty)?.lowercase()
+            val filter = platformAdminInstallationsFilter(status, searchFilter)
+            val fromSql = platformAdminInstallationsFromSql(filter.whereClauses)
+            PlatformAdminInstallationsPage(
+                items = selectPlatformAdminInstallations(connection, fromSql, filter.params, limit, offset),
+                totalCount = countPlatformAdminInstallations(connection, fromSql, filter.params),
+            )
+        }
+
     suspend fun platformAdminAuditEvents(limit: Int = 200): List<PlatformAdminAuditRecord> =
         databaseFactory.dbTransaction {
             AuditEvents.selectAll()
@@ -416,6 +447,75 @@ class InstallationRepository(
             }
         }
     }
+
+    private fun platformAdminInstallationsFilter(
+        status: String?,
+        search: String?,
+    ): PlatformAdminInstallationsFilter {
+        val whereClauses = mutableListOf<String>()
+        val params = mutableListOf<Any>()
+
+        when (status?.trim()?.lowercase()) {
+            "active" -> whereClauses += "COALESCE(m.muted, FALSE) = FALSE"
+            "muted" -> whereClauses += "COALESCE(m.muted, FALSE) = TRUE"
+        }
+
+        if (search != null) {
+            whereClauses += PLATFORM_ADMIN_SEARCH_SQL
+            val searchTerm = "%$search%"
+            repeat(PLATFORM_ADMIN_SEARCH_FIELDS) { params += searchTerm }
+        }
+
+        return PlatformAdminInstallationsFilter(whereClauses, params)
+    }
+
+    private fun platformAdminInstallationsFromSql(whereClauses: List<String>): String {
+        val whereSql =
+            whereClauses.takeIf(List<String>::isNotEmpty)
+                ?.joinToString(prefix = " WHERE ", separator = " AND ")
+                .orEmpty()
+        return """
+            FROM installations i
+            LEFT JOIN mute_states m ON i.id = m.installation_id
+            $whereSql
+        """.trimIndent()
+    }
+
+    private fun countPlatformAdminInstallations(
+        connection: java.sql.Connection,
+        fromSql: String,
+        params: List<Any>,
+    ): Long =
+        connection.prepareStatement("SELECT COUNT(*) $fromSql").use { statement ->
+            bindParams(statement, params)
+            statement.executeQuery().use { result -> if (result.next()) result.getLong(1) else 0L }
+        }
+
+    private fun selectPlatformAdminInstallations(
+        connection: java.sql.Connection,
+        fromSql: String,
+        params: List<Any>,
+        limit: Int,
+        offset: Long,
+    ): List<InstallationAdminContext> =
+        connection.prepareStatement(
+            """
+            SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id,
+                i.telegram_topic_id, COALESCE(m.muted, FALSE) AS muted
+            $fromSql
+            ORDER BY i.created_at DESC, i.id DESC
+            LIMIT ? OFFSET ?
+            """.trimIndent(),
+        ).use { statement ->
+            bindParams(statement, params)
+            statement.setInt(params.size + 1, limit.coerceAtLeast(1))
+            statement.setLong(params.size + 2, offset.coerceAtLeast(0))
+            statement.executeQuery().use { result ->
+                buildList {
+                    while (result.next()) add(result.toPlatformAdminInstallation())
+                }
+            }
+        }
 
     private fun Transaction.issueWebhookSecret(
         installationId: UUID,
@@ -510,6 +610,24 @@ class InstallationRepository(
                 }
         }
     }
+}
+
+private data class PlatformAdminInstallationsFilter(
+    val whereClauses: List<String>,
+    val params: List<Any>,
+)
+
+private fun java.sql.ResultSet.toPlatformAdminInstallation() = InstallationAdminContext(
+    id = getObject("id", UUID::class.java),
+    gitlabBaseUrl = getString("gitlab_base_url"),
+    gitlabProjectId = getObject("gitlab_project_id") as Long?,
+    telegramChatId = getLong("telegram_chat_id"),
+    telegramTopicId = getObject("telegram_topic_id") as Long?,
+    muted = getBoolean("muted"),
+)
+
+private fun bindParams(statement: java.sql.PreparedStatement, params: List<Any>) {
+    params.forEachIndexed { index, value -> statement.setObject(index + 1, value) }
 }
 
 private fun Instant.databaseTime(): OffsetDateTime = atOffset(ZoneOffset.UTC)
