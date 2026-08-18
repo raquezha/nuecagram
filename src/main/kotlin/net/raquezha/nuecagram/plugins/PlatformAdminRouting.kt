@@ -434,7 +434,6 @@ private fun platformAdminAuditHtml(
     val totalPages = platformAdminAuditTotalPages(totalCount)
     return createHTML().section(classes = "admin-shell") {
         auditExplorerHero(basePath)
-        auditExplorerFilterPanel(basePath, action)
         auditExplorerResultsPanel(basePath, action, page, totalPages, auditEvents, totalCount)
     }
 }
@@ -450,17 +449,6 @@ private fun FlowContent.auditExplorerHero(basePath: String) {
         p { +"Inspect historical audit events, filter by activity type, and trace platform state changes." }
         div {
             a(href = "$basePath/admin", classes = "table-link") { +"← Back to Overview" }
-        }
-    }
-}
-
-private fun FlowContent.auditExplorerFilterPanel(basePath: String, action: String) {
-    div(classes = "admin-panel search-toolbar-panel") {
-        div(classes = "segmented-control") {
-            auditActionLink(basePath, action, "", "All")
-            auditActionLink(basePath, action, "setup", "Setup")
-            auditActionLink(basePath, action, "rotate", "Rotate")
-            auditActionLink(basePath, action, "status_change", "Status Change")
         }
     }
 }
@@ -490,6 +478,13 @@ private fun FlowContent.auditExplorerResultsPanel(
     val endItem = (page * pageSize).coerceAtMost(totalCount)
 
     div(classes = "admin-panel table-panel") {
+        div(classes = "segmented-control") {
+            attributes["style"] = "margin-bottom: 1rem;"
+            auditActionLink(basePath, action, "", "All")
+            auditActionLink(basePath, action, "setup", "Setup")
+            auditActionLink(basePath, action, "rotate", "Rotate")
+            auditActionLink(basePath, action, "status_change", "Status Change")
+        }
         div(classes = "table-header-bar") {
             h3 { +"Audit Log" }
             span(classes = "results-count") { +"$totalCount total" }
