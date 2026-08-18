@@ -525,38 +525,103 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 ---
 
-## 8. Implementation Slices Validation (#102 - #105)
+## 8. Implementation Sub-Tasks Decomposition (#102 - #105)
 
-The implementation of Telegram Web App-first UX is decomposed into four sequential, testable task issues:
+The implementation of Telegram Web App-first UX is decomposed into four sequential, independently verifiable sub-task issues (#102, #103, #104, #105):
 
-### Issue #102: Telegram Web App launch, auth, and session foundation
-- **Deliverables**:
-  - `TelegramWebAppData` parser and HMAC-SHA256 validator class in `net.raquezha.nuecagram.telegram`.
-  - Launch Nonce table and issuer (`telegram_launch_nonces`).
-  - `$basePath/api/webapp/auth` endpoint and Web App session cookie handler.
-  - Ktor routing shell for `$basePath/webapp` serving Telegram Web App HTML entrypoint with hardened CSP headers.
-  - Integration tests validating valid/invalid HMAC signatures, replay protection, and session creation.
+```text
+#101 Design Spec (This Issue)
+        │
+        ▼
+#102 Auth & Session Foundation ────► #103 Installation Dashboard
+                                              │
+                                              ▼
+#105 Integration & Rollout ◄─────── #104 Setup Wizard & Secrets
+```
 
-### Issue #103: Context-aware Telegram Web App installation dashboard and actions
-- **Deliverables**:
-  - REST endpoints: `GET /api/webapp/installations`, `POST /api/webapp/installations/{id}/mute`, `POST /api/webapp/installations/{id}/test`.
-  - Context resolution logic filtering installations by `telegramChatId` and `telegramTopicId`.
-  - HTML/CSS Dashboard interface with installation cards, status badges, mute toggle, and test delivery button.
-  - Integration tests for context-filtering and authorization boundaries.
+---
 
-### Issue #104: Guided setup wizard and secure secret delivery for Telegram Web App
-- **Deliverables**:
-  - Setup Wizard UI flow in Web App for connecting new GitLab projects.
-  - Endpoint `POST /api/webapp/installations` for creation and `POST /api/webapp/installations/{id}/rotate` for secret rotation.
-  - One-time credential view component with copy helpers and DM bootstrap validation.
-  - Integration tests for installation creation, secret issuing, and rotation audit events.
+### Task #102: Build Telegram Web App launch, auth, and session foundation
 
-### Issue #105: Polish rollout, fallback, and test coverage for Telegram Web App-first UX
-- **Deliverables**:
-  - Updated `TelegramUpdateHandler` attaching Inline Web App buttons to `/start`, `/setup`, and `/manage` replies.
-  - Updated `docs/onboarding.md` and `README.md` reflecting Web App-first management.
-  - Complete integration test suite verifying slash command fallbacks alongside Web App endpoints.
-  - Pre-commit & CI gate verification (`lintKotlinMain`, `detekt`, `test`, `build`).
+- **Parent Feature**: #100
+- **Scope**: Backend authentication, HMAC validation, launch nonce storage, and Web App HTML container.
+- **Sub-Slices**:
+  - **Sub-task 102.1**: Add `TelegramWebAppData` parser & HMAC-SHA256 validator in `net.raquezha.nuecagram.telegram`.
+  - **Sub-task 102.2**: Add `telegram_launch_nonces` and `webapp_sessions` Exposed tables in `net.raquezha.nuecagram.db.Tables.kt` and repository helpers.
+  - **Sub-task 102.3**: Implement `POST /api/webapp/auth` endpoint issuing `nuecagram_webapp_session` cookie + CSRF token.
+  - **Sub-task 102.4**: Implement `GET /webapp` HTML shell route with hardened CSP security headers (`script-src https://telegram.org`).
+- **Acceptance Criteria**:
+  - [ ] Valid `initData` string passes HMAC-SHA256 signature verification.
+  - [ ] Invalid or tampered `initData` returns `HTTP 401 Unauthorized`.
+  - [ ] Expired `auth_date` (> 24 hours) is rejected.
+  - [ ] Single-use launch nonces are consumed atomically and cannot be replayed.
+  - [ ] `GET /webapp` returns HTML page referencing `telegram-web-app.js` with correct CSP headers.
+- **Verification Commands**:
+  - `./gradlew test --tests "net.raquezha.nuecagram.telegram.TelegramWebAppAuthTest"`
+
+---
+
+### Task #103: Build context-aware Telegram Web App installation dashboard and actions
+
+- **Parent Feature**: #100
+- **Dependencies**: #102
+- **Scope**: Web App Dashboard UI, context filtering (Group vs Topic vs DM), mute toggle, and test notification dispatch.
+- **Sub-Slices**:
+  - **Sub-task 103.1**: Implement REST endpoint `GET /api/webapp/installations` with `telegramChatId` and `telegramTopicId` context resolution.
+  - **Sub-task 103.2**: Implement action endpoints `POST /api/webapp/installations/{id}/mute` and `POST /api/webapp/installations/{id}/test`.
+  - **Sub-task 103.3**: Build mobile HTML/CSS Dashboard interface displaying installation cards, status badges, mute/unmute buttons, and test delivery buttons.
+  - **Sub-task 103.4**: Wire Telegram Web App SDK `MainButton` and `BackButton` for navigation and action triggers.
+- **Acceptance Criteria**:
+  - [ ] Launching inside a topic filters installations strictly to `(telegramChatId, telegramTopicId)`.
+  - [ ] Launching in main chat lists all installations for `telegramChatId`.
+  - [ ] Mute toggle updates database state and returns updated `Muted` badge.
+  - [ ] Test button dispatches test notification to target chat/topic and records `webapp_test` audit event.
+  - [ ] Non-admin users are rejected with `HTTP 403 Forbidden`.
+- **Verification Commands**:
+  - `./gradlew test --tests "net.raquezha.nuecagram.webapp.WebDashboardTest"`
+
+---
+
+### Task #104: Build guided setup wizard and secure secret delivery for Telegram Web App
+
+- **Parent Feature**: #100
+- **Dependencies**: #102, #103
+- **Scope**: Guided setup wizard UI, repository creation, credential rotation, and single-view secret box.
+- **Sub-Slices**:
+  - **Sub-task 104.1**: Build Setup Wizard HTML/CSS step-by-step form (GitLab Base URL, Project ID, Target Destination).
+  - **Sub-task 104.2**: Implement endpoint `POST /api/webapp/installations` for creating installations and issuing initial webhook secrets.
+  - **Sub-task 104.3**: Implement endpoint `POST /api/webapp/installations/{id}/rotate` for revoking old credentials and generating new ones.
+  - **Sub-task 104.4**: Build single-view secret reveal component with copy helpers, DM bootstrap validation, and audit event logging (`webapp_setup`, `webapp_rotate`).
+- **Acceptance Criteria**:
+  - [ ] Valid GitLab URL and Project ID creates a new `InstallationRecord` bound to launch chat/topic context.
+  - [ ] Issued secret is presented in raw form exactly once; subsequent views display masked metadata.
+  - [ ] Secret rotation revokes previous secret token and issues fresh credential.
+  - [ ] Attempting setup without prior private DM `/start` prompts user to open private DM chat.
+  - [ ] Audit logs store `actor_type = "webapp_session"`.
+- **Verification Commands**:
+  - `./gradlew test --tests "net.raquezha.nuecagram.webapp.WebSetupWizardTest"`
+
+---
+
+### Task #105: Polish rollout, fallback commands, and test coverage for Telegram Web App-first UX
+
+- **Parent Feature**: #100
+- **Dependencies**: #102, #103, #104
+- **Scope**: Slash command inline buttons, documentation polish, end-to-end integration test suite, and release gate verification.
+- **Sub-Slices**:
+  - **Sub-task 105.1**: Update `TelegramUpdateHandler.kt` to attach Inline Web App Launch buttons (`InlineKeyboardButton(text, web_app = WebAppInfo(...))`) to `/start`, `/setup`, and `/manage` replies.
+  - **Sub-task 105.2**: Verify and document slash command fallback matrix in `docs/onboarding.md` and `README.md`.
+  - **Sub-task 105.3**: Build comprehensive Ktor `testApplication` integration test suite verifying Web App routes alongside GitLab webhook ingest.
+  - **Sub-task 105.4**: Run full local gate: `./gradlew lintKotlinMain lintKotlinTest detekt test build` and `./gradlew clean test`.
+- **Acceptance Criteria**:
+  - [ ] Replies to `/manage`, `/setup`, and `/start` include `InlineKeyboardButton` launching Web App.
+  - [ ] Slash commands remain 100% operational as text fallbacks when Web App is unavailable.
+  - [ ] All unit, integration, and detekt lint checks pass cleanly.
+  - [ ] Operations and onboarding documentation updated for release.
+- **Verification Commands**:
+  - `./gradlew lintKotlinMain lintKotlinTest detekt test build`
+  - `./gradlew clean test`
+
 
 
 ### Issue #104: Guided setup wizard and secure secret delivery for Telegram Web App
