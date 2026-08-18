@@ -30,6 +30,8 @@ private const val LOGIN_CSRF_SECONDS = 10 * SECONDS_PER_MINUTE
 private const val MAX_LOGIN_FAILURES = 5
 private const val MAX_PASSWORD_LENGTH = 1024
 private const val LOGIN_WINDOW_MINUTES = 15L
+private const val AUDIT_WINDOW_HOURS = 24L
+private const val MAX_PREVIEW_ITEMS = 5
 
 @Suppress("LongMethod")
 fun Route.platformAdminRouting(basePath: String) {
@@ -268,7 +270,7 @@ private fun adminLoginRequiredHtml(basePath: String): String =
     </div>
     """.trimIndent()
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "MaxLineLength")
 private fun platformAdminHtml(
     basePath: String,
     csrf: String,
@@ -276,61 +278,88 @@ private fun platformAdminHtml(
     auditEvents: List<PlatformAdminAuditRecord>,
 ): String =
     buildString {
+        val now = Instant.now()
+        val activeCount = installations.count { !it.muted }
+        val mutedCount = installations.count { it.muted }
+        val audit24hCount = auditEvents.count { it.createdAt.isAfter(now.minus(AUDIT_WINDOW_HOURS, ChronoUnit.HOURS)) }
+        val previewInstallations = installations.take(MAX_PREVIEW_ITEMS)
+        val previewAuditEvents = auditEvents.take(MAX_PREVIEW_ITEMS)
+
         append("<section class=\"admin-shell\">")
         append("<div class=\"admin-hero\">")
         append("<span class=\"admin-kicker\">Platform administration</span>")
         append("<h1>Operations dashboard</h1>")
         append("<p>Inspect active installations, review recent audit activity, and sign out when you are done.</p>")
         append("<div class=\"admin-meta\">")
-        append("<div class=\"admin-meta-card meta-installations\"><strong>Installations</strong>")
-        append("<div class=\"stat-val\">${installations.size}</div></div>")
-        append("<div class=\"admin-meta-card meta-audit\"><strong>Audit events</strong>")
-        append("<div class=\"stat-val\">${auditEvents.size}</div></div>")
-        append("<div class=\"admin-meta-card meta-recovery\"><strong>Recovery</strong>")
-        append("<div class=\"stat-val\" style=\"font-size: 0.95rem;\">Telegram verified flow</div></div>")
+        append("<div class=\"admin-meta-card meta-installations\"><strong>Active installations</strong>")
+        append("<div class=\"stat-val\">$activeCount</div></div>")
+        append("<div class=\"admin-meta-card meta-muted\"><strong>Muted installations</strong>")
+        append("<div class=\"stat-val\">$mutedCount</div></div>")
+        append("<div class=\"admin-meta-card meta-audit\"><strong>24h Audit events</strong>")
+        append("<div class=\"stat-val\">$audit24hCount</div></div>")
+        append("<div class=\"admin-meta-card meta-status\"><strong>System status</strong>")
+        append("<div class=\"stat-val\" style=\"font-size: 0.95rem; display: flex; align-items: center; gap: 0.35rem; margin-top: 0.35rem;\">")
+        append("<span class=\"status-badge status-active\"><span class=\"status-dot\"></span>Operational</span></div></div>")
         append("</div></div>")
-        append("<div class=\"admin-panel\"><h3>Installations</h3><div class=\"table-wrapper\"><table><thead><tr>")
+
+        append("<div class=\"admin-panel\"><h3>Recent installations (5 max)</h3><div class=\"table-wrapper\"><table><thead><tr>")
         append("<th>ID</th><th>GitLab</th><th>Project</th><th>Status</th>")
         append("</tr></thead><tbody>")
-        installations.forEach { installation ->
-            val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
-            val gitlabCell =
-                if (gitlabUrl.startsWith("http")) {
-                    "<a href=\"${gitlabUrl.html()}\" target=\"_blank\" rel=\"noopener\" class=\"table-link\">" +
-                        "<span>${gitlabUrl.html()}</span>" +
-                        "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" " +
-                        "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" " +
-                        "stroke-linejoin=\"round\" style=\"margin-left: 0.35rem;\">" +
-                        "<path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/>" +
-                        "<polyline points=\"15 3 21 3 21 9\"/>" +
-                        "<line x1=\"10\" y1=\"14\" x2=\"21\" y2=\"3\"/></svg></a>"
-                } else {
-                    gitlabUrl.html()
-                }
-            val projectCell =
-                installation.gitlabProjectId?.let { "<code>$it</code>" }
-                    ?: "<span style=\"color:#6e6154;\">Group-level</span>"
-            val statusCell =
-                if (installation.muted) {
-                    "<span class=\"status-badge status-muted\"><span class=\"status-dot\"></span>Muted</span>"
-                } else {
-                    "<span class=\"status-badge status-active\"><span class=\"status-dot\"></span>Active</span>"
-                }
-            append("<tr><td><code>${installation.id.toString().html()}</code></td>")
-            append("<td>$gitlabCell</td>")
-            append("<td>$projectCell</td>")
-            append("<td>$statusCell</td></tr>")
+        if (previewInstallations.isEmpty()) {
+            append("<tr><td colspan=\"4\" style=\"text-align:center; color:#6e6154; padding:1rem;\">No installations recorded yet</td></tr>")
+        } else {
+            previewInstallations.forEach { installation ->
+                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
+                val gitlabCell =
+                    if (gitlabUrl.startsWith("http")) {
+                        "<a href=\"${gitlabUrl.html()}\" target=\"_blank\" rel=\"noopener\" class=\"table-link\">" +
+                            "<span>${gitlabUrl.html()}</span>" +
+                            "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" " +
+                            "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" " +
+                            "stroke-linejoin=\"round\" style=\"margin-left: 0.35rem;\">" +
+                            "<path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/>" +
+                            "<polyline points=\"15 3 21 3 21 9\"/>" +
+                            "<line x1=\"10\" y1=\"14\" x2=\"21\" y2=\"3\"/></svg></a>"
+                    } else {
+                        gitlabUrl.html()
+                    }
+                val projectCell =
+                    installation.gitlabProjectId?.let { "<code>$it</code>" }
+                        ?: "<span style=\"color:#6e6154;\">Group-level</span>"
+                val statusCell =
+                    if (installation.muted) {
+                        "<span class=\"status-badge status-muted\"><span class=\"status-dot\"></span>Muted</span>"
+                    } else {
+                        "<span class=\"status-badge status-active\"><span class=\"status-dot\"></span>Active</span>"
+                    }
+                append("<tr><td><code>${installation.id.toString().html()}</code></td>")
+                append("<td>$gitlabCell</td>")
+                append("<td>$projectCell</td>")
+                append("<td>$statusCell</td></tr>")
+            }
         }
-        append("</tbody></table></div></div>")
-        append("<div class=\"admin-panel\"><h3>Recent audit events</h3><div class=\"table-wrapper\"><table><thead><tr>")
+        append("</tbody></table></div>")
+        append("<div style=\"margin-top: 1rem; text-align: right;\">")
+        append("<a href=\"${(basePath + "/admin/installations").html()}\" class=\"table-link\" style=\"font-weight: 600;\">View all installations →</a>")
+        append("</div></div>")
+
+        append("<div class=\"admin-panel\"><h3>Recent audit events (5 max)</h3><div class=\"table-wrapper\"><table><thead><tr>")
         append("<th>Time</th><th>Installation</th><th>Action</th>")
         append("</tr></thead><tbody>")
-        auditEvents.forEach { event ->
-            append("<tr><td>${event.createdAt.toString().html()}</td>")
-            append("<td>${event.installationId?.toString()?.html().orEmpty()}</td>")
-            append("<td>${event.action.html()}</td></tr>")
+        if (previewAuditEvents.isEmpty()) {
+            append("<tr><td colspan=\"3\" style=\"text-align:center; color:#6e6154; padding:1rem;\">No audit activity in past 24 hours</td></tr>")
+        } else {
+            previewAuditEvents.forEach { event ->
+                append("<tr><td>${event.createdAt.toString().html()}</td>")
+                append("<td>${event.installationId?.toString()?.html().orEmpty()}</td>")
+                append("<td>${event.action.html()}</td></tr>")
+            }
         }
-        append("</tbody></table></div></div>")
+        append("</tbody></table></div>")
+        append("<div style=\"margin-top: 1rem; text-align: right;\">")
+        append("<a href=\"${(basePath + "/admin/audit").html()}\" class=\"table-link\" style=\"font-weight: 600;\">Explore audit logs →</a>")
+        append("</div></div>")
+
         append("<div class=\"admin-panel\"><h3>Recovery</h3>")
         append("<p>Credential recovery is delivered only through the verified Telegram administrator flow.</p></div>")
         append("</section>")
