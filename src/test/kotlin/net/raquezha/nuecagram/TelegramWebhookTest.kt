@@ -43,7 +43,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(
                 postTelegram(groupUpdate(50, "/status nope", installation.telegramChatId)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).isEqualTo("Usage: /status <installation-id>")
+            assertThat(sentMessages().last().text).isEqualTo("Usage: <code>/status &lt;installation-id&gt;</code>")
 
             assertThat(
                 postTelegram(

@@ -15,26 +15,31 @@ private val ADMIN_STATUSES = setOf("creator", "administrator")
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
 private const val ADMIN_ONLY_MESSAGE = "Only Telegram group administrators can use this command."
 private const val HELP_MESSAGE =
-    "Nuecagram GitLab Notification Gateway\n\n" +
+    "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
         "1. First-time setup:\n" +
-        " - Send /start in a private DM with the bot.\n" +
+        " - Send <code>/start</code> in a private DM with the bot.\n" +
         " - Add bot as Admin to your Telegram group or topic.\n" +
-        " - Run /setup <gitlab-url> <project-id> in your group/topic.\n\n" +
+        " - Run <code>/setup &lt;gitlab-url&gt; &lt;project-id&gt;</code> in your group/topic.\n\n" +
         "2. Group commands:\n" +
-        " - /status <inst-id> : View installation status\n" +
-        " - /test <inst-id> : Send test notification\n" +
-        " - /manage <inst-id> : Web management link\n" +
-        " - /rotate <inst-id> : Rotate webhook secret\n" +
-        " - /mute <inst-id> : Pause notifications\n" +
-        " - /unmute <inst-id> : Resume notifications"
-private const val STATUS_USAGE_MESSAGE = "Usage: /status <installation-id>"
-private const val DIGEST_USAGE_MESSAGE = "Usage: /digest <installation-id>"
-private const val TEST_USAGE_MESSAGE = "Usage: /test <installation-id>"
-private const val MUTE_USAGE_MESSAGE = "Usage: /mute <installation-id>"
-private const val UNMUTE_USAGE_MESSAGE = "Usage: /unmute <installation-id>"
-private const val SETUP_USAGE_MESSAGE = "Usage: /setup <gitlab-base-url> <project-id>"
-private const val MANAGE_USAGE_MESSAGE = "Usage: /manage <installation-id>"
-private const val ROTATE_USAGE_MESSAGE = "Usage: /rotate <installation-id>"
+        " - <code>/status &lt;inst-id&gt;</code> : View installation status\n" +
+        " - <code>/test &lt;inst-id&gt;</code> : Send test notification\n" +
+        " - <code>/manage &lt;inst-id&gt;</code> : Web management link\n" +
+        " - <code>/rotate &lt;inst-id&gt;</code> : Rotate webhook secret\n" +
+        " - <code>/mute &lt;inst-id&gt;</code> : Pause notifications\n" +
+        " - <code>/unmute &lt;inst-id&gt;</code> : Resume notifications"
+private const val STATUS_USAGE_MESSAGE = "Usage: <code>/status &lt;installation-id&gt;</code>"
+private const val DIGEST_USAGE_MESSAGE = "Usage: <code>/digest &lt;installation-id&gt;</code>"
+private const val TEST_USAGE_MESSAGE =
+    "Usage: <code>/test &lt;installation-id&gt;</code>\nExample: <code>/test a1b2c3d4</code>"
+private const val MUTE_USAGE_MESSAGE = "Usage: <code>/mute &lt;installation-id&gt;</code>"
+private const val UNMUTE_USAGE_MESSAGE = "Usage: <code>/unmute &lt;installation-id&gt;</code>"
+private const val SETUP_USAGE_MESSAGE =
+    "Usage: <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code>\n" +
+        "Example: <code>/setup https://gitlab.com 12345678</code>"
+private const val MANAGE_USAGE_MESSAGE =
+    "Usage: <code>/manage &lt;installation-id&gt;</code>\nExample: <code>/manage a1b2c3d4</code>"
+private const val ROTATE_USAGE_MESSAGE =
+    "Usage: <code>/rotate &lt;installation-id&gt;</code>\nExample: <code>/rotate a1b2c3d4</code>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
 private const val PRIVATE_COMMAND_MESSAGE = "Run this command in the installation group."
 private const val PRIVATE_DELIVERY_MESSAGE = "Private setup details sent."
@@ -74,6 +79,7 @@ class TelegramUpdateHandler(
         dispatch(command, message)
     }
 
+    @Suppress("CyclomaticComplexMethod")
     private suspend fun dispatch(command: String, message: TelegramMessage) {
         when (command) {
             "/start" -> handleStart(message)
@@ -95,6 +101,14 @@ class TelegramUpdateHandler(
             "/setup" -> handleSetup(message)
             "/manage" -> handleManage(message)
             "/rotate" -> handleRotate(message)
+            else ->
+                if (command.startsWith("/")) {
+                    send(
+                        message.chat.id,
+                        "Unknown command. Send <code>/help</code> for available commands.",
+                        message.messageThreadId,
+                    )
+                }
         }
     }
 
@@ -294,7 +308,17 @@ class TelegramUpdateHandler(
             ?.let { value -> runCatching { UUID.fromString(value) }.getOrNull() }
 
     private suspend fun send(chatId: Long, text: String, threadId: Long? = null) {
-        telegramService.sendMessage(Message(chatId = chatId.toString(), text = text, threadId = threadId))
+        val sent =
+            runCatching {
+                telegramService.sendMessage(Message(chatId = chatId.toString(), text = text, threadId = threadId))
+            }
+        if (sent.isFailure) {
+            runCatching {
+                telegramService.sendMessage(
+                    Message(chatId = chatId.toString(), text = text, threadId = threadId, parseMode = ""),
+                )
+            }
+        }
     }
 }
 
