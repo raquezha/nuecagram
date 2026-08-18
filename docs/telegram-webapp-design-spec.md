@@ -4,6 +4,7 @@
 - **Target Feature**: #100 (Telegram Web App-first UX transition)
 - **Design Ticket**: #101
 - **Implementation Slices**: #102, #103, #104, #105
+- **Interactive UI Mockup**: [`docs/mockup/telegram-webapp-preview.html`](mockup/telegram-webapp-preview.html)
 
 ---
 

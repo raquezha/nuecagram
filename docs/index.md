@@ -19,6 +19,7 @@ Nuecagram hosts multiple GitLab project notification installs behind one Telegra
   - [Automated Dependency Maintenance](architecture/dependency-maintenance.md)
   - [Architectural Decisions](architecture/decisions.md)
   - [Telegram Web App Design Specification](telegram-webapp-design-spec.md)
+  - [Interactive Web App UI Mockup](mockup/telegram-webapp-preview.html)
 
 ## Guides
 
