@@ -499,17 +499,6 @@ private fun manageHtml(
         div(classes = "admin-panel table-panel") {
             div(classes = "table-header-bar") {
                 h3 { +"Installation Details" }
-                if (installation.muted) {
-                    span(classes = "status-badge status-muted") {
-                        span(classes = "status-dot")
-                        +"Muted"
-                    }
-                } else {
-                    span(classes = "status-badge status-active") {
-                        span(classes = "status-dot")
-                        +"Active"
-                    }
-                }
             }
             div(classes = "table-wrapper") {
                 table {
@@ -572,69 +561,77 @@ private fun manageHtml(
             }
         }
 
-        div(classes = "admin-shell") {
-            attributes["style"] = "grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));"
-            div(classes = "admin-panel") {
-                attributes["style"] = "border-left: 4px solid #6b5b95;"
-                h3 { +"Rotate Credential" }
-                p {
-                    +"The new GitLab secret token is displayed once on the confirmation screen "
-                    +"immediately after rotation."
-                }
-                details(classes = "confirm-dialog") {
-                    summary(classes = "btn-primary") {
-                        attributes["style"] = "max-width: 14rem;"
-                        +"Rotate credential"
-                    }
-                    div(classes = "confirm-content") {
+        div(classes = "admin-panel") {
+            h3 { +"Management Controls" }
+            div(classes = "control-rows") {
+                div(classes = "control-row") {
+                    div(classes = "control-info") {
+                        strong { +"Rotate Webhook Credential" }
                         p {
-                            +"Are you sure you want to rotate the credential? "
-                            +"The existing secret token will be revoked immediately."
+                            +"Revoke existing GitLab secret and issue a fresh token. "
+                            +"Displayed once immediately after rotation."
                         }
-                        div(classes = "confirm-actions") {
-                            form(action = "$basePath/manage/rotate", method = kotlinx.html.FormMethod.post) {
-                                hiddenInput { name = "csrf"; value = csrf }
-                                button(classes = "btn-primary btn-danger") {
-                                    type = kotlinx.html.ButtonType.submit
-                                    +"Confirm Rotation"
+                    }
+                    div(classes = "control-action") {
+                        details(classes = "confirm-dialog") {
+                            summary(classes = "btn-primary") {
+                                +"Rotate credential"
+                            }
+                            div(classes = "confirm-content") {
+                                p {
+                                    +"Are you sure you want to rotate the credential? "
+                                    +"The existing secret token will be revoked immediately."
+                                }
+                                div(classes = "confirm-actions") {
+                                    form(action = "$basePath/manage/rotate", method = kotlinx.html.FormMethod.post) {
+                                        hiddenInput { name = "csrf"; value = csrf }
+                                        button(classes = "btn-primary btn-danger") {
+                                            type = kotlinx.html.ButtonType.submit
+                                            +"Confirm Rotation"
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            div(classes = "admin-panel") {
-                attributes["style"] = "border-left: 4px solid #b45309;"
-                h3 { +"Mute Notifications" }
-                p {
-                    if (installation.muted) {
-                        +"Notifications are currently muted. Unmute to resume alert dispatches."
-                    } else {
-                        +"Mute notifications temporarily to prevent dispatches "
-                        +"without deleting installation credentials."
-                    }
-                }
-                details(classes = "confirm-dialog") {
-                    summary(classes = "btn-primary") {
-                        attributes["style"] = "max-width: 14rem;"
-                        +if (installation.muted) "Unmute notifications" else "Mute notifications"
-                    }
-                    div(classes = "confirm-content") {
+                div(classes = "control-row") {
+                    div(classes = "control-info") {
+                        strong { +"Notification Delivery" }
                         p {
                             if (installation.muted) {
-                                +"Are you sure you want to unmute notifications for this installation?"
+                                +"Notifications are currently muted. Unmute to resume alert dispatches."
                             } else {
-                                +"Are you sure you want to mute notifications for this installation?"
+                                +"Temporarily pause notification dispatches without revoking credentials."
                             }
                         }
-                        div(classes = "confirm-actions") {
-                            form(action = "$basePath/manage/mute", method = kotlinx.html.FormMethod.post) {
-                                hiddenInput { name = "csrf"; value = csrf }
-                                hiddenInput { name = "muted"; value = if (installation.muted) "false" else "true" }
-                                button(classes = "btn-primary btn-danger") {
-                                    type = kotlinx.html.ButtonType.submit
-                                    +if (installation.muted) "Confirm Unmute" else "Confirm Mute"
+                    }
+                    div(classes = "control-action") {
+                        details(classes = "confirm-dialog") {
+                            summary(classes = if (installation.muted) "btn-primary" else "btn-secondary") {
+                                +if (installation.muted) "Unmute notifications" else "Mute notifications"
+                            }
+                            div(classes = "confirm-content") {
+                                p {
+                                    if (installation.muted) {
+                                        +"Are you sure you want to unmute notifications for this installation?"
+                                    } else {
+                                        +"Are you sure you want to mute notifications for this installation?"
+                                    }
+                                }
+                                div(classes = "confirm-actions") {
+                                    form(action = "$basePath/manage/mute", method = kotlinx.html.FormMethod.post) {
+                                        hiddenInput { name = "csrf"; value = csrf }
+                                        hiddenInput {
+                                            name = "muted"
+                                            value = if (installation.muted) "false" else "true"
+                                        }
+                                        button(classes = "btn-primary btn-danger") {
+                                            type = kotlinx.html.ButtonType.submit
+                                            +if (installation.muted) "Confirm Unmute" else "Confirm Mute"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -642,17 +639,16 @@ private fun manageHtml(
                 }
             }
 
-            div(classes = "admin-panel") {
-                attributes["style"] = "border-left: 4px solid #3b8b68;"
-                h3 { +"Session Recovery" }
-                p {
-                    +"Lost access to this session? Run "
+            div(classes = "recovery-notice") {
+                span {
+                    +"Need access to this session later? Run "
                     code { +"/manage ${installation.id.toString().take(SHORT_ID_LENGTH)}" }
-                    +" inside your Telegram installation group to generate a fresh link."
+                    +" inside your Telegram group to issue a new single-use link."
                 }
             }
         }
     }
+
 
 
 private fun rotatedHtml(
@@ -724,14 +720,29 @@ internal fun managementDocument(
           .btn-github:hover { background-color: #1a1612; color: #ffffff; }
           .btn-logout { background-color: #ffffff; color: #a62b1e; border-color: #dfd5c6; cursor: pointer; }
           .btn-logout:hover { background-color: #a62b1e; color: #ffffff; border-color: #a62b1e; }
-          details.confirm-dialog { margin-top: 0.5rem; }
-          details.confirm-dialog summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-          details.confirm-dialog summary::-webkit-details-marker { display: none; }
-          .confirm-content { margin-top: 0.75rem; padding: 0.85rem 1rem; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 0.5rem; color: #742a2a; font-size: 0.85rem; }
-          .confirm-content p { margin: 0 0 0.6rem 0; }
-          .confirm-actions { display: flex; gap: 0.5rem; align-items: center; }
+          .btn-primary, .btn-secondary { display: inline-flex; align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.875rem; padding: 0.55rem 1.1rem; border-radius: 0.375rem; border: none; cursor: pointer; transition: all 0.18s ease; box-sizing: border-box; text-decoration: none; white-space: nowrap; }
+          .btn-primary { background: #2c251e; color: #ffffff; }
+          .btn-primary:hover { background: #0088cc; color: #ffffff; }
+          .btn-secondary { background: #ffffff; color: #2c251e; border: 1px solid #c8b9a6; box-shadow: 0 1px 2px rgba(45, 30, 15, 0.04); }
+          .btn-secondary:hover { background: #2c251e; color: #ffffff; border-color: #2c251e; }
           .btn-danger { background-color: #a62b1e; color: #ffffff; border: none; }
-          .btn-danger:hover { background-color: #7d2016; }
+          .btn-danger:hover { background-color: #7d2016; color: #ffffff; }
+          details.confirm-dialog { display: inline-block; position: relative; }
+          details.confirm-dialog summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+          details.confirm-dialog summary::-webkit-details-marker { display: none; }
+          .confirm-content { margin-top: 0.5rem; padding: 0.85rem 1rem; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 0.5rem; color: #742a2a; font-size: 0.85rem; box-shadow: 0 4px 12px rgba(166, 43, 30, 0.08); }
+          .confirm-content p { margin: 0 0 0.6rem 0; line-height: 1.4; }
+          .confirm-actions { display: flex; gap: 0.5rem; align-items: center; }
+          .control-rows { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 0.85rem; }
+          .control-row { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 0.85rem; padding: 1rem 1.15rem; background: rgba(255, 255, 255, 0.7); border: 1px solid #dfd5c6; border-radius: 0.5rem; transition: background 0.15s ease; }
+          .control-row:hover { background: rgba(255, 255, 255, 0.95); }
+          .control-info strong { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; color: #1a1612; margin-bottom: 0.2rem; }
+          .control-info p { margin: 0; font-size: 0.825rem; color: #6e6154; }
+          .control-action { flex-shrink: 0; }
+          .recovery-notice { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.25rem; padding: 0.75rem 1rem; background: #eae2d6; border-radius: 0.375rem; font-size: 0.825rem; color: #5c5146; line-height: 1.45; }
+          @media (min-width: 640px) {
+            .control-row { flex-direction: row; align-items: center; }
+          }
           *:focus-visible { outline: 2px solid #2b7fa1; outline-offset: 2px; }
           .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; }
           .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -801,8 +812,6 @@ internal fun managementDocument(
           .filter-chip:hover { color: #2b7fa1; border-color: #9bc8da; background: #f7fbfd; text-decoration: none; box-shadow: 0 2px 6px rgba(43, 127, 161, 0.12); }
           .filter-chip-active { border-color: #1c8bc0; background: #229ed9; color: #ffffff; box-shadow: 0 4px 12px rgba(34, 158, 217, 0.22); }
           .filter-chip-active:hover { color: #ffffff; border-color: #1c8bc0; background: #1c8cc3; }
-          .btn-primary { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.95rem; padding: 0.7rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; width: 100%; transition: background 0.2s ease; }
-          .btn-primary:hover { background: #0088cc; }
           .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; -webkit-overflow-scrolling: touch; }
           .table-wrapper::-webkit-scrollbar { height: 6px; }
           .table-wrapper::-webkit-scrollbar-track { background: #eee4d5; border-radius: 3px; }

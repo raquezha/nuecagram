@@ -72,9 +72,10 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(page.status).isEqualTo(HttpStatusCode.OK)
             val body = page.bodyAsText()
             assertThat(body).contains("Installation Workstation")
-            assertThat(body).contains(installation.id.toString())
+            assertThat(body).contains(installation.id.toString().take(8))
             assertThat(body).contains("target=\"_blank\"")
             assertThat(body).contains("rel=\"noopener\"")
+            assertThat(body).contains("Log out")
             assertThat(body).doesNotContain(link)
         }
 
@@ -135,8 +136,8 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(
                 response.headers["Strict-Transport-Security"],
             ).isEqualTo("max-age=31536000; includeSubDomains")
-            assertThat(response.bodyAsText()).contains("Recovery")
-            assertThat(response.bodyAsText()).contains("/manage ${installation.id}")
+            assertThat(response.bodyAsText()).contains("session")
+            assertThat(response.bodyAsText()).contains("/manage ${installation.id.toString().take(8)}")
         }
 
     @Test
