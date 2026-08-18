@@ -14,6 +14,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.CredentialCodec
+import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminAuditRecord
@@ -55,11 +56,13 @@ private const val MAX_PASSWORD_LENGTH = 1024
 private const val LOGIN_WINDOW_MINUTES = 15L
 private const val AUDIT_WINDOW_HOURS = 24L
 private const val MAX_PREVIEW_ITEMS = 5
+private const val SHORT_ID_LENGTH = 8
 
 @Suppress("LongMethod")
 fun Route.platformAdminRouting(basePath: String) {
     val config by inject<ConfigWithSecrets>()
     val installationRepository by inject<InstallationRepository>()
+    val databaseFactory by inject<DatabaseFactory>()
     val loginThrottle = LoginThrottle()
 
     get("$basePath/admin/login") {
@@ -171,6 +174,7 @@ fun Route.platformAdminRouting(basePath: String) {
                     csrf = csrf,
                     installations = installationRepository.platformAdminInstallations(),
                     auditEvents = installationRepository.platformAdminAuditEvents(),
+                    dbReady = databaseFactory.isReady(),
                 ),
             rightHeaderHtml = adminLogoutHeaderButton(basePath, csrf),
         )
@@ -306,6 +310,7 @@ private fun platformAdminHtml(
     csrf: String,
     installations: List<InstallationAdminContext>,
     auditEvents: List<PlatformAdminAuditRecord>,
+    dbReady: Boolean = true,
 ): String {
     val now = Instant.now()
     val activeCount = installations.count { !it.muted }
@@ -335,9 +340,21 @@ private fun platformAdminHtml(
                 div(classes = "admin-meta-card meta-status") {
                     strong { +"System status" }
                     div(classes = "stat-val") {
-                        span(classes = "status-badge status-active") {
-                            span(classes = "status-dot")
-                            +"Operational"
+                        if (!dbReady) {
+                            span(classes = "status-badge status-muted") {
+                                span(classes = "status-dot")
+                                +"Database Outage"
+                            }
+                        } else if (mutedCount > 0) {
+                            span(classes = "status-badge status-degraded") {
+                                span(classes = "status-dot")
+                                +"Degraded ($mutedCount muted)"
+                            }
+                        } else {
+                            span(classes = "status-badge status-active") {
+                                span(classes = "status-dot")
+                                +"Operational"
+                            }
                         }
                     }
                 }
@@ -368,7 +385,7 @@ private fun platformAdminHtml(
                             previewInstallations.forEach { installation ->
                                 val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
                                 tr {
-                                    td { code { +installation.id.toString() } }
+                                    td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
                                     td {
                                         if (gitlabUrl.startsWith("http")) {
                                             a(href = gitlabUrl, target = "_blank", classes = "table-link") {
@@ -435,7 +452,7 @@ private fun platformAdminHtml(
                             previewAuditEvents.forEach { event ->
                                 tr {
                                     td { +event.createdAt.toString() }
-                                    td { +(event.installationId?.toString().orEmpty()) }
+                                    td { +(event.installationId?.toString()?.take(SHORT_ID_LENGTH).orEmpty()) }
                                     td { +event.action }
                                 }
                             }

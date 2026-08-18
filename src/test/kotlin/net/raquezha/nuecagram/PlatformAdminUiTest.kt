@@ -53,9 +53,9 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
 
             assertThat(response.status).isEqualTo(HttpStatusCode.OK)
             val body = response.bodyAsText()
-            assertThat(body).contains(installation.id.toString())
+            assertThat(body).contains(installation.id.toString().take(8))
             assertThat(body).contains(installation.gitlabBaseUrl)
-            assertThat(body).contains(installationWithCredentialInUrl.id.toString())
+            assertThat(body).contains(installationWithCredentialInUrl.id.toString().take(8))
             assertThat(body).contains("https://gitlab.example/group")
             assertThat(body).contains("setup")
             assertThat(body).contains("Active installations")
