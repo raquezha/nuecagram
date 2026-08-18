@@ -19,6 +19,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class ManagementUiTest : BaseEventTestHelper() {
     @Before
     fun resetBasePath() {
@@ -290,6 +291,26 @@ class ManagementUiTest : BaseEventTestHelper() {
             val setCookie = response.headers[HttpHeaders.SetCookie].orEmpty()
             assertThat(setCookie).contains("Max-Age=0")
             assertThat(setCookie).contains("Secure")
+        }
+
+    @Test
+    fun dumpSampleHtmlFiles() =
+        testApplication {
+            configureTestApplication()
+            val session = exchangeSessionCookie(client.config { followRedirects = false })
+
+            val onboarding = client.get("${basePath()}/setup").bodyAsText()
+            java.io.File("samples/manage-onboarding.html").writeText(onboarding)
+
+            val dashboard =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                    header("X-Forwarded-Proto", "https")
+                }.bodyAsText()
+            java.io.File("samples/manage-dashboard.html").writeText(dashboard)
+
+            val recovery = client.get("${basePath()}/manage/invalid-token").bodyAsText()
+            java.io.File("samples/manage-recovery.html").writeText(recovery)
         }
 
     @Test
