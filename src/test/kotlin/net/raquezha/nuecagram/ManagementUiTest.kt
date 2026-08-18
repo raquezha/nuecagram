@@ -301,17 +301,19 @@ class ManagementUiTest : BaseEventTestHelper() {
             val session = exchangeSessionCookie(client.config { followRedirects = false })
 
             val onboarding = client.get("${basePath()}/setup").bodyAsText()
-            java.io.File("samples/manage-onboarding.html").writeText(onboarding)
-
             val dashboard =
                 client.get("${basePath()}/manage") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
                 }.bodyAsText()
-            java.io.File("samples/manage-dashboard.html").writeText(dashboard)
-
             val recovery = client.get("${basePath()}/manage/invalid-token").bodyAsText()
-            java.io.File("samples/manage-recovery.html").writeText(recovery)
+
+            runCatching {
+                val dir = java.io.File("samples").apply { mkdirs() }
+                java.io.File(dir, "manage-onboarding.html").writeText(onboarding)
+                java.io.File(dir, "manage-dashboard.html").writeText(dashboard)
+                java.io.File(dir, "manage-recovery.html").writeText(recovery)
+            }
         }
 
     @Test
