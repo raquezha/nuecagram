@@ -69,8 +69,12 @@ class ManagementUiTest : BaseEventTestHelper() {
                 }
 
             assertThat(page.status).isEqualTo(HttpStatusCode.OK)
-            assertThat(page.bodyAsText()).contains(installation.id.toString())
-            assertThat(page.bodyAsText()).doesNotContain(link)
+            val body = page.bodyAsText()
+            assertThat(body).contains("Installation Workstation")
+            assertThat(body).contains(installation.id.toString())
+            assertThat(body).contains("target=\"_blank\"")
+            assertThat(body).contains("rel=\"noopener\"")
+            assertThat(body).doesNotContain(link)
         }
 
     @Test
@@ -132,6 +136,69 @@ class ManagementUiTest : BaseEventTestHelper() {
             ).isEqualTo("max-age=31536000; includeSubDomains")
             assertThat(response.bodyAsText()).contains("Recovery")
             assertThat(response.bodyAsText()).contains("/manage ${installation.id}")
+        }
+
+    @Test
+    fun muteToggleUpdatesInstallationStateAndRendersBadge() =
+        testApplication {
+            configureTestApplication()
+            val session = exchangeSessionCookie(client.config { followRedirects = false })
+            val noRedirectClient = client.config { followRedirects = false }
+
+            val initialPage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+            val csrf = hiddenValue(initialPage.bodyAsText(), "csrf")
+
+            val muteResponse =
+                noRedirectClient.post("${basePath()}/manage/mute") {
+                    header(HttpHeaders.Cookie, session)
+                    setBody(
+                        FormDataContent(
+                            Parameters.build {
+                                append("csrf", csrf)
+                                append("muted", "true")
+                            },
+                        ),
+                    )
+                }
+
+            assertThat(muteResponse.status).isEqualTo(HttpStatusCode.Found)
+            assertThat(muteResponse.headers[HttpHeaders.Location]).isEqualTo("${basePath()}/manage")
+
+            val mutedPage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+
+            val mutedBody = mutedPage.bodyAsText()
+            assertThat(mutedBody).contains("Muted")
+            assertThat(mutedBody).contains("Unmute notifications")
+
+            val unmuteResponse =
+                noRedirectClient.post("${basePath()}/manage/mute") {
+                    header(HttpHeaders.Cookie, session)
+                    setBody(
+                        FormDataContent(
+                            Parameters.build {
+                                append("csrf", csrf)
+                                append("muted", "false")
+                            },
+                        ),
+                    )
+                }
+
+            assertThat(unmuteResponse.status).isEqualTo(HttpStatusCode.Found)
+
+            val unmutedPage =
+                client.get("${basePath()}/manage") {
+                    header(HttpHeaders.Cookie, session)
+                }
+
+            val unmutedBody = unmutedPage.bodyAsText()
+            assertThat(unmutedBody).contains("Active")
+            assertThat(unmutedBody).contains("Mute notifications")
         }
 
     @Test
