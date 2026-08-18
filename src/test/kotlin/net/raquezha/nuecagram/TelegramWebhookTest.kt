@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import net.raquezha.nuecagram.db.DatabaseFactory
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class TelegramWebhookTest : BaseEventTestHelper() {
     @Test
     fun rejectsMissingAndInvalidAuthenticationAndMalformedUpdates() =
@@ -41,7 +42,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             val initialAuditCount = auditEventCount()
 
             assertThat(
-                postTelegram(groupUpdate(50, "/status nope", installation.telegramChatId)).status,
+                postTelegram(groupUpdate(50, "/status", installation.telegramChatId)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Usage: <code>/status &lt;installation-id&gt;</code>")
 
@@ -54,6 +55,25 @@ class TelegramWebhookTest : BaseEventTestHelper() {
                 sentMessages().last().text,
             ).isEqualTo("Use /start in a private chat before using admin commands.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
+        }
+
+    @Test
+    fun statusSupportsShort8CharInstallationIdPrefix() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(88)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 88, "administrator")
+
+            val shortId = installation.id.toString().take(8)
+            assertThat(
+                postTelegram(
+                    groupUpdate(88, "/status $shortId", installation.telegramChatId, userId = 88),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val response = sentMessages().last().text
+            assertThat(response).contains("Installation: ${installation.id}")
+            assertThat(response).contains("GitLab: ${installation.gitlabBaseUrl}")
         }
 
     @Test

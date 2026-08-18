@@ -282,14 +282,14 @@ class TelegramUpdateHandler(
             send(message.chat.id, PRIVATE_COMMAND_MESSAGE, message.messageThreadId)
             return null
         }
-        val installationId = parseInstallationId(message.text)
-        if (installationId == null) {
+        val query = parseInstallationQuery(message.text)
+        if (query == null) {
             send(message.chat.id, usageMessage, message.messageThreadId)
             return null
         }
         val groupAdmin = authorizeGroupAdmin(message, usageMessage) ?: return null
-        val installation = installationRepository.installationAdminContext(installationId)
-        if (installation == null || installation.telegramChatId != message.chat.id) {
+        val installation = installationRepository.findInstallationByQuery(query, message.chat.id)
+        if (installation == null) {
             send(message.chat.id, WRONG_CHAT_MESSAGE, message.messageThreadId)
             return null
         }
@@ -300,12 +300,11 @@ class TelegramUpdateHandler(
         )
     }
 
-    private fun parseInstallationId(text: String?): UUID? =
+    private fun parseInstallationQuery(text: String?): String? =
         text
             ?.substringAfter(' ', "")
             ?.trim()
             ?.takeIf(String::isNotBlank)
-            ?.let { value -> runCatching { UUID.fromString(value) }.getOrNull() }
 
     private suspend fun send(chatId: Long, text: String, threadId: Long? = null) {
         val sent =
@@ -313,10 +312,18 @@ class TelegramUpdateHandler(
                 telegramService.sendMessage(Message(chatId = chatId.toString(), text = text, threadId = threadId))
             }
         if (sent.isFailure) {
-            runCatching {
-                telegramService.sendMessage(
-                    Message(chatId = chatId.toString(), text = text, threadId = threadId, parseMode = ""),
-                )
+            val fallbackSent =
+                runCatching {
+                    telegramService.sendMessage(
+                        Message(chatId = chatId.toString(), text = text, threadId = threadId, parseMode = ""),
+                    )
+                }
+            if (fallbackSent.isFailure && threadId != null) {
+                runCatching {
+                    telegramService.sendMessage(
+                        Message(chatId = chatId.toString(), text = text, threadId = null, parseMode = ""),
+                    )
+                }
             }
         }
     }

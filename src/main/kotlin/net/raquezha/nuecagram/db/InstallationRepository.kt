@@ -221,6 +221,24 @@ class InstallationRepository(
             installationWithMuteQuery(installationId).firstOrNull()?.toAdminContext()
         }
 
+    suspend fun findInstallationByQuery(
+        rawQuery: String,
+        chatId: Long,
+    ): InstallationAdminContext? = databaseFactory.dbTransaction {
+        val queryStr = rawQuery.trim().lowercase()
+        if (queryStr.isBlank()) return@dbTransaction null
+        val uuid = runCatching { UUID.fromString(queryStr) }.getOrNull()
+        if (uuid != null) {
+            return@dbTransaction installationWithMuteQuery(uuid)
+                .andWhere { Installations.telegramChatId eq chatId }
+                .firstOrNull()?.toAdminContext()
+        }
+        installationWithMuteQuery()
+            .andWhere { Installations.telegramChatId eq chatId }
+            .map { it.toAdminContext() }
+            .firstOrNull { it.id.toString().lowercase().startsWith(queryStr) }
+    }
+
     suspend fun setMuted(installationId: UUID, muted: Boolean) {
         databaseFactory.dbTransaction {
             MuteStates.upsert(MuteStates.installationId) {
