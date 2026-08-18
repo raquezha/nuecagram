@@ -56,6 +56,98 @@ The Web App UI inherits Nuecagram's existing warm editorial aesthetic (`Space Gr
 └──────────────────┘└──────────────────┘
 ```
 
+### ASCII Wireframe Designs
+
+#### Screen 1: Telegram Web App Shell & Installation Dashboard
+```text
+┌─────────────────────────────────────────────────────────┐
+│ ✕  Nuecagram Bot                    bot management  ••• │ ← Telegram Header Bar
+├─────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ 🛈 CONTEXT: FORUM TOPIC (#42 Deployments)            │ │ ← Context Resolution Banner
+│ │ Target: Backend Infrastructure Group                │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ INSTALLATIONS (2)                                 + ADD │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ a1b2c3d4                             [🟢 Active]    │ │ ← Installation Card 1
+│ │ GitLab: https://gitlab.com (Project #12345678)      │ │
+│ │ Destination: Topic #42 (Deployments)                │ │
+│ │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│ │ │ ✉ Test       │ │ 🔇 Mute      │ │ 🔑 Rotate    │  │ │ ← Card Actions
+│ │ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ e5f6g7h8                             [🔴 Muted]     │ │ ← Installation Card 2
+│ │ GitLab: https://gitlab.com (Project #87654321)      │ │
+│ │ Destination: Group Main Chat                        │ │
+│ │ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │ │
+│ │ │ ✉ Test       │ │ 🔊 Unmute    │ │ 🔑 Rotate    │  │ │
+│ │ └──────────────┘ └──────────────┘ └──────────────┘  │ │
+│ └─────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────┤
+│ [                     + NEW INSTALLATION              ] │ ← Fixed Telegram Main Button
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Screen 2: Guided Setup Wizard Screen
+```text
+┌─────────────────────────────────────────────────────────┐
+│ ✕  Nuecagram Bot                        bot management  │
+├─────────────────────────────────────────────────────────┤
+│ CONNECT NEW GITLAB REPOSITORY             [ Cancel ]    │
+│                                                         │
+│ 1. GitLab Base URL                                      │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ https://gitlab.com                                  │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ 2. GitLab Project ID                                    │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ 12345678                                            │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ 3. Target Telegram Destination                          │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ Topic #42 (Deployments)  [🔒 Locked to Context]     │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ 🛈 Info: Nuecagram will generate a unique webhook secret │
+│ token for your repository settings.                     │
+├─────────────────────────────────────────────────────────┤
+│ [                 CREATE INSTALLATION                 ] │ ← Fixed Telegram Main Button
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Screen 3: Single-View Credential Reveal & Secret Security Box
+```text
+┌─────────────────────────────────────────────────────────┐
+│ ✕  Nuecagram Bot                        bot management  │
+├─────────────────────────────────────────────────────────┤
+│ CREDENTIAL ISSUED                         [ Done ]      │
+│                                                         │
+│ ⚠️ STORE THIS SECRET TOKEN NOW!                         │
+│ This secret token is shown ONLY ONCE for security.     │
+│                                                         │
+│ WEBHOOK SECRET TOKEN                                    │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ nc_sec_9f83a17c2b4e6d5a1098                         │ │ ← High-Contrast Monospace Box
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ GITLAB WEBHOOK URL                                      │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ https://nuecagram.example.com/webhook               │ │
+│ └─────────────────────────────────────────────────────┘ │
+│                                                         │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ 📋 COPY SECRET TOKEN TO CLIPBOARD                   │ │
+│ └─────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────┤
+│ [                RETURN TO DASHBOARD                  ] │
+└─────────────────────────────────────────────────────────┘
+```
+
 ### Key Screen Models
 
 1. **Installation Dashboard (Main Screen)**
