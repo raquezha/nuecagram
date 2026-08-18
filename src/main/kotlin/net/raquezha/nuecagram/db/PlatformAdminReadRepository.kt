@@ -52,6 +52,92 @@ class PlatformAdminReadRepository(
             }
     }
 
+    suspend fun auditEventsPage(
+        action: String? = null,
+        limit: Int = 20,
+        offset: Long = 0,
+    ): PlatformAdminAuditPage =
+        databaseFactory.dbQuery { connection ->
+            val filter = auditFilter(action)
+            val fromSql = auditFromSql(filter.whereClauses)
+            PlatformAdminAuditPage(
+                items = selectAuditEvents(connection, fromSql, filter.params, limit, offset),
+                totalCount = countAuditEvents(connection, fromSql, filter.params),
+            )
+        }
+
+    private fun auditFilter(action: String?): AuditFilter {
+        val whereClauses = mutableListOf<String>()
+        val params = mutableListOf<Any>()
+
+        when (action?.trim()?.lowercase()) {
+            "setup" -> {
+                whereClauses += "action = ?"
+                params += "telegram_setup"
+            }
+            "rotate" -> {
+                whereClauses += "action IN (?, ?)"
+                params += "telegram_rotate"
+                params += "management_rotate"
+            }
+            "status change", "status_change", "status-change" -> {
+                whereClauses += "action IN (?, ?)"
+                params += "telegram_mute"
+                params += "telegram_unmute"
+            }
+        }
+
+        return AuditFilter(whereClauses, params)
+    }
+
+    private fun auditFromSql(whereClauses: List<String>): String {
+        val whereSql =
+            whereClauses.takeIf(List<String>::isNotEmpty)
+                ?.joinToString(prefix = " WHERE ", separator = " AND ")
+                .orEmpty()
+        return "FROM audit_events $whereSql"
+    }
+
+    private fun countAuditEvents(
+        connection: java.sql.Connection,
+        fromSql: String,
+        params: List<Any>,
+    ): Long =
+        connection.prepareStatement("SELECT COUNT(*) $fromSql").use { statement ->
+            bindParams(statement, params)
+            statement.executeQuery().use { result -> if (result.next()) result.getLong(1) else 0L }
+        }
+
+    private fun selectAuditEvents(
+        connection: java.sql.Connection,
+        fromSql: String,
+        params: List<Any>,
+        limit: Int,
+        offset: Long,
+    ): List<PlatformAdminAuditRecord> =
+        connection.prepareStatement(
+            """
+            SELECT installation_id, action, created_at
+            $fromSql
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+            """.trimIndent(),
+        ).use { statement ->
+            bindParams(statement, params)
+            statement.setInt(params.size + 1, limit.coerceAtLeast(1))
+            statement.setLong(params.size + 2, offset.coerceAtLeast(0))
+            statement.executeQuery().use { result ->
+                buildList {
+                    while (result.next()) {
+                        val instId = result.getObject("installation_id", UUID::class.java)
+                        val act = result.getString("action")
+                        val created = result.getTimestamp("created_at").toInstant()
+                        add(PlatformAdminAuditRecord(instId, act, created))
+                    }
+                }
+            }
+        }
+
     private fun installationsFilter(status: String?, search: String?): InstallationsFilter {
         val whereClauses = mutableListOf<String>()
         val params = mutableListOf<Any>()
@@ -118,6 +204,11 @@ class PlatformAdminReadRepository(
             }
         }
 }
+
+private data class AuditFilter(
+    val whereClauses: List<String>,
+    val params: List<Any>,
+)
 
 private data class InstallationsFilter(
     val whereClauses: List<String>,
