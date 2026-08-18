@@ -10,10 +10,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.testing.postgresTest
-import org.koin.core.context.stopKoin
-import org.koin.core.context.startKoin
-import org.koin.dsl.module
 
 val InstallationRepositoryTests by testSuite {
     postgresTest("persists only digests and hashes for issued credentials") { config ->
@@ -158,14 +156,52 @@ val InstallationRepositoryTests by testSuite {
             // Pool cleaned up automatically on re-initialization
         }
     }
+
+    postgresTest("filters and paginates platform admin installations in the database") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val readRepository = platformAdminReadRepository()
+            val suiteTag = "platform-admin-page"
+            val alpha = repository.createInstallation("https://$suiteTag-alpha.example.com/root", 9101, 1001, null)
+            val beta = repository.createInstallation("https://$suiteTag-beta.example.com/root", 9202, 1002, null)
+            val gamma = repository.createInstallation("https://$suiteTag-gamma.example.com/root", 9303, 1003, null)
+            repository.setMuted(beta.id, true)
+
+            val firstPage = readRepository.installationsPage(search = suiteTag, limit = 2, offset = 0)
+            val secondPage = readRepository.installationsPage(search = suiteTag, limit = 2, offset = 2)
+            assertThat(firstPage.totalCount).isEqualTo(3)
+            assertThat(firstPage.items).hasSize(2)
+            assertThat(secondPage.totalCount).isEqualTo(3)
+            assertThat(secondPage.items).hasSize(1)
+            assertThat((firstPage.items + secondPage.items).map { it.id }.toSet())
+                .containsExactly(alpha.id, beta.id, gamma.id)
+
+            val mutedOnly = readRepository.installationsPage(search = suiteTag, status = "muted", limit = 20)
+            assertThat(mutedOnly.totalCount).isEqualTo(1)
+            assertThat(mutedOnly.items.map { it.id }).containsExactly(beta.id)
+
+            val activeOnly = readRepository.installationsPage(search = suiteTag, status = "active", limit = 20)
+            assertThat(activeOnly.totalCount).isEqualTo(2)
+            assertThat(activeOnly.items.map { it.id }).containsExactly(alpha.id, gamma.id)
+
+            val searchByUrl = readRepository.installationsPage(search = "$suiteTag-gamma", limit = 20)
+            assertThat(searchByUrl.totalCount).isEqualTo(1)
+            assertThat(searchByUrl.items.map { it.id }).containsExactly(gamma.id)
+
+            val searchByProject = readRepository.installationsPage(search = "9202", limit = 20)
+            assertThat(searchByProject.totalCount).isEqualTo(1)
+            assertThat(searchByProject.items.map { it.id }).containsExactly(beta.id)
+
+            val searchById = readRepository.installationsPage(search = alpha.id.toString().take(8), limit = 20)
+            assertThat(searchById.totalCount).isEqualTo(1)
+            assertThat(searchById.items.map { it.id }).containsExactly(alpha.id)
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
 }
 
-private fun repository(): InstallationRepository =
-    startKoin {
-        modules(
-            module {
-                single { DatabaseFactory }
-                single { InstallationRepository(get()) }
-            },
-        )
-    }.koin.get<InstallationRepository>().also { stopKoin() }
+private fun repository(): InstallationRepository = InstallationRepository(DatabaseFactory)
+
+private fun platformAdminReadRepository(): PlatformAdminReadRepository = PlatformAdminReadRepository(DatabaseFactory)

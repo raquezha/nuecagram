@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package net.raquezha.nuecagram.plugins
 
 import io.ktor.http.HttpHeaders
@@ -10,6 +12,8 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.net.URI
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
@@ -18,12 +22,14 @@ import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminAuditRecord
+import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.db.PlatformAdminSessionContext
 import org.koin.ktor.ext.inject
 import kotlinx.html.a
 import kotlinx.html.button
 import kotlinx.html.code
 import kotlinx.html.div
+import kotlinx.html.FlowContent
 import kotlinx.html.form
 import kotlinx.html.h1
 import kotlinx.html.h2
@@ -38,6 +44,8 @@ import kotlinx.html.span
 import kotlinx.html.stream.createHTML
 import kotlinx.html.strong
 import kotlinx.html.table
+import kotlinx.html.unsafe
+import kotlinx.html.textInput
 import kotlinx.html.tbody
 import kotlinx.html.td
 import kotlinx.html.th
@@ -57,11 +65,13 @@ private const val LOGIN_WINDOW_MINUTES = 15L
 private const val AUDIT_WINDOW_HOURS = 24L
 private const val MAX_PREVIEW_ITEMS = 5
 private const val SHORT_ID_LENGTH = 8
+private const val PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE = 20
 
 @Suppress("LongMethod")
 fun Route.platformAdminRouting(basePath: String) {
     val config by inject<ConfigWithSecrets>()
     val installationRepository by inject<InstallationRepository>()
+    val platformAdminReadRepository by inject<PlatformAdminReadRepository>()
     val databaseFactory by inject<DatabaseFactory>()
     val loginThrottle = LoginThrottle()
 
@@ -172,9 +182,57 @@ fun Route.platformAdminRouting(basePath: String) {
                 platformAdminHtml(
                     basePath = basePath,
                     csrf = csrf,
-                    installations = installationRepository.platformAdminInstallations(),
-                    auditEvents = installationRepository.platformAdminAuditEvents(),
+                    installations = platformAdminReadRepository.installations(),
+                    auditEvents = platformAdminReadRepository.auditEvents(),
                     dbReady = databaseFactory.isReady(),
+                ),
+            rightHeaderHtml = adminLogoutHeaderButton(basePath, csrf),
+        )
+    }
+
+    get("$basePath/admin/installations") {
+        val session = call.platformAdminSession(installationRepository)
+        if (session == null) {
+            call.clearAdminSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.Unauthorized,
+                title = "Platform login required",
+                body = adminLoginRequiredHtml(basePath),
+            )
+            return@get
+        }
+        val csrf = call.request.cookies[ADMIN_CSRF_COOKIE].orEmpty()
+        if (!installationRepository.verifyPlatformAdminCsrf(session, csrf)) {
+            call.clearAdminSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.Unauthorized,
+                title = "Platform login required",
+                body = adminLoginRequiredHtml(basePath),
+            )
+            return@get
+        }
+
+        val search = call.request.queryParameters["search"]?.trim().orEmpty()
+        val status = call.request.queryParameters["status"].platformAdminStatusFilter()
+        val page = call.request.queryParameters["page"].toPositivePage()
+        val installationsPage =
+            platformAdminReadRepository.installationsPage(
+                search = search.ifBlank { null },
+                status = status,
+                limit = PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE,
+                offset = (page - 1L) * PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE,
+            )
+
+        call.respondManagementHtml(
+            title = "Platform installations",
+            body =
+                platformAdminInstallationsHtml(
+                    basePath = basePath,
+                    search = search,
+                    status = status,
+                    page = page,
+                    installations = installationsPage.items,
+                    totalCount = installationsPage.totalCount,
                 ),
             rightHeaderHtml = adminLogoutHeaderButton(basePath, csrf),
         )
@@ -303,6 +361,197 @@ private fun adminLoginRequiredHtml(basePath: String): String =
             +"Log In"
         }
     }
+
+private fun platformAdminInstallationsHtml(
+    basePath: String,
+    search: String,
+    status: String,
+    page: Long,
+    installations: List<InstallationAdminContext>,
+    totalCount: Long,
+): String {
+    val totalPages = platformAdminTotalPages(totalCount)
+    return createHTML().section(classes = "admin-shell") {
+        installationsDirectoryHero(basePath)
+        installationsDirectoryFilterPanel(basePath, search, status)
+        installationsDirectoryResultsPanel(basePath, search, status, page, totalPages, installations, totalCount)
+    }
+}
+
+private fun platformAdminTotalPages(totalCount: Long): Long =
+    ((totalCount + PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE - 1) / PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE)
+        .coerceAtLeast(1)
+
+private fun FlowContent.installationsDirectoryHero(basePath: String) {
+    div(classes = "admin-hero") {
+        span(classes = "admin-kicker") { +"Platform administration" }
+        h1 { +"Installations directory" }
+        p { +"Search, filter, and paginate installations without exposing private delivery details." }
+        div {
+            a(href = "$basePath/admin", classes = "table-link") { +"← Back to Overview" }
+        }
+    }
+}
+
+private const val SEARCH_SVG_ICON =
+    """<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" """ +
+        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round">""" +
+        """<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>"""
+
+private const val CLEAR_SVG_ICON =
+    """<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" """ +
+        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round">""" +
+        """<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>"""
+
+private fun FlowContent.installationsDirectoryFilterPanel(basePath: String, search: String, status: String) {
+    div(classes = "admin-panel search-toolbar-panel") {
+        form(action = "$basePath/admin/installations", method = kotlinx.html.FormMethod.get, classes = "toolbar-form") {
+            div(classes = "search-input-group") {
+                span(classes = "search-icon") {
+                    unsafe {
+                        +SEARCH_SVG_ICON
+                    }
+                }
+                textInput(classes = "input-search") {
+                    id = "installation-search"
+                    name = "search"
+                    this.value = search
+                    placeholder = "Search by ID, GitLab URL, or Project ID..."
+                }
+                if (search.isNotBlank()) {
+                    a(href = adminInstallationsHref(basePath, "", status, 1), classes = "search-clear-btn") {
+                        attributes["aria-label"] = "Clear search"
+                        unsafe {
+                            +CLEAR_SVG_ICON
+                        }
+                    }
+                }
+                if (status.isNotBlank()) {
+                    hiddenInput {
+                        name = "status"
+                        value = status
+                    }
+                }
+            }
+            div(classes = "segmented-control") {
+                installationsStatusLink(basePath, search, status, "", "All")
+                installationsStatusLink(basePath, search, status, "active", "Active")
+                installationsStatusLink(basePath, search, status, "muted", "Muted")
+            }
+        }
+    }
+}
+
+private fun FlowContent.installationsDirectoryResultsPanel(
+    basePath: String,
+    search: String,
+    status: String,
+    page: Long,
+    totalPages: Long,
+    installations: List<InstallationAdminContext>,
+    totalCount: Long,
+) {
+    val pageSize = PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE
+    val startItem = if (totalCount == 0L) 0L else (page - 1) * pageSize + 1
+    val endItem = (page * pageSize).coerceAtMost(totalCount)
+
+    div(classes = "admin-panel table-panel") {
+        div(classes = "table-header-bar") {
+            h3 { +"Installations" }
+            span(classes = "results-count") { +"$totalCount total" }
+        }
+        if (installations.isEmpty()) {
+            div(classes = "empty-state") { +"No installations match the current search and filters." }
+        } else {
+            div(classes = "table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { +"ID" }
+                            th { +"GitLab" }
+                            th { +"Project" }
+                            th { +"Status" }
+                        }
+                    }
+                    tbody { installations.forEach(::platformAdminInstallationRow) }
+                }
+            }
+        }
+        div(classes = "table-footer-bar") {
+            span(classes = "pagination-info") { +"Showing $startItem–$endItem of $totalCount" }
+            div(classes = "pagination-controls") {
+                installationsPaginationBtn(basePath, search, status, page > 1, page - 1, "‹ Prev")
+                span(classes = "page-indicator") { +"$page / $totalPages" }
+                installationsPaginationBtn(basePath, search, status, page < totalPages, page + 1, "Next ›")
+            }
+        }
+    }
+}
+
+private fun FlowContent.installationsStatusLink(
+    basePath: String,
+    search: String,
+    currentStatus: String,
+    targetStatus: String,
+    label: String,
+) {
+    a(
+        href = adminInstallationsHref(basePath, search, targetStatus, 1),
+        classes = if (currentStatus == targetStatus) "segmented-btn segmented-btn-active" else "segmented-btn",
+    ) { +label }
+}
+
+private fun FlowContent.installationsPaginationBtn(
+    basePath: String,
+    search: String,
+    status: String,
+    enabled: Boolean,
+    targetPage: Long,
+    label: String,
+) {
+    if (enabled) {
+        a(href = adminInstallationsHref(basePath, search, status, targetPage), classes = "btn-pag") { +label }
+    } else {
+        span(classes = "btn-pag btn-pag-disabled") { +label }
+    }
+}
+
+private fun kotlinx.html.TBODY.platformAdminInstallationRow(installation: InstallationAdminContext) {
+    tr {
+        td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
+        td {
+            val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
+            if (gitlabUrl.startsWith("http")) {
+                a(href = gitlabUrl, target = "_blank", classes = "table-link") {
+                    rel = "noopener"
+                    +gitlabUrl
+                }
+            } else {
+                +gitlabUrl
+            }
+        }
+        td {
+            if (installation.gitlabProjectId != null) {
+                code { +installation.gitlabProjectId.toString() }
+            } else {
+                span { +"Group-level" }
+            }
+        }
+        td {
+            if (installation.muted) {
+                span(classes = "status-badge status-muted") {
+                    span(classes = "status-dot")
+                    +"Muted"
+                }
+            } else {
+                span(classes = "status-badge status-active") {
+                    span(classes = "status-dot")
+                    +"Active"
+                }
+            }
+        }
+    }
+}
 
 @Suppress("LongMethod", "MaxLineLength")
 private fun platformAdminHtml(
@@ -473,6 +722,26 @@ private fun platformAdminHtml(
         }
     }
 }
+
+private fun adminInstallationsHref(basePath: String, search: String, status: String, page: Long): String {
+    val query = buildList {
+        if (search.isNotBlank()) add("search=${search.urlEncoded()}")
+        if (status.isNotBlank()) add("status=${status.urlEncoded()}")
+        if (page > 1) add("page=$page")
+    }.joinToString("&")
+    return if (query.isEmpty()) "$basePath/admin/installations" else "$basePath/admin/installations?$query"
+}
+
+private fun String?.platformAdminStatusFilter(): String =
+    when (this?.trim()?.lowercase()) {
+        "active" -> "active"
+        "muted" -> "muted"
+        else -> ""
+    }
+
+private fun String?.toPositivePage(): Long = this?.toLongOrNull()?.takeIf { it > 0 } ?: 1L
+
+private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8)
 
 private fun String.redactedUrl(): String =
     runCatching {

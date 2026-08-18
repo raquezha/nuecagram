@@ -18,6 +18,7 @@ import io.ktor.server.application.*
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.configWithSecrets
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
@@ -91,6 +92,7 @@ val provideDatabaseModule =
     module {
         single { DatabaseFactory }
         single { InstallationRepository(get()) }
+        single { PlatformAdminReadRepository(get()) }
     }
 
 val provideLogger =

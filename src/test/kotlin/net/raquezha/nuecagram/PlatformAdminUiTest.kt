@@ -75,6 +75,62 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun platformAdminInstallationsDirectorySupportsSearchFiltersPaginationAndRedaction() =
+        testApplication {
+            configureTestApplication()
+            val suiteTag = "platform-dir"
+            seedPlatformInstallations(suiteTag)
+            val noRedirectClient = client.config { followRedirects = false }
+            val sessionCookie = login(noRedirectClient)
+
+            val pageOne = fetchInstallationsPage(sessionCookie, "search=$suiteTag", secure = true)
+            assertThat(pageOne.status).isEqualTo(HttpStatusCode.OK)
+            val pageOneBody = pageOne.bodyAsText()
+            assertThat(pageOneBody).contains("Installations directory")
+            assertThat(pageOneBody).contains("Back to Overview")
+            assertThat(pageOneBody).contains("1 / 2")
+            assertThat(pageOneBody).contains("21 total")
+            assertThat(pageOneBody).contains("Showing 1–20 of 21")
+            assertThat(pageOneBody).contains("Next ›")
+            assertThat(pageOneBody).doesNotContain("910020")
+            assertThat(pageOneBody).doesNotContain("920020")
+
+            val pageTwoBody = fetchInstallationsPage(sessionCookie, "search=$suiteTag&page=2").bodyAsText()
+            assertThat(pageTwoBody).contains("2 / 2")
+            assertThat(pageTwoBody).contains("Showing 21–21 of 21")
+            assertThat(pageTwoBody).contains("‹ Prev")
+            assertThat(pageTwoBody).contains("https://${suiteTag}-0.example.com/group")
+            assertThat(pageTwoBody).doesNotContain("user:secret")
+            assertThat(pageTwoBody).doesNotContain("token=hidden")
+            assertThat(pageTwoBody).doesNotContain("910020")
+            assertThat(pageTwoBody).doesNotContain("920020")
+
+            val mutedOnly = fetchInstallationsPage(sessionCookie, "search=$suiteTag&status=muted")
+            val mutedBody = mutedOnly.bodyAsText()
+            assertThat(mutedBody).contains("Muted")
+            assertThat(mutedBody).contains("1 total")
+            assertThat(mutedBody).contains("https://${suiteTag}-target.example.com/group")
+            assertThat(mutedBody).doesNotContain("https://${suiteTag}-0.example.com/group")
+            assertThat(mutedOnly.headers["Content-Security-Policy"]).contains("default-src 'none'")
+        }
+
+    @Test
+    fun platformAdminInstallationsDirectoryShowsEmptyState() =
+        testApplication {
+            configureTestApplication()
+            val noRedirectClient = client.config { followRedirects = false }
+            val sessionCookie = login(noRedirectClient)
+
+            val response =
+                client.get("${basePath()}/admin/installations?search=no-such-installation") {
+                    header(HttpHeaders.Cookie, sessionCookie)
+                }
+
+            assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+            assertThat(response.bodyAsText()).contains("No installations match the current search and filters.")
+        }
+
+    @Test
     fun platformAdminLoginIsThrottledAfterRepeatedFailures() =
         testApplication {
             configureTestApplication()
@@ -141,6 +197,44 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
 
             assertThat(response.status).isEqualTo(HttpStatusCode.Unauthorized)
             assertThat(response.headers[HttpHeaders.SetCookie].orEmpty()).contains("Max-Age=0")
+        }
+
+    private suspend fun ApplicationTestBuilder.seedPlatformInstallations(suiteTag: String) {
+        val seeded =
+            runBlocking {
+                buildList {
+                    repeat(21) { index ->
+                        add(
+                            installationRepository.createInstallation(
+                                gitlabBaseUrl =
+                                    if (index == 20) {
+                                        "https://user:secret@${suiteTag}-target.example.com/group?token=hidden"
+                                    } else {
+                                        "https://$suiteTag-$index.example.com/group"
+                                    },
+                                gitlabProjectId = 8000L + index,
+                                telegramChatId = 910000L + index,
+                                telegramTopicId = 920000L + index,
+                            ),
+                        )
+                    }
+                }
+            }
+        runBlocking {
+            installationRepository.setMuted(seeded.last().id, true)
+        }
+    }
+
+    private suspend fun ApplicationTestBuilder.fetchInstallationsPage(
+        sessionCookie: String,
+        query: String,
+        secure: Boolean = false,
+    ): HttpResponse =
+        client.get("${basePath()}/admin/installations?$query") {
+            header(HttpHeaders.Cookie, sessionCookie)
+            if (secure) {
+                header("X-Forwarded-Proto", "https")
+            }
         }
 
     private suspend fun ApplicationTestBuilder.login(noRedirectClient: HttpClient): String {

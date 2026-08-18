@@ -7,7 +7,6 @@ import java.util.UUID
 import net.raquezha.nuecagram.webhook.ChatDetails
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.ResultRow
-import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
@@ -55,6 +54,11 @@ data class ManagementSessionContext(
 data class IssuedPlatformAdminSession(val id: UUID, val raw: String, val csrf: String)
 data class PlatformAdminSessionContext(val id: UUID, val csrfDigest: ByteArray, val csrfHash: String)
 data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
+
+data class PlatformAdminInstallationsPage(
+    val items: List<InstallationAdminContext>,
+    val totalCount: Long,
+)
 
 data class MrParticipants(
     val authorUsername: String?,
@@ -356,26 +360,6 @@ class InstallationRepository(
     suspend fun deletePlatformAdminSession(id: UUID): Boolean = databaseFactory.dbTransaction {
         PlatformAdminSessions.deleteWhere { PlatformAdminSessions.id eq id } == 1
     }
-
-    suspend fun platformAdminInstallations(): List<InstallationAdminContext> = databaseFactory.dbTransaction {
-        installationWithMuteQuery()
-            .orderBy(Installations.createdAt to SortOrder.DESC)
-            .map { it.toAdminContext() }
-    }
-
-    suspend fun platformAdminAuditEvents(limit: Int = 200): List<PlatformAdminAuditRecord> =
-        databaseFactory.dbTransaction {
-            AuditEvents.selectAll()
-                .orderBy(AuditEvents.createdAt to SortOrder.DESC)
-                .limit(limit)
-                .map { row ->
-                    PlatformAdminAuditRecord(
-                        row[AuditEvents.installationId],
-                        row[AuditEvents.action],
-                        row[AuditEvents.createdAt].toInstant(),
-                    )
-                }
-        }
 
     suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
         ManagementLinks.deleteWhere { ManagementLinks.expiresAt lessEq now.databaseTime() }
