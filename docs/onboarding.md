@@ -41,16 +41,58 @@ Do not configure custom Nuecagram headers. Routing comes from the verified insta
 
 ## Manage an installation
 
-Telegram group administrators can run:
+Telegram group administrators can manage installations directly from group chats using the commands below.
 
-```text
-/status <installation-id>
-/digest <installation-id>
-/test <installation-id>
-/mute <installation-id>
-/unmute <installation-id>
-/manage <installation-id>
-/rotate <installation-id>
-```
+### Command Reference Matrix
 
-Management links and rotated credentials are delivered only to the verified administrator's private chat.
+| Command | Location | Access Level | Required Parameters | Success Response | Common Errors / Warnings |
+|---------|----------|--------------|---------------------|------------------|--------------------------|
+| `/start` | Private DM | All Users | None | DM: `Private onboarding is ready.` | Group: `Start a private chat with the bot first.` |
+| `/help` | Group or DM | All Users | None | Help guide with command syntax | None |
+| `/setup` | Group / Topic | Group Admins | `<gitlab-base-url> <project-id>` | Group: `Private setup details sent.`<br>DM: Credential, Webhook URL, Management URL | Missing args: Usage & example<br>No DM start: `Use /start in a private chat...`<br>Non-admin: `Only Telegram group administrators...` |
+| `/manage` | Group / Topic | Group Admins | `<installation-id>` | Group: `Private setup details sent.`<br>DM: Single-use `/manage` URL | Missing ID: Usage & example<br>Wrong chat: `Installation not found in this chat.` |
+| `/test` | Group / Topic | Group Admins | `<installation-id>` | Group: `Nuecagram Delivery Test...` | Missing ID: Usage & example<br>Wrong chat: `Installation not found in this chat.` |
+| `/status` | Group / Topic | Group Admins | `<installation-id>` | Group: Status, GitLab URL, Project ID, Mute state | Missing ID: Usage & example<br>Wrong chat: `Installation not found in this chat.` |
+| `/rotate` | Group / Topic | Group Admins | `<installation-id>` | Group: `Private setup details sent.`<br>DM: New credential & Management URL | Missing ID: Usage & example<br>Wrong chat: `Installation not found in this chat.` |
+| `/mute` | Group / Topic | Group Admins | `<installation-id>` | Group: `Installation muted.` | Missing ID: Usage & example<br>Wrong chat: `Installation not found in this chat.` |
+| `/unmute` | Group / Topic | Group Admins | `<installation-id>` | Group: `Installation unmuted.` | Missing ID: Usage & example<br>Wrong chat: `Installation not found in this chat.` |
+| `/digest` | Group / Topic | Group Admins | `<installation-id>` | Group: Installation summary text | Missing ID: Usage & example |
+
+---
+
+## Command Troubleshooting & Error Resolution
+
+If you run a command and receive an error message in Telegram, follow the resolution steps below:
+
+### 1. `Use /start in a private chat before using admin commands.`
+* **Cause**: You have not started a private DM session with `@NuecagramBot`. For security, secret tokens and management URLs are delivered only to private DMs.
+* **Resolution**:
+  1. Click [@NuecagramBot](https://t.me/NuecagramBot) to open a private message window.
+  2. Click **Start** or send `/start`.
+  3. Return to your group chat and re-run your command.
+
+### 2. `Only Telegram group administrators can use this command.`
+* **Cause**: Nuecagram verifies your admin privileges via Telegram API (`getChatMember`). Only group Creators and Administrators can run setup or management commands.
+* **Resolution**:
+  1. Open **Group Settings > Administrators** in Telegram.
+  2. Promote your Telegram user account to **Administrator**.
+  3. Re-run the command in the group chat.
+
+### 3. `Installation not found in this chat.`
+* **Cause**: The provided `installation-id` does not exist or belongs to a different Telegram group chat.
+* **Resolution**:
+  1. Verify the 8-character ID prefix or full UUID from your initial setup DM message.
+  2. Confirm you are running the command in the exact group/topic where `/setup` was performed.
+
+### 4. `Run this command in the installation group.`
+* **Cause**: You ran a group-bound administrative command (like `/setup` or `/test`) inside a private DM with the bot.
+* **Resolution**:
+  1. Go to your destination Telegram group or forum topic.
+  2. Run the command inside the group chat.
+
+### 5. Usage Guidance (e.g., `Usage: /setup <gitlab-base-url> <project-id>`)
+* **Cause**: The command was sent with missing or incorrectly formatted parameters.
+* **Resolution**:
+  - For `/setup`: include your GitLab base URL and numeric project ID (e.g. `/setup https://gitlab.com 12345678`).
+  - For `/test`, `/manage`, `/rotate`: include your 8-character installation ID (e.g. `/test a1b2c3d4`).
+
