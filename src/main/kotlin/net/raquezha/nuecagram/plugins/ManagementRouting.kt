@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package net.raquezha.nuecagram.plugins
 
 import io.ktor.http.ContentType
@@ -15,6 +17,7 @@ import java.time.temporal.ChronoUnit
 import kotlinx.html.a
 import kotlinx.html.button
 import kotlinx.html.code
+import kotlinx.html.details
 import kotlinx.html.div
 import kotlinx.html.em
 import kotlinx.html.form
@@ -28,6 +31,7 @@ import kotlinx.html.section
 import kotlinx.html.span
 import kotlinx.html.stream.createHTML
 import kotlinx.html.strong
+import kotlinx.html.summary
 import kotlinx.html.table
 import kotlinx.html.tbody
 import kotlinx.html.td
@@ -44,6 +48,7 @@ private const val CSRF_COOKIE_NAME = "nuecagram_manage_csrf"
 private const val SESSION_TTL_HOURS = 8L
 private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
 private const val ROTATION_GRACE_MINUTES = 0L
+private const val SHORT_ID_LENGTH = 8
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 fun Route.managementRouting(basePath: String) {
@@ -142,6 +147,7 @@ fun Route.managementRouting(basePath: String) {
         call.respondManagementHtml(
             title = "Manage installation",
             body = manageHtml(basePath, installation, csrf),
+            rightHeaderHtml = manageLogoutHeaderButton(basePath, csrf),
         )
     }
 
@@ -355,6 +361,17 @@ private const val EXTERNAL_LINK_SVG_ICON =
         """<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>""" +
         """<polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>"""
 
+private fun manageLogoutHeaderButton(basePath: String, csrf: String): String =
+    """
+    <form method="post" action="${(basePath + "/manage/logout").html()}" class="header-form">
+      <input type="hidden" name="csrf" value="${csrf.html()}">
+      <button type="submit" class="header-btn btn-logout" aria-label="Log out">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Log out</span>
+      </button>
+    </form>
+    """.trimIndent()
+
 private fun rejectionHtml(title: String, message: String): String =
     createHTML().div(classes = "auth-card") {
         h2 { +title }
@@ -501,13 +518,13 @@ private fun manageHtml(
                             th { +"ID" }
                             th { +"GitLab Base URL" }
                             th { +"Project ID" }
-                            th { +"Telegram Topic" }
+                            th { +"Telegram Destination" }
                             th { +"State" }
                         }
                     }
                     tbody {
                         tr {
-                            td { code { +installation.id.toString() } }
+                            td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
                             td {
                                 val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
                                 if (gitlabUrl.startsWith("http")) {
@@ -531,9 +548,9 @@ private fun manageHtml(
                             }
                             td {
                                 if (installation.telegramTopicId != null) {
-                                    code { +installation.telegramTopicId.toString() }
+                                    code { +"Topic #${installation.telegramTopicId}" }
                                 } else {
-                                    span { +"Main Chat" }
+                                    span { +"Group Chat" }
                                 }
                             }
                             td {
@@ -564,12 +581,25 @@ private fun manageHtml(
                     +"The new GitLab secret token is displayed once on the confirmation screen "
                     +"immediately after rotation."
                 }
-                form(action = "$basePath/manage/rotate", method = kotlinx.html.FormMethod.post) {
-                    hiddenInput { name = "csrf"; value = csrf }
-                    button(classes = "btn-primary") {
-                        type = kotlinx.html.ButtonType.submit
+                details(classes = "confirm-dialog") {
+                    summary(classes = "btn-primary") {
                         attributes["style"] = "max-width: 14rem;"
                         +"Rotate credential"
+                    }
+                    div(classes = "confirm-content") {
+                        p {
+                            +"Are you sure you want to rotate the credential? "
+                            +"The existing secret token will be revoked immediately."
+                        }
+                        div(classes = "confirm-actions") {
+                            form(action = "$basePath/manage/rotate", method = kotlinx.html.FormMethod.post) {
+                                hiddenInput { name = "csrf"; value = csrf }
+                                button(classes = "btn-primary btn-danger") {
+                                    type = kotlinx.html.ButtonType.submit
+                                    +"Confirm Rotation"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -585,36 +615,45 @@ private fun manageHtml(
                         +"without deleting installation credentials."
                     }
                 }
-                form(action = "$basePath/manage/mute", method = kotlinx.html.FormMethod.post) {
-                    hiddenInput { name = "csrf"; value = csrf }
-                    hiddenInput { name = "muted"; value = if (installation.muted) "false" else "true" }
-                    button(classes = "btn-primary") {
-                        type = kotlinx.html.ButtonType.submit
+                details(classes = "confirm-dialog") {
+                    summary(classes = "btn-primary") {
                         attributes["style"] = "max-width: 14rem;"
                         +if (installation.muted) "Unmute notifications" else "Mute notifications"
+                    }
+                    div(classes = "confirm-content") {
+                        p {
+                            if (installation.muted) {
+                                +"Are you sure you want to unmute notifications for this installation?"
+                            } else {
+                                +"Are you sure you want to mute notifications for this installation?"
+                            }
+                        }
+                        div(classes = "confirm-actions") {
+                            form(action = "$basePath/manage/mute", method = kotlinx.html.FormMethod.post) {
+                                hiddenInput { name = "csrf"; value = csrf }
+                                hiddenInput { name = "muted"; value = if (installation.muted) "false" else "true" }
+                                button(classes = "btn-primary btn-danger") {
+                                    type = kotlinx.html.ButtonType.submit
+                                    +if (installation.muted) "Confirm Unmute" else "Confirm Mute"
+                                }
+                            }
+                        }
                     }
                 }
             }
 
             div(classes = "admin-panel") {
                 attributes["style"] = "border-left: 4px solid #3b8b68;"
-                h3 { +"Session Recovery & Logout" }
+                h3 { +"Session Recovery" }
                 p {
                     +"Lost access to this session? Run "
-                    code { +"/manage ${installation.id}" }
+                    code { +"/manage ${installation.id.toString().take(SHORT_ID_LENGTH)}" }
                     +" inside your Telegram installation group to generate a fresh link."
-                }
-                form(action = "$basePath/manage/logout", method = kotlinx.html.FormMethod.post) {
-                    hiddenInput { name = "csrf"; value = csrf }
-                    button(classes = "btn-logout") {
-                        type = kotlinx.html.ButtonType.submit
-                        attributes["style"] = "padding: 0.6rem 1.2rem; min-height: 2.4rem;"
-                        +"Log out"
-                    }
                 }
             }
         }
     }
+
 
 private fun rotatedHtml(
     basePath: String,
@@ -685,6 +724,14 @@ internal fun managementDocument(
           .btn-github:hover { background-color: #1a1612; color: #ffffff; }
           .btn-logout { background-color: #ffffff; color: #a62b1e; border-color: #dfd5c6; cursor: pointer; }
           .btn-logout:hover { background-color: #a62b1e; color: #ffffff; border-color: #a62b1e; }
+          details.confirm-dialog { margin-top: 0.5rem; }
+          details.confirm-dialog summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+          details.confirm-dialog summary::-webkit-details-marker { display: none; }
+          .confirm-content { margin-top: 0.75rem; padding: 0.85rem 1rem; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 0.5rem; color: #742a2a; font-size: 0.85rem; }
+          .confirm-content p { margin: 0 0 0.6rem 0; }
+          .confirm-actions { display: flex; gap: 0.5rem; align-items: center; }
+          .btn-danger { background-color: #a62b1e; color: #ffffff; border: none; }
+          .btn-danger:hover { background-color: #7d2016; }
           *:focus-visible { outline: 2px solid #2b7fa1; outline-offset: 2px; }
           .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; }
           .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
