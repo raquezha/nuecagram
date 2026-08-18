@@ -177,6 +177,8 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             configureTestApplication()
             bootstrapPrivateUser(62)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 62, "administrator")
+            val initialMuteCount = auditActionCount("telegram_mute")
+            val initialUnmuteCount = auditActionCount("telegram_unmute")
 
             assertThat(
                 postTelegram(
@@ -185,7 +187,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Installation muted.")
             assertThat(installationMuted(installation.id)).isTrue()
-            assertThat(auditActionCount("telegram_mute")).isEqualTo(1)
+            assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount + 1)
 
             assertThat(
                 postTelegram(
@@ -194,7 +196,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Installation unmuted.")
             assertThat(installationMuted(installation.id)).isFalse()
-            assertThat(auditActionCount("telegram_unmute")).isEqualTo(1)
+            assertThat(auditActionCount("telegram_unmute")).isEqualTo(initialUnmuteCount + 1)
         }
 
     @Test
@@ -202,6 +204,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         testApplication {
             configureTestApplication()
             val initialAuditCount = auditEventCount()
+            val initialMuteCount = auditActionCount("telegram_mute")
 
             assertThat(
                 postTelegram(
@@ -213,7 +216,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo("Use /start in a private chat before using admin commands.")
             assertThat(installationMuted(installation.id)).isFalse()
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
-            assertThat(auditActionCount("telegram_mute")).isEqualTo(0)
+            assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
         }
 
     private fun bootstrapPrivateUser(userId: Long) {

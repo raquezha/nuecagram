@@ -200,6 +200,43 @@ val InstallationRepositoryTests by testSuite {
             // Pool cleaned up automatically on re-initialization
         }
     }
+
+    postgresTest("filters and paginates platform admin audit events in the database") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val readRepository = platformAdminReadRepository()
+            val inst = repository.createInstallation("https://audit-test.example.com", 111, 222, null)
+
+            val initialAuditCount = readRepository.auditEventsPage(limit = 1).totalCount
+
+            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_setup")
+            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_rotate")
+            repository.writeAuditEvent(inst.id, "management", "2", "management_rotate")
+            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_mute")
+            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_unmute")
+
+            val allEvents = readRepository.auditEventsPage(limit = 2, offset = 0)
+            assertThat(allEvents.totalCount).isEqualTo(initialAuditCount + 5)
+            assertThat(allEvents.items).hasSize(2)
+
+            val setupEvents = readRepository.auditEventsPage(action = "setup", limit = 10)
+            assertThat(setupEvents.totalCount).isEqualTo(1)
+            assertThat(setupEvents.items[0].action).isEqualTo("telegram_setup")
+
+            val rotateEvents = readRepository.auditEventsPage(action = "rotate", limit = 10)
+            assertThat(rotateEvents.totalCount).isEqualTo(2)
+            assertThat(rotateEvents.items.map { it.action })
+                .containsExactlyElementsIn(setOf("management_rotate", "telegram_rotate"))
+
+            val statusEvents = readRepository.auditEventsPage(action = "status_change", limit = 10)
+            assertThat(statusEvents.totalCount).isEqualTo(2)
+            assertThat(statusEvents.items.map { it.action })
+                .containsExactlyElementsIn(setOf("telegram_unmute", "telegram_mute"))
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
 }
 
 private fun repository(): InstallationRepository = InstallationRepository(DatabaseFactory)

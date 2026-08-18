@@ -131,6 +131,64 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun platformAdminAuditExplorerSupportsFiltersPaginationRedactionAndEmptyState() =
+        testApplication {
+            configureTestApplication()
+            val noRedirectClient = client.config { followRedirects = false }
+            val sessionCookie = login(noRedirectClient)
+
+            runBlocking {
+                repeat(21) { index ->
+                    installationRepository.writeAuditEvent(
+                        installationId = installation.id,
+                        actorType = "telegram_user",
+                        actorId = "sensitive-actor-$index",
+                        action = if (index == 20) "telegram_rotate" else "telegram_setup",
+                        metadataJson = "{\"secret\":\"do-not-leak-$index\"}",
+                    )
+                }
+            }
+
+            val pageOne =
+                client.get("${basePath()}/admin/audit") {
+                    header(HttpHeaders.Cookie, sessionCookie)
+                }
+            assertThat(pageOne.status).isEqualTo(HttpStatusCode.OK)
+            val pageOneBody = pageOne.bodyAsText()
+            assertThat(pageOneBody).contains("Audit log explorer")
+            assertThat(pageOneBody).contains("Back to Overview")
+            assertThat(pageOneBody).contains("Showing 1–20 of")
+            assertThat(pageOneBody).contains("Next ›")
+            assertThat(pageOneBody).contains("telegram_setup")
+            assertThat(pageOneBody).doesNotContain("sensitive-actor")
+            assertThat(pageOneBody).doesNotContain("do-not-leak")
+            assertThat(pageOne.headers["Content-Security-Policy"]).contains("default-src 'none'")
+
+            val rotateFilter =
+                client.get("${basePath()}/admin/audit?action=rotate") {
+                    header(HttpHeaders.Cookie, sessionCookie)
+                }
+            assertThat(rotateFilter.status).isEqualTo(HttpStatusCode.OK)
+            val rotateBody = rotateFilter.bodyAsText()
+            assertThat(rotateBody).contains("total")
+            assertThat(rotateBody).contains("telegram_rotate")
+            assertThat(rotateBody).doesNotContain("telegram_setup")
+
+            val readRepo = net.raquezha.nuecagram.db.PlatformAdminReadRepository()
+            val initialStatusChangeCount =
+                readRepo.auditEventsPage(action = "status_change", limit = 1).totalCount
+
+            if (initialStatusChangeCount == 0L) {
+                val emptyFilter =
+                    client.get("${basePath()}/admin/audit?action=status_change") {
+                        header(HttpHeaders.Cookie, sessionCookie)
+                    }
+                assertThat(emptyFilter.status).isEqualTo(HttpStatusCode.OK)
+                assertThat(emptyFilter.bodyAsText()).contains("No audit events match the current filter.")
+            }
+        }
+
+    @Test
     fun platformAdminLoginIsThrottledAfterRepeatedFailures() =
         testApplication {
             configureTestApplication()

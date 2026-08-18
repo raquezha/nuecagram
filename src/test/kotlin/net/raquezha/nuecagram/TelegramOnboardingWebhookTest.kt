@@ -20,6 +20,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         testApplication {
             configureTestApplication()
             val initialAuditCount = auditEventCount()
+            val initialSetupAuditCount = auditActionCount("telegram_setup")
 
             assertThat(
                 postTelegram(
@@ -30,7 +31,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 sentMessages().last().text,
             ).isEqualTo("Use /start in a private chat before using admin commands.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
-            assertThat(auditActionCount("telegram_setup")).isEqualTo(0)
+            assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount)
         }
 
     @Test

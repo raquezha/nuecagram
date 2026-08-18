@@ -60,6 +60,11 @@ data class PlatformAdminInstallationsPage(
     val totalCount: Long,
 )
 
+data class PlatformAdminAuditPage(
+    val items: List<PlatformAdminAuditRecord>,
+    val totalCount: Long,
+)
+
 data class MrParticipants(
     val authorUsername: String?,
     val reviewerUsernames: List<String>,

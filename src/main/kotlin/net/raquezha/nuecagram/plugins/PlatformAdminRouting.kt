@@ -66,6 +66,7 @@ private const val AUDIT_WINDOW_HOURS = 24L
 private const val MAX_PREVIEW_ITEMS = 5
 private const val SHORT_ID_LENGTH = 8
 private const val PLATFORM_ADMIN_INSTALLATIONS_PAGE_SIZE = 20
+private const val PLATFORM_ADMIN_AUDIT_PAGE_SIZE = 20
 
 @Suppress("LongMethod")
 fun Route.platformAdminRouting(basePath: String) {
@@ -238,6 +239,51 @@ fun Route.platformAdminRouting(basePath: String) {
         )
     }
 
+    get("$basePath/admin/audit") {
+        val session = call.platformAdminSession(installationRepository)
+        if (session == null) {
+            call.clearAdminSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.Unauthorized,
+                title = "Platform login required",
+                body = adminLoginRequiredHtml(basePath),
+            )
+            return@get
+        }
+        val csrf = call.request.cookies[ADMIN_CSRF_COOKIE].orEmpty()
+        if (!installationRepository.verifyPlatformAdminCsrf(session, csrf)) {
+            call.clearAdminSession(basePath)
+            call.respondManagementHtml(
+                status = HttpStatusCode.Unauthorized,
+                title = "Platform login required",
+                body = adminLoginRequiredHtml(basePath),
+            )
+            return@get
+        }
+
+        val action = call.request.queryParameters["action"].platformAdminActionFilter()
+        val page = call.request.queryParameters["page"].toPositivePage()
+        val auditPage =
+            platformAdminReadRepository.auditEventsPage(
+                action = action,
+                limit = PLATFORM_ADMIN_AUDIT_PAGE_SIZE,
+                offset = (page - 1L) * PLATFORM_ADMIN_AUDIT_PAGE_SIZE,
+            )
+
+        call.respondManagementHtml(
+            title = "Platform audit log",
+            body =
+                platformAdminAuditHtml(
+                    basePath = basePath,
+                    action = action,
+                    page = page,
+                    auditEvents = auditPage.items,
+                    totalCount = auditPage.totalCount,
+                ),
+            rightHeaderHtml = adminLogoutHeaderButton(basePath, csrf),
+        )
+    }
+
     post("$basePath/admin/logout") {
         val session = call.platformAdminSession(installationRepository)
         val csrf = call.receiveParameters()["csrf"].orEmpty()
@@ -360,6 +406,155 @@ private fun adminLoginRequiredHtml(basePath: String): String =
         a(href = "$basePath/admin/login", classes = "btn-docs") {
             +"Log In"
         }
+    }
+
+private fun adminAuditHref(basePath: String, action: String, page: Long): String {
+    val query = buildList {
+        if (action.isNotBlank()) add("action=${action.urlEncoded()}")
+        if (page > 1) add("page=$page")
+    }.joinToString("&")
+    return if (query.isEmpty()) "$basePath/admin/audit" else "$basePath/admin/audit?$query"
+}
+
+private fun String?.platformAdminActionFilter(): String =
+    when (this?.trim()?.lowercase()) {
+        "setup" -> "setup"
+        "rotate" -> "rotate"
+        "status_change", "status-change", "status change" -> "status_change"
+        else -> ""
+    }
+
+private fun platformAdminAuditHtml(
+    basePath: String,
+    action: String,
+    page: Long,
+    auditEvents: List<PlatformAdminAuditRecord>,
+    totalCount: Long,
+): String {
+    val totalPages = platformAdminAuditTotalPages(totalCount)
+    return createHTML().section(classes = "admin-shell") {
+        auditExplorerHero(basePath)
+        auditExplorerResultsPanel(basePath, action, page, totalPages, auditEvents, totalCount)
+    }
+}
+
+private fun platformAdminAuditTotalPages(totalCount: Long): Long =
+    ((totalCount + PLATFORM_ADMIN_AUDIT_PAGE_SIZE - 1) / PLATFORM_ADMIN_AUDIT_PAGE_SIZE)
+        .coerceAtLeast(1)
+
+private fun FlowContent.auditExplorerHero(basePath: String) {
+    div(classes = "admin-hero") {
+        span(classes = "admin-kicker") { +"Platform administration" }
+        h1 { +"Audit log explorer" }
+        p { +"Inspect historical audit events, filter by activity type, and trace platform state changes." }
+        div {
+            a(href = "$basePath/admin", classes = "table-link") { +"← Back to Overview" }
+        }
+    }
+}
+
+private fun FlowContent.auditActionLink(
+    basePath: String,
+    currentAction: String,
+    targetAction: String,
+    label: String,
+) {
+    a(
+        href = adminAuditHref(basePath, targetAction, 1),
+        classes = if (currentAction == targetAction) "segmented-btn segmented-btn-active" else "segmented-btn",
+    ) { +label }
+}
+
+private fun FlowContent.auditExplorerResultsPanel(
+    basePath: String,
+    action: String,
+    page: Long,
+    totalPages: Long,
+    auditEvents: List<PlatformAdminAuditRecord>,
+    totalCount: Long,
+) {
+    val pageSize = PLATFORM_ADMIN_AUDIT_PAGE_SIZE
+    val startItem = if (totalCount == 0L) 0L else (page - 1) * pageSize + 1
+    val endItem = (page * pageSize).coerceAtMost(totalCount)
+
+    div(classes = "admin-panel table-panel") {
+        div(classes = "segmented-control") {
+            attributes["style"] = "margin-bottom: 1rem;"
+            auditActionLink(basePath, action, "", "All")
+            auditActionLink(basePath, action, "setup", "Setup")
+            auditActionLink(basePath, action, "rotate", "Rotate")
+            auditActionLink(basePath, action, "status_change", "Status Change")
+        }
+        div(classes = "table-header-bar") {
+            h3 { +"Audit Log" }
+            span(classes = "results-count") { +"$totalCount total" }
+        }
+        if (auditEvents.isEmpty()) {
+            div(classes = "empty-state") { +"No audit events match the current filter." }
+        } else {
+            div(classes = "table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { +"Timestamp" }
+                            th { +"Installation ID" }
+                            th { +"Action" }
+                        }
+                    }
+                    tbody { auditEvents.forEach(::platformAdminAuditRow) }
+                }
+            }
+        }
+        div(classes = "table-footer-bar") {
+            span(classes = "pagination-info") { +"Showing $startItem–$endItem of $totalCount" }
+            div(classes = "pagination-controls") {
+                auditPaginationBtn(basePath, action, page > 1, page - 1, "‹ Prev")
+                span(classes = "page-indicator") { +"$page / $totalPages" }
+                auditPaginationBtn(basePath, action, page < totalPages, page + 1, "Next ›")
+            }
+        }
+    }
+}
+
+private fun FlowContent.auditPaginationBtn(
+    basePath: String,
+    action: String,
+    enabled: Boolean,
+    targetPage: Long,
+    label: String,
+) {
+    if (enabled) {
+        a(href = adminAuditHref(basePath, action, targetPage), classes = "btn-pag") { +label }
+    } else {
+        span(classes = "btn-pag btn-pag-disabled") { +label }
+    }
+}
+
+private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
+    tr {
+        td { +event.createdAt.toString() }
+        td {
+            val instIdStr = event.installationId?.toString()?.take(SHORT_ID_LENGTH).orEmpty()
+            if (instIdStr.isNotBlank()) {
+                code { +instIdStr }
+            } else {
+                span { +"System" }
+            }
+        }
+        td {
+            span(classes = auditActionBadgeClass(event.action)) {
+                +event.action
+            }
+        }
+    }
+}
+
+private fun auditActionBadgeClass(action: String): String =
+    when (action) {
+        "telegram_setup" -> "status-badge status-active"
+        "telegram_rotate", "management_rotate" -> "status-badge status-degraded"
+        "telegram_mute", "telegram_unmute" -> "status-badge status-muted"
+        else -> "status-badge"
     }
 
 private fun platformAdminInstallationsHtml(
