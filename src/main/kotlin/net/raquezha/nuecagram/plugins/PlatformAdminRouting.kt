@@ -14,11 +14,35 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.CredentialCodec
+import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminAuditRecord
 import net.raquezha.nuecagram.db.PlatformAdminSessionContext
 import org.koin.ktor.ext.inject
+import kotlinx.html.a
+import kotlinx.html.button
+import kotlinx.html.code
+import kotlinx.html.div
+import kotlinx.html.form
+import kotlinx.html.h1
+import kotlinx.html.h2
+import kotlinx.html.h3
+import kotlinx.html.hiddenInput
+import kotlinx.html.id
+import kotlinx.html.label
+import kotlinx.html.p
+import kotlinx.html.passwordInput
+import kotlinx.html.section
+import kotlinx.html.span
+import kotlinx.html.stream.createHTML
+import kotlinx.html.strong
+import kotlinx.html.table
+import kotlinx.html.tbody
+import kotlinx.html.td
+import kotlinx.html.th
+import kotlinx.html.thead
+import kotlinx.html.tr
 
 private const val ADMIN_SESSION_COOKIE = "nuecagram_admin_session"
 private const val LOGIN_CSRF_COOKIE = "nuecagram_admin_login_csrf"
@@ -30,11 +54,15 @@ private const val LOGIN_CSRF_SECONDS = 10 * SECONDS_PER_MINUTE
 private const val MAX_LOGIN_FAILURES = 5
 private const val MAX_PASSWORD_LENGTH = 1024
 private const val LOGIN_WINDOW_MINUTES = 15L
+private const val AUDIT_WINDOW_HOURS = 24L
+private const val MAX_PREVIEW_ITEMS = 5
+private const val SHORT_ID_LENGTH = 8
 
 @Suppress("LongMethod")
 fun Route.platformAdminRouting(basePath: String) {
     val config by inject<ConfigWithSecrets>()
     val installationRepository by inject<InstallationRepository>()
+    val databaseFactory by inject<DatabaseFactory>()
     val loginThrottle = LoginThrottle()
 
     get("$basePath/admin/login") {
@@ -146,6 +174,7 @@ fun Route.platformAdminRouting(basePath: String) {
                     csrf = csrf,
                     installations = installationRepository.platformAdminInstallations(),
                     auditEvents = installationRepository.platformAdminAuditEvents(),
+                    dbReady = databaseFactory.isReady(),
                 ),
             rightHeaderHtml = adminLogoutHeaderButton(basePath, csrf),
         )
@@ -233,108 +262,217 @@ private fun adminLogoutHeaderButton(basePath: String, csrf: String): String =
     """.trimIndent()
 
 private fun authMessageHtml(title: String, description: String): String =
-    """
-    <div class="auth-card">
-      <h2>${title.html()}</h2>
-      <p class="auth-desc">${description.html()}</p>
-    </div>
-    """.trimIndent()
+    createHTML().div(classes = "auth-card") {
+        h2 { +title }
+        p(classes = "auth-desc") { +description }
+    }
 
 private fun adminLoginHtml(basePath: String, csrf: String, failed: Boolean = false): String =
-    buildString {
-        append("<div class=\"auth-card\">")
-        append("<h2>Platform Login</h2>")
-        append("<p class=\"auth-desc\">Enter admin password to access system installations & audit logs.</p>")
+    createHTML().div(classes = "auth-card") {
+        h2 { +"Platform Login" }
+        p(classes = "auth-desc") { +"Enter admin password to access system installations & audit logs." }
         if (failed) {
-            append("<div class=\"auth-error\">Invalid admin password. Please try again.</div>")
+            div(classes = "auth-error") { +"Invalid admin password. Please try again." }
         }
-        append("<form method=\"post\" action=\"${(basePath + "/admin/login").html()}\" class=\"auth-form\">")
-        append("<input type=\"hidden\" name=\"csrf\" value=\"${csrf.html()}\">")
-        append("<div class=\"form-group\">")
-        append("<label for=\"admin-password\">Platform Password</label>")
-        append("<input type=\"password\" id=\"admin-password\" name=\"password\" ")
-        append("placeholder=\"Enter admin password\" required class=\"input-text\">")
-        append("</div>")
-        append("<button type=\"submit\" class=\"btn-primary\">Log in to Platform</button>")
-        append("</form></div>")
+        form(action = "$basePath/admin/login", method = kotlinx.html.FormMethod.post, classes = "auth-form") {
+            hiddenInput { name = "csrf"; value = csrf }
+            div(classes = "form-group") {
+                label {
+                    htmlFor = "admin-password"
+                    +"Platform Password"
+                }
+                passwordInput(classes = "input-text") {
+                    id = "admin-password"
+                    name = "password"
+                    placeholder = "Enter admin password"
+                    required = true
+                }
+            }
+            button(classes = "btn-primary") {
+                type = kotlinx.html.ButtonType.submit
+                +"Log in to Platform"
+            }
+        }
     }
 
 private fun adminLoginRequiredHtml(basePath: String): String =
-    """
-    <div class="auth-card" style="text-align: center;">
-      <h2>Platform Session Expired</h2>
-      <p class="auth-desc">Please log in to continue accessing platform administration.</p>
-      <a href="${(basePath + "/admin/login").html()}" class="btn-docs" style="display: inline-flex; justify-content: center; width: 100%;">Log In</a>
-    </div>
-    """.trimIndent()
+    createHTML().div(classes = "auth-card") {
+        h2 { +"Platform Session Expired" }
+        p(classes = "auth-desc") { +"Please log in to continue accessing platform administration." }
+        a(href = "$basePath/admin/login", classes = "btn-docs") {
+            +"Log In"
+        }
+    }
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "MaxLineLength")
 private fun platformAdminHtml(
     basePath: String,
     csrf: String,
     installations: List<InstallationAdminContext>,
     auditEvents: List<PlatformAdminAuditRecord>,
-): String =
-    buildString {
-        append("<section class=\"admin-shell\">")
-        append("<div class=\"admin-hero\">")
-        append("<span class=\"admin-kicker\">Platform administration</span>")
-        append("<h1>Operations dashboard</h1>")
-        append("<p>Inspect active installations, review recent audit activity, and sign out when you are done.</p>")
-        append("<div class=\"admin-meta\">")
-        append("<div class=\"admin-meta-card meta-installations\"><strong>Installations</strong>")
-        append("<div class=\"stat-val\">${installations.size}</div></div>")
-        append("<div class=\"admin-meta-card meta-audit\"><strong>Audit events</strong>")
-        append("<div class=\"stat-val\">${auditEvents.size}</div></div>")
-        append("<div class=\"admin-meta-card meta-recovery\"><strong>Recovery</strong>")
-        append("<div class=\"stat-val\" style=\"font-size: 0.95rem;\">Telegram verified flow</div></div>")
-        append("</div></div>")
-        append("<div class=\"admin-panel\"><h3>Installations</h3><div class=\"table-wrapper\"><table><thead><tr>")
-        append("<th>ID</th><th>GitLab</th><th>Project</th><th>Status</th>")
-        append("</tr></thead><tbody>")
-        installations.forEach { installation ->
-            val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
-            val gitlabCell =
-                if (gitlabUrl.startsWith("http")) {
-                    "<a href=\"${gitlabUrl.html()}\" target=\"_blank\" rel=\"noopener\" class=\"table-link\">" +
-                        "<span>${gitlabUrl.html()}</span>" +
-                        "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" " +
-                        "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" " +
-                        "stroke-linejoin=\"round\" style=\"margin-left: 0.35rem;\">" +
-                        "<path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6\"/>" +
-                        "<polyline points=\"15 3 21 3 21 9\"/>" +
-                        "<line x1=\"10\" y1=\"14\" x2=\"21\" y2=\"3\"/></svg></a>"
-                } else {
-                    gitlabUrl.html()
+    dbReady: Boolean = true,
+): String {
+    val now = Instant.now()
+    val activeCount = installations.count { !it.muted }
+    val mutedCount = installations.count { it.muted }
+    val audit24hCount = auditEvents.count { it.createdAt.isAfter(now.minus(AUDIT_WINDOW_HOURS, ChronoUnit.HOURS)) }
+    val previewInstallations = installations.take(MAX_PREVIEW_ITEMS)
+    val previewAuditEvents = auditEvents.take(MAX_PREVIEW_ITEMS)
+
+    return createHTML().section(classes = "admin-shell") {
+        div(classes = "admin-hero") {
+            span(classes = "admin-kicker") { +"Platform administration" }
+            h1 { +"Operations dashboard" }
+            p { +"Inspect active installations, review recent audit activity, and sign out when you are done." }
+            div(classes = "admin-meta") {
+                div(classes = "admin-meta-card meta-installations") {
+                    strong { +"Active installations" }
+                    div(classes = "stat-val") { +activeCount.toString() }
                 }
-            val projectCell =
-                installation.gitlabProjectId?.let { "<code>$it</code>" }
-                    ?: "<span style=\"color:#6e6154;\">Group-level</span>"
-            val statusCell =
-                if (installation.muted) {
-                    "<span class=\"status-badge status-muted\"><span class=\"status-dot\"></span>Muted</span>"
-                } else {
-                    "<span class=\"status-badge status-active\"><span class=\"status-dot\"></span>Active</span>"
+                div(classes = "admin-meta-card meta-muted") {
+                    strong { +"Muted installations" }
+                    div(classes = "stat-val") { +mutedCount.toString() }
                 }
-            append("<tr><td><code>${installation.id.toString().html()}</code></td>")
-            append("<td>$gitlabCell</td>")
-            append("<td>$projectCell</td>")
-            append("<td>$statusCell</td></tr>")
+                div(classes = "admin-meta-card meta-audit") {
+                    strong { +"24h Audit events" }
+                    div(classes = "stat-val") { +audit24hCount.toString() }
+                }
+                div(classes = "admin-meta-card meta-status") {
+                    strong { +"System status" }
+                    div(classes = "stat-val") {
+                        if (!dbReady) {
+                            span(classes = "status-badge status-muted") {
+                                span(classes = "status-dot")
+                                +"Database Outage"
+                            }
+                        } else if (mutedCount > 0) {
+                            span(classes = "status-badge status-degraded") {
+                                span(classes = "status-dot")
+                                +"Degraded ($mutedCount muted)"
+                            }
+                        } else {
+                            span(classes = "status-badge status-active") {
+                                span(classes = "status-dot")
+                                +"Operational"
+                            }
+                        }
+                    }
+                }
+            }
         }
-        append("</tbody></table></div></div>")
-        append("<div class=\"admin-panel\"><h3>Recent audit events</h3><div class=\"table-wrapper\"><table><thead><tr>")
-        append("<th>Time</th><th>Installation</th><th>Action</th>")
-        append("</tr></thead><tbody>")
-        auditEvents.forEach { event ->
-            append("<tr><td>${event.createdAt.toString().html()}</td>")
-            append("<td>${event.installationId?.toString()?.html().orEmpty()}</td>")
-            append("<td>${event.action.html()}</td></tr>")
+
+        div(classes = "admin-panel") {
+            h3 { +"Recent installations (5 max)" }
+            div(classes = "table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { +"ID" }
+                            th { +"GitLab" }
+                            th { +"Project" }
+                            th { +"Status" }
+                        }
+                    }
+                    tbody {
+                        if (previewInstallations.isEmpty()) {
+                            tr {
+                                td {
+                                    colSpan = "4"
+                                    +"No installations recorded yet"
+                                }
+                            }
+                        } else {
+                            previewInstallations.forEach { installation ->
+                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
+                                tr {
+                                    td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
+                                    td {
+                                        if (gitlabUrl.startsWith("http")) {
+                                            a(href = gitlabUrl, target = "_blank", classes = "table-link") {
+                                                rel = "noopener"
+                                                span { +gitlabUrl }
+                                            }
+                                        } else {
+                                            +gitlabUrl
+                                        }
+                                    }
+                                    td {
+                                        if (installation.gitlabProjectId != null) {
+                                            code { +installation.gitlabProjectId.toString() }
+                                        } else {
+                                            span { +"Group-level" }
+                                        }
+                                    }
+                                    td {
+                                        if (installation.muted) {
+                                            span(classes = "status-badge status-muted") {
+                                                span(classes = "status-dot")
+                                                +"Muted"
+                                            }
+                                        } else {
+                                            span(classes = "status-badge status-active") {
+                                                span(classes = "status-dot")
+                                                +"Active"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            div {
+                a(href = "$basePath/admin/installations", classes = "table-link") {
+                    +"View all installations →"
+                }
+            }
         }
-        append("</tbody></table></div></div>")
-        append("<div class=\"admin-panel\"><h3>Recovery</h3>")
-        append("<p>Credential recovery is delivered only through the verified Telegram administrator flow.</p></div>")
-        append("</section>")
+
+        div(classes = "admin-panel") {
+            h3 { +"Recent audit events (5 max)" }
+            div(classes = "table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { +"Time" }
+                            th { +"Installation" }
+                            th { +"Action" }
+                        }
+                    }
+                    tbody {
+                        if (previewAuditEvents.isEmpty()) {
+                            tr {
+                                td {
+                                    colSpan = "3"
+                                    +"No audit activity in past 24 hours"
+                                }
+                            }
+                        } else {
+                            previewAuditEvents.forEach { event ->
+                                tr {
+                                    td { +event.createdAt.toString() }
+                                    td { +(event.installationId?.toString()?.take(SHORT_ID_LENGTH).orEmpty()) }
+                                    td { +event.action }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            div {
+                a(href = "$basePath/admin/audit", classes = "table-link") {
+                    +"Explore audit logs →"
+                }
+            }
+        }
+
+        div(classes = "admin-panel") {
+            h3 { +"Recovery" }
+            p { +"Credential recovery is delivered only through the verified Telegram administrator flow." }
+        }
     }
+}
 
 private fun String.redactedUrl(): String =
     runCatching {

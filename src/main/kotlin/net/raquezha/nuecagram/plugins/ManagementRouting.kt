@@ -450,6 +450,8 @@ internal fun managementDocument(
           .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
           .status-active { color: #2a684d; }
           .status-active .status-dot { background: #2a684d; box-shadow: 0 0 0 2px rgba(42,104,77,0.18); }
+          .status-degraded { color: #b45309; }
+          .status-degraded .status-dot { background: #d97706; box-shadow: 0 0 0 2px rgba(217,119,6,0.18); }
           .status-muted { color: #a62b1e; }
           .status-muted .status-dot { background: #a62b1e; }
           .empty-state { padding: 2rem; text-align: center; color: #6e6154; font-size: 0.9rem; }
