@@ -496,71 +496,6 @@ private fun manageHtml(
             p { +"Review active target metadata, rotate GitLab webhook credentials, or toggle delivery mute state." }
         }
 
-        div(classes = "admin-panel table-panel") {
-            div(classes = "table-header-bar") {
-                h3 { +"Installation Details" }
-            }
-            div(classes = "table-wrapper") {
-                table {
-                    thead {
-                        tr {
-                            th { +"ID" }
-                            th { +"GitLab Base URL" }
-                            th { +"Project ID" }
-                            th { +"Telegram Destination" }
-                            th { +"State" }
-                        }
-                    }
-                    tbody {
-                        tr {
-                            td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
-                            td {
-                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
-                                if (gitlabUrl.startsWith("http")) {
-                                    a(href = gitlabUrl, target = "_blank", classes = "table-link") {
-                                        rel = "noopener"
-                                        span { +gitlabUrl }
-                                        unsafe {
-                                            +EXTERNAL_LINK_SVG_ICON
-                                        }
-                                    }
-                                } else {
-                                    +gitlabUrl
-                                }
-                            }
-                            td {
-                                if (installation.gitlabProjectId != null) {
-                                    code { +installation.gitlabProjectId.toString() }
-                                } else {
-                                    span { +"Group-level" }
-                                }
-                            }
-                            td {
-                                if (installation.telegramTopicId != null) {
-                                    code { +"Topic #${installation.telegramTopicId}" }
-                                } else {
-                                    span { +"Group Chat" }
-                                }
-                            }
-                            td {
-                                if (installation.muted) {
-                                    span(classes = "status-badge status-muted") {
-                                        span(classes = "status-dot")
-                                        +"Muted"
-                                    }
-                                } else {
-                                    span(classes = "status-badge status-active") {
-                                        span(classes = "status-dot")
-                                        +"Active"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         div(classes = "admin-panel") {
             h3 { +"Management Controls" }
             div(classes = "control-rows") {
@@ -647,6 +582,71 @@ private fun manageHtml(
                 }
             }
         }
+
+        div(classes = "admin-panel") {
+            h3 { +"Installation Details" }
+            div(classes = "table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { +"ID" }
+                            th { +"GitLab Base URL" }
+                            th { +"Project ID" }
+                            th { +"Telegram Destination" }
+                            th { +"State" }
+                        }
+                    }
+                    tbody {
+                        tr {
+                            td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
+                            td {
+                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
+                                if (gitlabUrl.startsWith("http")) {
+                                    a(href = gitlabUrl, target = "_blank", classes = "table-link") {
+                                        rel = "noopener"
+                                        span { +gitlabUrl }
+                                        unsafe {
+                                            +EXTERNAL_LINK_SVG_ICON
+                                        }
+                                    }
+                                } else {
+                                    +gitlabUrl
+                                }
+                            }
+                            td {
+                                if (installation.gitlabProjectId != null) {
+                                    code { +installation.gitlabProjectId.toString() }
+                                } else {
+                                    span { +"Group-level" }
+                                }
+                            }
+                            td {
+                                if (installation.telegramTopicId != null) {
+                                    code { +"Topic #${installation.telegramTopicId}" }
+                                } else {
+                                    span { +"Group Chat" }
+                                }
+                            }
+                            td {
+                                if (installation.muted) {
+                                    span(classes = "status-badge status-muted") {
+                                        span(classes = "status-dot")
+                                        +"Muted"
+                                    }
+                                } else {
+                                    span(classes = "status-badge status-active") {
+                                        span(classes = "status-dot")
+                                        +"Active"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+
     }
 
 
@@ -734,12 +734,13 @@ internal fun managementDocument(
           .confirm-content p { margin: 0 0 0.6rem 0; line-height: 1.4; }
           .confirm-actions { display: flex; gap: 0.5rem; align-items: center; }
           .control-rows { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 0.85rem; }
-          .control-row { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 0.85rem; padding: 1rem 1.15rem; background: rgba(255, 255, 255, 0.7); border: 1px solid #dfd5c6; border-radius: 0.5rem; transition: background 0.15s ease; }
+          .control-row { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; gap: 0.85rem; padding: 1rem 1.25rem; background: rgba(255, 255, 255, 0.7); border: 1px solid #dfd5c6; border-radius: 0.5rem; transition: background 0.15s ease; }
           .control-row:hover { background: rgba(255, 255, 255, 0.95); }
           .control-info strong { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; color: #1a1612; margin-bottom: 0.2rem; }
           .control-info p { margin: 0; font-size: 0.825rem; color: #6e6154; }
           .control-action { flex-shrink: 0; }
-          .recovery-notice { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.25rem; padding: 0.75rem 1rem; background: #eae2d6; border-radius: 0.375rem; font-size: 0.825rem; color: #5c5146; line-height: 1.45; }
+          .control-action summary { width: 11.5rem; height: 2.35rem; padding: 0; box-sizing: border-box; }
+          .recovery-notice { display: flex; align-items: center; gap: 0.6rem; margin-top: 1.25rem; padding: 0.85rem 1.25rem; background: #eae2d6; border-radius: 0.375rem; font-size: 0.825rem; color: #5c5146; line-height: 1.45; }
           @media (min-width: 640px) {
             .control-row { flex-direction: row; align-items: center; }
           }
@@ -795,7 +796,7 @@ internal fun managementDocument(
           .segmented-btn-active { background: #ffffff; color: #1a1612; box-shadow: 0 1px 3px rgba(45, 30, 15, 0.1); }
           .segmented-btn-active:hover { color: #1a1612; }
           .table-panel { padding: 0; overflow: hidden; }
-          .table-header-bar { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.25rem 0.75rem 1.25rem; border-bottom: 1px solid #eee4d5; }
+          .table-header-bar { display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem 0.5rem 1.25rem; }
           .table-header-bar h3 { margin: 0; }
           .results-count { font-size: 0.8rem; font-weight: 600; color: #8c7f70; text-transform: uppercase; letter-spacing: 0.04em; }
           .table-panel .table-wrapper { margin: 0; border: none; }
@@ -812,14 +813,14 @@ internal fun managementDocument(
           .filter-chip:hover { color: #2b7fa1; border-color: #9bc8da; background: #f7fbfd; text-decoration: none; box-shadow: 0 2px 6px rgba(43, 127, 161, 0.12); }
           .filter-chip-active { border-color: #1c8bc0; background: #229ed9; color: #ffffff; box-shadow: 0 4px 12px rgba(34, 158, 217, 0.22); }
           .filter-chip-active:hover { color: #ffffff; border-color: #1c8bc0; background: #1c8cc3; }
-          .table-wrapper { width: 100%; overflow-x: auto; margin: 1rem 0 2rem 0; -webkit-overflow-scrolling: touch; }
+          .table-wrapper { width: 100%; overflow-x: auto; margin-top: 0.85rem; -webkit-overflow-scrolling: touch; }
           .table-wrapper::-webkit-scrollbar { height: 6px; }
           .table-wrapper::-webkit-scrollbar-track { background: #eee4d5; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb { background: #c8b9a6; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb:hover { background: #a89986; }
           table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
-          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
-          td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
+          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1.25rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
+          td { padding: 0.75rem 1.25rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
           tr:last-child td { border-bottom: none; }
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
@@ -854,7 +855,7 @@ internal fun managementDocument(
             .docs-card { flex-direction: row; align-items: center; justify-content: space-between; }
             .auth-card { padding: 2rem; margin: 2rem auto; }
             .admin-shell { gap: 1.25rem; }
-            .admin-hero { padding: 1.6rem; }
+            .admin-hero, .admin-panel { padding: 1.5rem; }
             .admin-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); }
             .toolbar-form { flex-direction: row; align-items: center; }
             .segmented-control { align-self: auto; }
