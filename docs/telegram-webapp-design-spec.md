@@ -391,14 +391,139 @@ The page must not require JavaScript-disabled support inside Telegram, but all d
 - Use HTTPS, `Cache-Control: no-store`, restrictive CSP, `Referrer-Policy: no-referrer`, and secure, short-lived cookies.
 - Log action type and actor identity, never raw credentials or `initData`.
 
-### 7.8 Accessibility and Mobile Requirements
+### 7.9 BotFather Provisioning & Bot API Capability Matrix
 
-- Minimum 44px touch targets for primary controls.
-- Visible keyboard focus and sufficient contrast in light and dark Telegram themes.
-- Labels must remain visible; do not use placeholder text as the only label.
-- Error text must be adjacent to the invalid field and announced accessibly.
-- Support narrow screens, dynamic viewport height, keyboard opening, safe-area insets, and long GitLab URLs without horizontal scrolling.
-- Keep the primary action reachable without requiring a precise swipe gesture.
+To register the Telegram Mini App globally with BotFather:
+
+1. **Configure Mini App URL**:
+   - Open `@BotFather` -> `/mybots` -> Select Bot -> **Bot Settings** -> **Configure Mini App** -> **Enable Mini App**.
+   - Set URL: `${NUECAGRAM_PUBLIC_URL}/webapp`.
+2. **Configure Menu Button**:
+   - Set Bot Menu Button via BotFather or dynamically via Bot API: `setChatMenuButton`.
+   - Payload: `{"menu_button": {"type": "web_app", "text": "Manage Bot", "web_app": {"url": "${NUECAGRAM_PUBLIC_URL}/webapp"}}}`.
+3. **Inline Keyboard Buttons in Slash Commands**:
+   - When responding to `/start`, `/setup`, `/manage`, `/status`, attached inline keyboards use `InlineKeyboardButton` with `web_app = WebAppInfo(url = "${NUECAGRAM_PUBLIC_URL}/webapp?startapp=...")`.
+
+### 7.10 Kotlin Serialization & Bot API Data Model Extensions
+
+To support Web App launch buttons and payload parsing in `TelegramUpdateHandler`, extend `net.raquezha.nuecagram.telegram`:
+
+```kotlin
+@Serializable
+data class WebAppInfo(
+    val url: String,
+)
+
+@Serializable
+data class InlineKeyboardButton(
+    val text: String,
+    @SerialName("web_app")
+    val webApp: WebAppInfo? = null,
+    @SerialName("callback_data")
+    val callbackData: String? = null,
+)
+
+@Serializable
+data class InlineKeyboardMarkup(
+    @SerialName("inline_keyboard")
+    val inlineKeyboard: List<List<InlineKeyboardButton>>,
+)
+
+@Serializable
+data class WebAppData(
+    val data: String,
+    @SerialName("button_text")
+    val buttonText: String,
+)
+```
+
+### 7.11 Launch Nonce & Secure Context Resolution Architecture
+
+Because Telegram `initData` does not guarantee a `chat` object in all launch modes (e.g. menu button launch from a group chat), Nuecagram implements a **Server-Issued Launch Nonce Model**:
+
+```text
+[ Telegram Group / Topic Chat ]
+            │
+            ├─ 1. User runs /manage or /setup
+            ▼
+[ Backend: TelegramUpdateHandler ]
+            │
+            ├─ 2. Generates 10-min Single-Use Launch Nonce (UUID + HMAC)
+            ├─ 3. Stores in `telegram_launch_nonces` table:
+            │     { nonce_digest, telegramChatId, telegramTopicId, actorUserId, expiresAt }
+            │
+            ▼
+[ Sent Telegram Response Message ]
+            │  Inline Keyboard Button:
+            │  web_app = WebAppInfo("${NUECAGRAM_PUBLIC_URL}/webapp?startapp=nonce_<raw_nonce>")
+            ▼
+[ User Clicks Web App Button ]
+            │  Client sends raw `initData` + `startapp` parameter to `POST /api/webapp/auth`
+            ▼
+[ Backend Web App Auth Handler ]
+            │
+            ├─ 4. Validates initData HMAC hash
+            ├─ 5. Consumes launch nonce from DB (single-use check)
+            ├─ 6. Binds validated user to `telegramChatId` and `telegramTopicId`
+            └─ 7. Issues `nuecagram_webapp_session` cookie + CSRF token
+```
+
+### 7.12 Telegram Admin Authorization & Access Control Rules
+
+- **Group-Bound Access**: Backend queries `telegramService.chatMemberStatus(telegramChatId, telegramUserId)`. Only `creator` or `administrator` statuses pass.
+- **Admin Status Cache**: To prevent hitting Telegram API rate limits during active management sessions, admin status is cached in memory for 300 seconds (5 minutes) per `(telegramChatId, telegramUserId)`.
+- **DM Multi-Group Access**: In private DM context, backend lists all installations where `telegramChatId` matches a group where the user is an authorized admin.
+
+### 7.13 Session Storage, Replay Protection, & Database Schema
+
+Extend `src/main/kotlin/net/raquezha/nuecagram/db/Tables.kt`:
+
+1. **`telegram_launch_nonces` Table**:
+   - `id`: UUID (Primary Key)
+   - `nonce_digest`: ByteArray (SHA-256)
+   - `telegram_chat_id`: Long
+   - `telegram_topic_id`: Long (Nullable)
+   - `telegram_user_id`: Long
+   - `expires_at`: Instant (10 minutes)
+   - `consumed_at`: Instant (Nullable)
+
+2. **`telegram_webapp_nonces` Table (Replay Protection)**:
+   - `hash_digest`: ByteArray (Primary Key)
+   - `created_at`: Instant
+
+3. **`webapp_sessions` Table**:
+   - `id`: UUID (Primary Key)
+   - `telegram_user_id`: Long
+   - `telegram_chat_id`: Long (Nullable)
+   - `telegram_topic_id`: Long (Nullable)
+   - `token_digest`: ByteArray
+   - `token_hash`: String
+   - `csrf_digest`: ByteArray
+   - `csrf_hash`: String
+   - `expires_at`: Instant (8 hours)
+
+### 7.14 Security Headers & Content-Security-Policy (CSP)
+
+Web App route `$basePath/webapp` responds with the following hardened headers:
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; frame-ancestors 'none';
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
+
+### 7.15 Bot API Rate Limiting & Resilience Policy
+
+- **Group Dispatch Limit**: Max 20 messages per minute per chat.
+- **Private DM Dispatch Limit**: Max 30 messages per second.
+- **HTTP 429 Retry Strategy**: On Telegram `429 Too Many Requests`, parse `retry_after` header/body, delay coroutine execution, and retry up to 3 times before returning a structured error.
+- **HTTP 403 / Bot Removal**: If `getChatMember` or message send returns `403 Forbidden` (bot kicked or DM blocked), flag installation state as `Degraded` in database and append audit log.
+
+---
 
 ## 8. Implementation Slices Validation (#102 - #105)
 
@@ -406,10 +531,11 @@ The implementation of Telegram Web App-first UX is decomposed into four sequenti
 
 ### Issue #102: Telegram Web App launch, auth, and session foundation
 - **Deliverables**:
-  - `TelegramWebAppData` parser and HMAC-SHA256 validator class.
+  - `TelegramWebAppData` parser and HMAC-SHA256 validator class in `net.raquezha.nuecagram.telegram`.
+  - Launch Nonce table and issuer (`telegram_launch_nonces`).
   - `$basePath/api/webapp/auth` endpoint and Web App session cookie handler.
-  - Ktor routing shell for `$basePath/webapp` serving Telegram Web App HTML entrypoint.
-  - Integration tests validating valid/invalid HMAC signatures and session creation.
+  - Ktor routing shell for `$basePath/webapp` serving Telegram Web App HTML entrypoint with hardened CSP headers.
+  - Integration tests validating valid/invalid HMAC signatures, replay protection, and session creation.
 
 ### Issue #103: Context-aware Telegram Web App installation dashboard and actions
 - **Deliverables**:
@@ -417,6 +543,21 @@ The implementation of Telegram Web App-first UX is decomposed into four sequenti
   - Context resolution logic filtering installations by `telegramChatId` and `telegramTopicId`.
   - HTML/CSS Dashboard interface with installation cards, status badges, mute toggle, and test delivery button.
   - Integration tests for context-filtering and authorization boundaries.
+
+### Issue #104: Guided setup wizard and secure secret delivery for Telegram Web App
+- **Deliverables**:
+  - Setup Wizard UI flow in Web App for connecting new GitLab projects.
+  - Endpoint `POST /api/webapp/installations` for creation and `POST /api/webapp/installations/{id}/rotate` for secret rotation.
+  - One-time credential view component with copy helpers and DM bootstrap validation.
+  - Integration tests for installation creation, secret issuing, and rotation audit events.
+
+### Issue #105: Polish rollout, fallback, and test coverage for Telegram Web App-first UX
+- **Deliverables**:
+  - Updated `TelegramUpdateHandler` attaching Inline Web App buttons to `/start`, `/setup`, and `/manage` replies.
+  - Updated `docs/onboarding.md` and `README.md` reflecting Web App-first management.
+  - Complete integration test suite verifying slash command fallbacks alongside Web App endpoints.
+  - Pre-commit & CI gate verification (`lintKotlinMain`, `detekt`, `test`, `build`).
+
 
 ### Issue #104: Guided setup wizard and secure secret delivery for Telegram Web App
 - **Deliverables**:
