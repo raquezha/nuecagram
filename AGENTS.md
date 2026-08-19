@@ -142,10 +142,22 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - Subsequent events update the existing message
 - Shows job tree with status icons and timing
 
-## Code Style (Kotlinter/ktlint enforced)
+## Code Style (Kotlinter/ktlint & detekt enforced)
 - Wildcard imports are allowed (ktlint rule disabled in `.editorconfig`)
 - Remove trailing whitespace; ensure files end with newline
 - Generated code in `generated/` is excluded from linting
+
+## SOLID Principles & Clean Kotlin Guidelines
+- **SOLID Architecture**:
+  - **Single Responsibility (SRP)**: Keep handler functions, routes, and services focused on one responsibility. Separate request parsing and validation from execution/dispatch.
+  - **Open-Closed (OCP)**: Use sealed interfaces and polymorphic handlers rather than modifying core routing when adding capabilities.
+  - **Interface Segregation (ISP) & Dependency Inversion (DIP)**: Define focused interfaces (`TelegramService`, `InstallationRepository`) and inject dependencies via Koin.
+- **Detekt Guidelines**:
+  - Maintain low cyclomatic and cognitive complexity. Avoid code smells like `CyclomaticComplexMethod`, `LongMethod`, or `TooManyFunctions`.
+  - Keep function length short and focused.
+- **Single Return & Idiomatic Kotlin**:
+  - Prefer single return points or single expression bodies (`= when { ... }`) over multiple scattered `return` guards in main logic methods when applicable.
+  - Prefer Kotlin `when` expressions, `takeIf`, `runCatching`, and functional constructs over multiple nested `if` statements.
 
 ## Naming Conventions
 - **Packages:** lowercase dot-separated (`net.raquezha.nuecagram`)

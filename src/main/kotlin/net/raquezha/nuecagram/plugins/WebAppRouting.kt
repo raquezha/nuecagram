@@ -435,43 +435,61 @@ private suspend fun ApplicationCall.handleRotateInstallation(
     config: ConfigWithSecrets,
     basePath: String,
 ) {
-    val session = authenticateWebAppSession(installationRepository) ?: return
-    if (!verifyAdminStatus(session, telegramService)) return
-    if (!verifyCsrfHeader(installationRepository, session)) return
-    val dmId = installationRepository.telegramPrivateChatId(session.telegramUserId)
-    if (dmId == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
-        return
+    val spec = processRotateInstallation(installationRepository, telegramService, config, basePath)
+    if (spec != null) {
+        appendWebAppSecurityHeaders()
+        respond(spec.status, spec.payload)
     }
-    val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-    if (idParam == null) {
-        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
-        return
-    }
-    val item = installationRepository.installationAdminContext(idParam)
-    if (item == null || !session.canAccess(item)) {
-        respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
-        return
-    }
-    val tok = installationRepository.rotateWebhookSecret(
-        installationId = item.id,
-        graceUntil = java.time.Instant.now(),
-    )
-    installationRepository.writeAuditEvent(
-        installationId = item.id,
-        actorType = "webapp_session",
-        actorId = session.telegramUserId.toString(),
-        action = "webapp_rotate",
-    )
-    appendWebAppSecurityHeaders()
-    respond(HttpStatusCode.OK, RotateResponsePayload(id = item.id.toString(), credential = tok.raw))
 }
 
-private fun WebAppSessionContext.canAccess(item: InstallationAdminContext): Boolean {
-    if (telegramChatId == null) return false
-    if (item.telegramChatId != telegramChatId) return false
-    if (telegramTopicId != null && item.telegramTopicId != telegramTopicId) return false
-    return true
+private suspend fun ApplicationCall.processRotateInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    config: ConfigWithSecrets,
+    basePath: String,
+): WebAppResponseSpec? {
+    val session = authenticateWebAppSession(installationRepository) ?: return null
+    if (!verifyAdminStatus(session, telegramService)) return null
+    if (!verifyCsrfHeader(installationRepository, session)) return null
+
+    val dmId = installationRepository.telegramPrivateChatId(session.telegramUserId)
+    val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+    val item = if (idParam != null) installationRepository.installationAdminContext(idParam) else null
+
+    return when {
+        dmId == null -> {
+            respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
+            null
+        }
+        idParam == null -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+            null
+        }
+        item == null || !session.canAccess(item) -> {
+            respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+            null
+        }
+        else -> {
+            val tok = installationRepository.rotateWebhookSecret(
+                installationId = item.id,
+                graceUntil = java.time.Instant.now(),
+            )
+            installationRepository.writeAuditEvent(
+                installationId = item.id,
+                actorType = "webapp_session",
+                actorId = session.telegramUserId.toString(),
+                action = "webapp_rotate",
+            )
+            WebAppResponseSpec(HttpStatusCode.OK, RotateResponsePayload(id = item.id.toString(), credential = tok.raw))
+        }
+    }
+}
+
+private fun WebAppSessionContext.canAccess(item: InstallationAdminContext): Boolean = when {
+    telegramChatId == null -> false
+    item.telegramChatId != telegramChatId -> false
+    telegramTopicId != null && item.telegramTopicId != telegramTopicId -> false
+    else -> true
 }
 
 private suspend fun ApplicationCall.verifyAdminStatus(
