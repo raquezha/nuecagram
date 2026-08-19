@@ -304,7 +304,13 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             rotationDetailsText(config, authorized.installation, credential.raw, managementLink.raw),
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
+        val markup = webAppLauncherMarkup(
+            message.chat.id,
+            message.messageThreadId,
+            authorized.actorId,
+            "Open Dashboard in Web App",
+        )
+        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private suspend fun authorizeGroupAdmin(
