@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package net.raquezha.nuecagram.plugins
 
 import io.ktor.http.ContentType
@@ -22,6 +24,7 @@ import net.raquezha.nuecagram.db.WebAppSessionContext
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramWebAppAuth
+import net.raquezha.nuecagram.configuredPublicUrl
 import org.koin.ktor.ext.inject
 
 private const val WEBAPP_SESSION_COOKIE_NAME = "nuecagram_webapp_session"
@@ -86,6 +89,25 @@ private data class ErrorResponsePayload(
     val error: String,
 )
 
+@Serializable
+private data class CreateInstallationRequestPayload(
+    val gitlabBaseUrl: String,
+    val gitlabProjectId: Long,
+)
+
+@Serializable
+private data class CreateInstallationResponsePayload(
+    val installation: InstallationResponsePayload,
+    val credential: String,
+    val webhookUrl: String,
+)
+
+@Serializable
+private data class RotateResponsePayload(
+    val id: String,
+    val credential: String,
+)
+
 fun Route.webAppRouting(basePath: String) {
     val installationRepository by inject<InstallationRepository>()
     val telegramService by inject<TelegramService>()
@@ -128,6 +150,14 @@ fun Route.webAppRouting(basePath: String) {
 
     post("$basePath/api/webapp/installations/{id}/test") {
         call.handleTestInstallation(installationRepository, telegramService)
+    }
+
+    post("$basePath/api/webapp/installations") {
+        call.handleCreateInstallation(installationRepository, telegramService, config, json, basePath)
+    }
+
+    post("$basePath/api/webapp/installations/{id}/rotate") {
+        call.handleRotateInstallation(installationRepository, telegramService, config, basePath)
     }
 }
 
@@ -314,12 +344,152 @@ private suspend fun ApplicationCall.handleTestInstallation(
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, TestResponsePayload(success = true, message = "Test delivery dispatched."))
 }
+private data class WebAppResponseSpec(
+    val status: HttpStatusCode,
+    val payload: Any,
+)
 
-private fun WebAppSessionContext.canAccess(item: InstallationAdminContext): Boolean {
-    if (telegramChatId == null) return false
-    if (item.telegramChatId != telegramChatId) return false
-    if (telegramTopicId != null && item.telegramTopicId != telegramTopicId) return false
-    return true
+private suspend fun ApplicationCall.handleCreateInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    config: ConfigWithSecrets,
+    json: Json,
+    basePath: String,
+) {
+    val spec = processCreateInstallation(installationRepository, telegramService, config, json, basePath)
+    if (spec != null) {
+        appendWebAppSecurityHeaders()
+        respond(spec.status, spec.payload)
+    }
+}
+
+private suspend fun ApplicationCall.processCreateInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    config: ConfigWithSecrets,
+    json: Json,
+    basePath: String,
+): WebAppResponseSpec? {
+    val session = authenticateWebAppSession(installationRepository) ?: return null
+    if (!verifyAdminStatus(session, telegramService)) return null
+    if (!verifyCsrfHeader(installationRepository, session)) return null
+
+    val chatId = session.telegramChatId
+    val dmId = if (chatId != null) installationRepository.telegramPrivateChatId(session.telegramUserId) else null
+    val bodyText = receiveText()
+    val parsed = runCatching { json.decodeFromString<CreateInstallationRequestPayload>(bodyText) }.getOrNull()
+
+    return when {
+        chatId == null -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Session has no Telegram context"))
+            null
+        }
+        dmId == null -> {
+            respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
+            null
+        }
+        parsed == null || parsed.gitlabBaseUrl.isBlank() -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Missing or invalid payload"))
+            null
+        }
+        !parsed.gitlabBaseUrl.startsWith("https://") -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("gitlabBaseUrl must start with https://"))
+            null
+        }
+        else -> {
+            val installation = installationRepository.createInstallation(
+                gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
+                gitlabProjectId = parsed.gitlabProjectId,
+                telegramChatId = chatId,
+                telegramTopicId = session.telegramTopicId,
+            )
+            val tok = installationRepository.issueWebhookSecret(installation.id)
+            installationRepository.writeAuditEvent(
+                installationId = installation.id,
+                actorType = "webapp_session",
+                actorId = session.telegramUserId.toString(),
+                action = "webapp_setup",
+            )
+            WebAppResponseSpec(
+                HttpStatusCode.Created,
+                toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
+            )
+        }
+    }
+}
+
+private fun toCreateResponse(
+    r: net.raquezha.nuecagram.db.InstallationRecord,
+    t: net.raquezha.nuecagram.db.IssuedCredential,
+    url: String,
+): CreateInstallationResponsePayload =
+    CreateInstallationResponsePayload(
+        installation = r.toAdminContext(muted = false).toResponsePayload(),
+        credential = t.raw,
+        webhookUrl = url,
+    )
+
+private suspend fun ApplicationCall.handleRotateInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    config: ConfigWithSecrets,
+    basePath: String,
+) {
+    val spec = processRotateInstallation(installationRepository, telegramService, config, basePath)
+    if (spec != null) {
+        appendWebAppSecurityHeaders()
+        respond(spec.status, spec.payload)
+    }
+}
+
+private suspend fun ApplicationCall.processRotateInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    config: ConfigWithSecrets,
+    basePath: String,
+): WebAppResponseSpec? {
+    val session = authenticateWebAppSession(installationRepository) ?: return null
+    if (!verifyAdminStatus(session, telegramService)) return null
+    if (!verifyCsrfHeader(installationRepository, session)) return null
+
+    val dmId = installationRepository.telegramPrivateChatId(session.telegramUserId)
+    val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+    val item = if (idParam != null) installationRepository.installationAdminContext(idParam) else null
+
+    return when {
+        dmId == null -> {
+            respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
+            null
+        }
+        idParam == null -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+            null
+        }
+        item == null || !session.canAccess(item) -> {
+            respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+            null
+        }
+        else -> {
+            val tok = installationRepository.rotateWebhookSecret(
+                installationId = item.id,
+                graceUntil = java.time.Instant.now(),
+            )
+            installationRepository.writeAuditEvent(
+                installationId = item.id,
+                actorType = "webapp_session",
+                actorId = session.telegramUserId.toString(),
+                action = "webapp_rotate",
+            )
+            WebAppResponseSpec(HttpStatusCode.OK, RotateResponsePayload(id = item.id.toString(), credential = tok.raw))
+        }
+    }
+}
+
+private fun WebAppSessionContext.canAccess(item: InstallationAdminContext): Boolean = when {
+    telegramChatId == null -> false
+    item.telegramChatId != telegramChatId -> false
+    telegramTopicId != null && item.telegramTopicId != telegramTopicId -> false
+    else -> true
 }
 
 private suspend fun ApplicationCall.verifyAdminStatus(
@@ -372,6 +542,20 @@ private fun InstallationAdminContext.toResponsePayload() = InstallationResponseP
     telegramTopicId = telegramTopicId,
     muted = muted,
 )
+
+private fun net.raquezha.nuecagram.db.InstallationRecord.toAdminContext(muted: Boolean) =
+    InstallationAdminContext(
+        id = id,
+        gitlabBaseUrl = gitlabBaseUrl,
+        gitlabProjectId = gitlabProjectId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+        muted = muted,
+    )
+
+private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
+
+private fun ConfigWithSecrets.webhookEndpointUrl(basePath: String): String = "${publicBaseUrl()}$basePath/webhook"
 
 internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -427,6 +611,7 @@ private fun webAppShellHtml(basePath: String): String = """
         --success: #2a684d;
         --danger: #a62b1e;
         --code-bg: #eae1d5;
+        --code-text: #8b3a00;
         --font-grotesk: 'Space Grotesk', sans-serif;
         --font-mono: 'Reddit Mono', monospace;
       }
@@ -467,6 +652,45 @@ private fun webAppShellHtml(basePath: String): String = """
       <div id="installationsList">
         <div class="card"><p>Loading installations...</p></div>
       </div>
+      <div id="screen-wizard" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+          <strong style="font-family:var(--font-grotesk);">Connect New Project</strong>
+          <span id="btnCancel" style="font-size:0.78rem;color:var(--accent-tg);cursor:pointer;">Cancel</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
+          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">GitLab Base URL</label>
+          <input id="inUrl" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;" type="text" value="https://gitlab.com">
+          <span id="errUrl" style="font-size:0.78rem;color:var(--danger);min-height:1em;"></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
+          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">GitLab Project ID</label>
+          <input id="inPid" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;" type="number" placeholder="e.g. 12345678">
+          <span id="errPid" style="font-size:0.78rem;color:var(--danger);min-height:1em;"></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
+          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">Notification Target</label>
+          <input id="inDest" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;opacity:0.8;" type="text" readonly>
+        </div>
+        <p style="font-size:0.78rem;color:#6e6154;line-height:1.4;margin-bottom:0.75rem;">Nuecagram generates a unique webhook URL and token for your GitLab settings.</p>
+        <div id="wizErr" style="font-size:0.78rem;color:var(--danger);margin-bottom:0.5rem;min-height:1em;"></div>
+        <button id="btnCreate" style="font-family:var(--font-grotesk);font-weight:700;font-size:0.9rem;width:100%;padding:0.7rem;border-radius:0.375rem;border:none;background:var(--accent-tg);color:#fff;cursor:pointer;">Create Installation</button>
+      </div>
+      <div id="screen-reveal" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+          <strong id="revTitle" style="font-family:var(--font-grotesk);">Credential Issued</strong>
+          <span id="btnRevDone" style="font-size:0.78rem;color:var(--accent-tg);cursor:pointer;">Done</span>
+        </div>
+        <div style="background:#fff5f5;border:1px solid var(--danger);border-radius:0.375rem;padding:0.6rem 0.85rem;font-size:0.8rem;color:var(--danger);font-weight:600;margin-bottom:0.75rem;">Store this token now in GitLab settings. Shown <strong>only once</strong>.</div>
+        <div style="background:var(--code-bg);border:1px dashed var(--code-text, #8b3a00);border-radius:0.5rem;padding:0.85rem;margin-bottom:0.75rem;">
+          <span style="font-size:0.72rem;text-transform:uppercase;font-weight:700;color:#8b3a00;display:block;margin-bottom:0.35rem;">Webhook Token</span>
+          <span id="revSecret" style="font-family:var(--font-mono);color:#8b3a00;font-weight:700;font-size:0.9rem;word-break:break-all;"></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
+          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">Webhook URL</label>
+          <input id="revUrl" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;" type="text" readonly>
+        </div>
+        <button id="btnCopy" style="font-family:var(--font-grotesk);font-weight:700;font-size:0.9rem;width:100%;padding:0.7rem;border-radius:0.375rem;border:none;background:var(--accent-tg);color:#fff;cursor:pointer;margin-bottom:0.5rem;">Copy Token</button>
+      </div>
     </div>
     <script src="${basePath}/webapp/app.js"></script>
   </body>
@@ -476,6 +700,7 @@ private fun webAppShellHtml(basePath: String): String = """
 @Suppress("LongMethod", "MagicNumber")
 private fun webAppJsScript(basePath: String): String = """
 let userCsrf = '';
+let currentContext = {};
 
 async function initWebApp() {
   if (window.Telegram && window.Telegram.WebApp) {
@@ -483,25 +708,35 @@ async function initWebApp() {
     window.Telegram.WebApp.expand();
   }
   const tgInitData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+  const startParam = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param) || '';
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initData: tgInitData })
+      body: JSON.stringify({ initData: tgInitData, startParam: startParam })
     });
     if (res.ok) {
       const data = await res.json();
       userCsrf = data.csrf;
-      document.getElementById('contextText').innerText = data.telegramChatId
-        ? 'Chat #' + data.telegramChatId + (data.telegramTopicId ? ' (Topic #' + data.telegramTopicId + ')' : '')
+      currentContext = { chatId: data.telegramChatId, topicId: data.telegramTopicId };
+      const ctxText = document.getElementById('contextText');
+      if (ctxText) ctxText.innerText = data.telegramChatId
+        ? 'Chat #' + data.telegramChatId + (data.telegramTopicId ? ' / Topic #' + data.telegramTopicId : '')
         : 'All Accessible Installations';
+      const destEl = document.getElementById('inDest');
+      if (destEl) destEl.value = data.telegramChatId
+        ? (data.telegramTopicId ? 'Topic #' + data.telegramTopicId + ' in Chat #' + data.telegramChatId : 'Chat #' + data.telegramChatId)
+        : 'Select destination after launch from a group';
       await loadInstallations();
     } else {
-      document.getElementById('contextText').innerText = 'Authentication required.';
+      const ctxText = document.getElementById('contextText');
+      if (ctxText) ctxText.innerText = 'Authentication required.';
     }
   } catch (e) {
-    document.getElementById('contextText').innerText = 'Error connecting to server.';
+    const ctxText = document.getElementById('contextText');
+    if (ctxText) ctxText.innerText = 'Error connecting to server.';
   }
+  setupWizardHandlers();
 }
 
 async function loadInstallations() {
@@ -510,7 +745,7 @@ async function loadInstallations() {
   const items = await res.json();
   const el = document.getElementById('installationsList');
   if (items.length === 0) {
-    el.innerHTML = '<div class="card"><p>No installations found for this context.</p></div>';
+    el.innerHTML = '<div class="card"><p>No installations found. Tap + Add to create one.</p></div>';
     return;
   }
   el.innerHTML = '';
@@ -519,16 +754,100 @@ async function loadInstallations() {
     card.className = 'card';
     const statusBadge = item.muted ? '<span class="badge badge-muted">Muted</span>' : '<span class="badge badge-active">Active</span>';
     card.innerHTML = '<div class="card-header"><span class="card-id">' + item.id.substring(0, 8) + '</span>' + statusBadge + '</div>' +
-      '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + '</p>' +
+      '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + (item.gitlabProjectId ? ' / Project #' + item.gitlabProjectId : '') + '</p>' +
       '<div class="actions">' +
       '<button class="btn-test">Test</button>' +
       '<button class="btn-mute">' + (item.muted ? 'Unmute' : 'Mute') + '</button>' +
+      '<button class="btn-rotate">Rotate</button>' +
       '</div>';
-    
     card.querySelector('.btn-test').addEventListener('click', function() { testDelivery(item.id); });
     card.querySelector('.btn-mute').addEventListener('click', function() { toggleMute(item.id, !item.muted); });
+    card.querySelector('.btn-rotate').addEventListener('click', function() { rotateInstall(item.id); });
     el.appendChild(card);
   });
+}
+
+function setupWizardHandlers() {
+  const btnAdd = document.getElementById('btnAdd');
+  if (btnAdd) btnAdd.addEventListener('click', function() { showScreen('wizard'); });
+  const btnCancel = document.getElementById('btnCancel');
+  if (btnCancel) btnCancel.addEventListener('click', function() { showScreen('dashboard'); });
+  const btnCreate = document.getElementById('btnCreate');
+  if (btnCreate) btnCreate.addEventListener('click', createInstallation);
+  const btnRevDone = document.getElementById('btnRevDone');
+  if (btnRevDone) btnRevDone.addEventListener('click', function() { showScreen('dashboard'); loadInstallations(); });
+  const btnCopy = document.getElementById('btnCopy');
+  if (btnCopy) btnCopy.addEventListener('click', function() {
+    const val = document.getElementById('revSecret').innerText;
+    if (navigator.clipboard) navigator.clipboard.writeText(val);
+  });
+}
+
+function showScreen(name) {
+  document.getElementById('installationsList').style.display = name === 'dashboard' ? '' : 'none';
+  const wiz = document.getElementById('screen-wizard');
+  const rev = document.getElementById('screen-reveal');
+  if (wiz) wiz.style.display = name === 'wizard' ? '' : 'none';
+  if (rev) rev.style.display = name === 'reveal' ? '' : 'none';
+}
+
+async function createInstallation() {
+  document.getElementById('errUrl').innerText = '';
+  document.getElementById('errPid').innerText = '';
+  document.getElementById('wizErr').innerText = '';
+  const url = document.getElementById('inUrl').value.trim();
+  const pid = parseInt(document.getElementById('inPid').value.trim(), 10);
+  let valid = true;
+  if (!url.startsWith('https://')) { document.getElementById('errUrl').innerText = 'Must start with https://'; valid = false; }
+  if (!pid || pid <= 0) { document.getElementById('errPid').innerText = 'Enter a valid project ID'; valid = false; }
+  if (!valid) return;
+  document.getElementById('btnCreate').disabled = true;
+  document.getElementById('btnCreate').innerText = 'Creating...';
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf },
+      body: JSON.stringify({ gitlabBaseUrl: url, gitlabProjectId: pid })
+    });
+    if (res.status === 201) {
+      const data = await res.json();
+      showReveal(data.credential, data.webhookUrl, 'Credential Issued');
+    } else {
+      const err = await res.json();
+      document.getElementById('wizErr').innerText = err.error || 'Failed to create installation';
+    }
+  } catch (e) {
+    document.getElementById('wizErr').innerText = 'Network error';
+  } finally {
+    document.getElementById('btnCreate').disabled = false;
+    document.getElementById('btnCreate').innerText = 'Create Installation';
+  }
+}
+
+async function rotateInstall(id) {
+  if (!confirm('Rotate the credential? The old token stops working immediately.')) return;
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + id + '/rotate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showReveal(data.credential, '', 'Credential Rotated');
+    } else {
+      const err = await res.json();
+      alert(err.error || 'Rotation failed');
+    }
+  } catch (e) {
+    alert('Network error');
+  }
+}
+
+function showReveal(token, url, title) {
+  document.getElementById('revTitle').innerText = title;
+  document.getElementById('revSecret').innerText = token;
+  document.getElementById('revUrl').value = url;
+  showScreen('reveal');
 }
 
 async function toggleMute(id, muted) {
