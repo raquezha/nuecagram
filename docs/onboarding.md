@@ -1,15 +1,27 @@
 # Onboarding
 
+Nuecagram features a **Telegram Web App-first** management experience. Group administrators can launch the interactive Web App directly inside Telegram to set up, monitor, mute, test, and manage GitLab notification webhooks visually without manually typing slash commands. Text-based slash commands remain fully supported as text fallbacks and recovery tools.
+
 ## Telegram setup
 
 1. Create a bot with BotFather and set `TELEGRAM_BOT_TOKEN` privately in `.env`.
-2. Configure Telegram to deliver updates to `${NUECAGRAM_PUBLIC_URL}/telegram` with `TELEGRAM_WEBHOOK_SECRET` as `X-Telegram-Bot-Api-Secret-Token`.
-3. Add the bot to the destination Telegram group and make it an administrator.
-4. The human who will manage the installation sends `/start` to the bot in a private chat.
+2. Enable Web App in BotFather (`/mybots` -> Bot Settings -> Configure Mini App -> URL: `${NUECAGRAM_PUBLIC_URL}/webapp`).
+3. Configure Telegram to deliver updates to `${NUECAGRAM_PUBLIC_URL}/telegram` with `TELEGRAM_WEBHOOK_SECRET` as `X-Telegram-Bot-Api-Secret-Token`.
+4. Add the bot to the destination Telegram group and make it an administrator.
+5. The human administrator sends `/start` to the bot in a private chat to bootstrap DM delivery.
 
-## Create an installation
+## Primary Path: Web App Setup Wizard
 
-In the destination Telegram group, a group administrator runs:
+1. In your destination Telegram group chat or forum topic, tap the **Open Nuecagram** inline button on any bot reply or open `/webapp`.
+2. The Web App automatically resolves your current Telegram context (Group Chat vs. Forum Topic #id).
+3. Tap **+ Connect New Project** to launch the Setup Wizard.
+4. Enter your **GitLab Base URL** (e.g. `https://gitlab.com`) and numeric **Project ID**.
+5. Tap **Create Installation**. The Web App generates a unique webhook endpoint URL and single-view `X-Gitlab-Token` secret.
+6. Copy the secret token immediately and configure your GitLab webhook. For security, raw secrets are displayed **only once** in the UI.
+
+## Fallback Path: Command-First Onboarding
+
+If the Telegram Web App is unavailable in your client, run:
 
 ```text
 /setup https://gitlab.com <project-id>

@@ -7,6 +7,35 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class WebAppInfo(
+    @get:JsonProperty("url")
+    @SerialName("url")
+    val url: String,
+)
+
+@Serializable
+data class InlineKeyboardButton(
+    @get:JsonProperty("text")
+    @SerialName("text")
+    val text: String,
+    @JsonInclude(Include.NON_NULL)
+    @get:JsonProperty("web_app")
+    @SerialName("web_app")
+    val webApp: WebAppInfo? = null,
+    @JsonInclude(Include.NON_NULL)
+    @get:JsonProperty("callback_data")
+    @SerialName("callback_data")
+    val callbackData: String? = null,
+)
+
+@Serializable
+data class InlineKeyboardMarkup(
+    @get:JsonProperty("inline_keyboard")
+    @SerialName("inline_keyboard")
+    val inlineKeyboard: List<List<InlineKeyboardButton>>,
+)
+
+@Serializable
 data class Message(
     @get:JsonProperty("chat_id")
     @SerialName("chat_id")
@@ -32,4 +61,8 @@ data class Message(
     @SerialName("reply_to_message_id")
     @get:JsonProperty("reply_to_message_id")
     val replyToMessageId: Long? = null,
+    @JsonInclude(Include.NON_NULL)
+    @SerialName("reply_markup")
+    @get:JsonProperty("reply_markup")
+    val replyMarkup: InlineKeyboardMarkup? = null,
 )

@@ -135,6 +135,67 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
         }
 
+    @Test
+    fun webappCommandAttachesInlineButtonWithNonce() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(74)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 74, "administrator")
+
+            val response = postTelegram(
+                groupUpdate(74, "/webapp", installation.telegramChatId, userId = 74, messageThreadId = 100),
+            )
+            assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+
+            val lastMessage = sentMessages().last()
+            assertThat(lastMessage.chatId).isEqualTo(installation.telegramChatId.toString())
+            assertThat(lastMessage.text).contains("Open Nuecagram Web App:")
+            assertThat(lastMessage.replyMarkup).isNotNull()
+            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(button.text).isEqualTo("Open Nuecagram Web App")
+            assertThat(button.webApp).isNotNull()
+            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+        }
+
+    @Test
+    fun startCommandInPrivateChatAttachesInlineButton() =
+        testApplication {
+            configureTestApplication()
+            val privateUpdate = """
+            {"update_id":75,"message":{"text":"/start","chat":{"id":75,"type":"private"},"from":{"id":75}}}
+            """.trimIndent()
+
+            val response = postTelegram(privateUpdate)
+            assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+
+            val lastMessage = sentMessages().last()
+            assertThat(lastMessage.chatId).isEqualTo("75")
+            assertThat(lastMessage.text).contains("Private onboarding is ready.")
+            assertThat(lastMessage.replyMarkup).isNotNull()
+            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(button.webApp).isNotNull()
+            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+        }
+
+    @Test
+    fun statusCommandAttachesInlineButtonWithNonce() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(76)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 76, "administrator")
+
+            val command = groupUpdate(76, "/status ${installation.id}", installation.telegramChatId, userId = 76)
+            assertThat(postTelegram(command).status).isEqualTo(HttpStatusCode.OK)
+
+            val lastMessage = sentMessages().last()
+            assertThat(lastMessage.chatId).isEqualTo(installation.telegramChatId.toString())
+            assertThat(lastMessage.text).contains("Installation:")
+            assertThat(lastMessage.replyMarkup).isNotNull()
+            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(button.webApp).isNotNull()
+            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+        }
+
     private fun bootstrapPrivateUser(userId: Long) {
         runBlocking {
             installationRepository.upsertTelegramPrivateChat(userId, userId)
