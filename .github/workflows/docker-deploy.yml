@@ -62,6 +62,29 @@ jobs:
           cache: gradle
           overwrite-settings: false
 
+      - name: Auto-resolve version tag
+        id: resolve-version
+        run: |
+          version=$(tr -d '[:space:]' < version.txt)
+          tag="v$version"
+          git fetch origin --tags || true
+          if git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
+            echo "Tag $tag already exists. Auto-incrementing patch version..."
+            IFS='.' read -r major minor patch <<< "$version"
+            patch=$((patch + 1))
+            version="$major.$minor.$patch"
+            tag="v$version"
+            echo "$version" > version.txt
+            echo "$version" > src/main/resources/version.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add version.txt src/main/resources/version.txt
+            git commit -m "chore(release): auto-bump version to $version [skip ci]" || true
+            git push origin HEAD:main || true
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Build release artifacts
         run: ./gradlew buildImage buildFatJar
         env:
@@ -80,8 +103,8 @@ jobs:
       - name: Tag and push immutable image
         id: push-image
         run: |
-          version=$(tr -d '[:space:]' < version.txt)
-          tag="v$version"
+          version="${{ steps.resolve-version.outputs.version }}"
+          tag="${{ steps.resolve-version.outputs.tag }}"
           version_ref="raquezha/nuecagram:$tag"
           sha_ref="raquezha/nuecagram:${{ steps.sha_tag.outputs.sha_tag }}"
           docker tag "nuecagram-docker-image:$version" "$version_ref"
