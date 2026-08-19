@@ -119,6 +119,28 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun installationsEndpointReturnsAccessibleInstallationsForUnscopedSessionWhenUserIsAdmin() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val setCookies = authResp.headers.getAll("Set-Cookie").orEmpty()
+        val sessionCookie = extractCookie(setCookies, "nuecagram_webapp_session")
+
+        val listResp = client.get("/nuecagram/api/webapp/installations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())
+        assertThat(items).isNotEmpty()
+        assertThat(items.map { it.id }).contains(installation.id.toString())
+    }
+
+    @Test
     fun installationsEndpointReturnsFilteredListForScopedSession() = testApplication {
         configureTestApplication()
         val (sessionCookie, _) = issueSessionWithNonce(

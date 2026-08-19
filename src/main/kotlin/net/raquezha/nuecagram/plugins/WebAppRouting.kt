@@ -235,13 +235,19 @@ private suspend fun ApplicationCall.handleGetInstallations(
     val session = authenticateWebAppSession(installationRepository) ?: return
     if (!verifyAdminStatus(session, telegramService)) return
 
-    if (session.telegramChatId == null) {
-        appendWebAppSecurityHeaders()
-        respond(HttpStatusCode.OK, emptyList<InstallationResponsePayload>())
-        return
+    val items = if (session.telegramChatId != null) {
+        installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
+    } else {
+        val adminChatIds = mutableMapOf<Long, Boolean>()
+        installationRepository.listInstallationsForContext(null, null).filter { inst ->
+            adminChatIds.getOrPut(inst.telegramChatId) {
+                val status = runCatching {
+                    telegramService.chatMemberStatus(inst.telegramChatId, session.telegramUserId)
+                }.getOrNull()
+                status in ADMIN_STATUSES
+            }
+        }
     }
-
-    val items = installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, items.map { it.toResponsePayload() })
 }
@@ -561,13 +567,13 @@ internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.append("Pragma", "no-cache")
     response.headers.append("Referrer-Policy", "no-referrer")
-    response.headers.append("X-Frame-Options", "DENY")
     response.headers.append("X-Content-Type-Options", "nosniff")
     response.headers.append(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self' https://telegram.org; " +
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; frame-ancestors 'none'",
+            "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; " +
+            "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org;",
     )
     if (isHttps()) {
         response.headers.append(
@@ -745,7 +751,10 @@ async function loadInstallations() {
   const items = await res.json();
   const el = document.getElementById('installationsList');
   if (items.length === 0) {
-    el.innerHTML = '<div class="card"><p>No installations found. Tap + Add to create one.</p></div>';
+    const emptyMsg = currentContext.chatId
+      ? 'No installations found. Tap + Add to create one.'
+      : 'No accessible installations found. Open this Web App inside a Telegram group or topic to set up notifications.';
+    el.innerHTML = '<div class="card"><p>' + emptyMsg + '</p></div>';
     return;
   }
   el.innerHTML = '';
