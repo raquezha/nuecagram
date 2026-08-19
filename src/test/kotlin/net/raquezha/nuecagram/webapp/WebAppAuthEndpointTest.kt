@@ -47,7 +47,12 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         val response = client.get("/nuecagram/webapp")
         assertThat(response.status).isEqualTo(HttpStatusCode.OK)
         assertThat(response.headers["Content-Type"]).contains("text/html")
-        assertThat(response.headers["Content-Security-Policy"]).contains("script-src 'self' https://telegram.org")
+        val csp = response.headers["Content-Security-Policy"].orEmpty()
+        assertThat(csp).contains("script-src 'self' https://telegram.org")
+        assertThat(csp).contains(
+            "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org;",
+        )
+        assertThat(response.headers["X-Frame-Options"]).isNull()
         assertThat(response.headers["Cache-Control"]).contains("no-store")
         val html = response.bodyAsText()
         assertThat(html).contains("https://telegram.org/js/telegram-web-app.js")
