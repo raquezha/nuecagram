@@ -708,12 +708,13 @@ internal fun managementDocument(
           button { font-family: 'Space Grotesk', sans-serif; font-weight: 600; padding: 0.5rem 1.2rem; background: #2c251e; color: #ffffff; border: none; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s ease; }
           button:hover { background: #0088cc; }
           form { margin: 1rem 0; }
-          .header-form { margin: 0; padding: 0; display: inline-flex; align-items: center; height: 36px; }
+          .header-form { margin: 0; padding: 0; display: flex; align-items: center; width: 100%; height: 36px; }
           .site-header { margin-bottom: 1rem; }
           .site-header .header-top { display: flex; flex-direction: column; align-items: stretch; gap: 0.9rem; }
           .site-header .title { font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; margin: 0; text-transform: lowercase; letter-spacing: -0.03em; color: #1a1612; text-align: center; }
-          .site-header .right-meta { display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; }
-          .header-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 36px; padding: 0 0.85rem; border-radius: 0.375rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; text-decoration: none; box-sizing: border-box; transition: all 0.2s ease; line-height: 1; border: 1px solid transparent; margin: 0; vertical-align: middle; }
+          .site-header .right-meta { display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; width: 100%; }
+          .header-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 36px; padding: 0 0.85rem; border-radius: 0.375rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; text-decoration: none; box-sizing: border-box; transition: all 0.2s ease; line-height: 1; border: 1px solid transparent; margin: 0; vertical-align: middle; width: 100%; }
+          .header-form .header-btn { width: 100%; }
           .btn-telegram { background-color: #229ed9; color: #ffffff; border-color: #1c8bc0; }
           .btn-telegram:hover { background-color: #1c8cc3; color: #ffffff; }
           .btn-github { background-color: #2c251e; color: #ffffff; border-color: #1a1612; }
@@ -850,7 +851,10 @@ internal fun managementDocument(
             body { margin: 1rem auto; padding: 2.5rem; }
             .site-header .header-top { flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; }
             .site-header .title { font-size: 2.4rem; text-align: left; }
-            .site-header .right-meta { flex-direction: row; align-items: center; gap: 0.5rem; }
+            .site-header .right-meta { flex-direction: row; align-items: center; width: auto; gap: 0.5rem; }
+            .header-btn { width: auto; }
+            .header-form { width: auto; display: inline-flex; }
+            .header-form .header-btn { width: auto; }
             .site-header .subtitle { text-align: left; max-width: 28rem; }
             .docs-card { flex-direction: row; align-items: center; justify-content: space-between; }
             .auth-card { padding: 2rem; margin: 2rem auto; }
