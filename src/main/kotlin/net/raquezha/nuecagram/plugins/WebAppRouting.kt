@@ -344,7 +344,11 @@ private suspend fun ApplicationCall.handleTestInstallation(
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, TestResponsePayload(success = true, message = "Test delivery dispatched."))
 }
-@Suppress("LongMethod")
+private data class WebAppResponseSpec(
+    val status: HttpStatusCode,
+    val payload: Any,
+)
+
 private suspend fun ApplicationCall.handleCreateInstallation(
     installationRepository: InstallationRepository,
     telegramService: TelegramService,
@@ -352,44 +356,66 @@ private suspend fun ApplicationCall.handleCreateInstallation(
     json: Json,
     basePath: String,
 ) {
-    val session = authenticateWebAppSession(installationRepository) ?: return
-    if (!verifyAdminStatus(session, telegramService)) return
-    if (!verifyCsrfHeader(installationRepository, session)) return
+    val spec = processCreateInstallation(installationRepository, telegramService, config, json, basePath)
+    if (spec != null) {
+        appendWebAppSecurityHeaders()
+        respond(spec.status, spec.payload)
+    }
+}
+
+private suspend fun ApplicationCall.processCreateInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    config: ConfigWithSecrets,
+    json: Json,
+    basePath: String,
+): WebAppResponseSpec? {
+    val session = authenticateWebAppSession(installationRepository) ?: return null
+    if (!verifyAdminStatus(session, telegramService)) return null
+    if (!verifyCsrfHeader(installationRepository, session)) return null
+
     val chatId = session.telegramChatId
-    if (chatId == null) {
-        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Session has no Telegram context"))
-        return
-    }
-    val dmId = installationRepository.telegramPrivateChatId(session.telegramUserId)
-    if (dmId == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
-        return
-    }
+    val dmId = if (chatId != null) installationRepository.telegramPrivateChatId(session.telegramUserId) else null
     val bodyText = receiveText()
     val parsed = runCatching { json.decodeFromString<CreateInstallationRequestPayload>(bodyText) }.getOrNull()
-    if (parsed == null || parsed.gitlabBaseUrl.isBlank()) {
-        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Missing or invalid payload"))
-        return
+
+    return when {
+        chatId == null -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Session has no Telegram context"))
+            null
+        }
+        dmId == null -> {
+            respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
+            null
+        }
+        parsed == null || parsed.gitlabBaseUrl.isBlank() -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Missing or invalid payload"))
+            null
+        }
+        !parsed.gitlabBaseUrl.startsWith("https://") -> {
+            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("gitlabBaseUrl must start with https://"))
+            null
+        }
+        else -> {
+            val installation = installationRepository.createInstallation(
+                gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
+                gitlabProjectId = parsed.gitlabProjectId,
+                telegramChatId = chatId,
+                telegramTopicId = session.telegramTopicId,
+            )
+            val tok = installationRepository.issueWebhookSecret(installation.id)
+            installationRepository.writeAuditEvent(
+                installationId = installation.id,
+                actorType = "webapp_session",
+                actorId = session.telegramUserId.toString(),
+                action = "webapp_setup",
+            )
+            WebAppResponseSpec(
+                HttpStatusCode.Created,
+                toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
+            )
+        }
     }
-    if (!parsed.gitlabBaseUrl.startsWith("https://")) {
-        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("gitlabBaseUrl must start with https://"))
-        return
-    }
-    val installation = installationRepository.createInstallation(
-        gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
-        gitlabProjectId = parsed.gitlabProjectId,
-        telegramChatId = chatId,
-        telegramTopicId = session.telegramTopicId,
-    )
-    val tok = installationRepository.issueWebhookSecret(installation.id)
-    installationRepository.writeAuditEvent(
-        installationId = installation.id,
-        actorType = "webapp_session",
-        actorId = session.telegramUserId.toString(),
-        action = "webapp_setup",
-    )
-    appendWebAppSecurityHeaders()
-    respond(HttpStatusCode.Created, toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)))
 }
 
 private fun toCreateResponse(
