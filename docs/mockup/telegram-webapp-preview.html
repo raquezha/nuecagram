@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nuecagram Telegram Web App - Interactive UI Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Nuecagram Editorial Palette Aligned with Telegram Web App Theme Tokens */
+      --bg-color: #eee4d5;
+      --card-bg: rgba(255, 255, 255, 0.92);
+      --card-border: #dfd5c6;
+      --text-main: #2c251e;
+      --text-muted: #6e6154;
+      --primary: #2c251e;
+      --accent-tg: #229ed9;
+      --accent-tg-hover: #1c8bc0;
+      --success: #2a684d;
+      --success-bg: #e6f4ea;
+      --danger: #a62b1e;
+      --danger-bg: #fff5f5;
+      --code-bg: #eae1d5;
+      --code-text: #8b3a00;
+      --font-grotesk: 'Space Grotesk', sans-serif;
+      --font-mono: 'Reddit Mono', monospace;
+    }
+
+    body.dark-mode {
+      --bg-color: #1a1612;
+      --card-bg: rgba(44, 37, 30, 0.95);
+      --card-border: #3d342b;
+      --text-main: #f6f2ec;
+      --text-muted: #b5a899;
+      --primary: #f6f2ec;
+      --accent-tg: #229ed9;
+      --code-bg: #2b231b;
+      --code-text: #e09f67;
+      --success-bg: #1c3529;
+      --danger-bg: #3a1c18;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 1.5rem 1rem;
+      background-color: var(--bg-color);
+      font-family: var(--font-mono);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+
+    .mockup-controls {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .mockup-controls button, .mockup-controls select {
+      font-family: var(--font-grotesk);
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 0.4rem 0.85rem;
+      border-radius: 0.375rem;
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      color: var(--text-main);
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .mockup-controls button.active {
+      background: var(--accent-tg);
+      color: #fff;
+      border-color: var(--accent-tg);
+    }
+
+    /* Telegram Web App Frame Simulation */
+    .tg-phone-frame {
+      width: 100%;
+      max-width: 420px;
+      height: 780px;
+      background: var(--bg-color);
+      border: 2px solid var(--card-border);
+      border-radius: 1.5rem;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Telegram Header Bar */
+    .tg-header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .tg-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .tg-close-btn {
+      color: var(--accent-tg);
+      font-family: var(--font-grotesk);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .tg-title-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .tg-bot-title {
+      font-family: var(--font-grotesk);
+      font-weight: 700;
+      font-size: 0.95rem;
+      line-height: 1.1;
+    }
+    .tg-bot-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+    .tg-menu-dots {
+      color: var(--text-muted);
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    /* Content Area */
+    .webapp-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    /* Cards & Components */
+    .context-banner {
+      background: rgba(34, 158, 217, 0.1);
+      border: 1px solid var(--accent-tg);
+      border-radius: 0.5rem;
+      padding: 0.6rem 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.8rem;
+    }
+    .context-badge {
+      font-family: var(--font-grotesk);
+      font-weight: 700;
+      color: var(--accent-tg);
+      text-transform: uppercase;
+      font-size: 0.68rem;
+      letter-spacing: 0.04em;
+    }
+
+    .section-title {
+      font-family: var(--font-grotesk);
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 0.2rem 0 0.5rem 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .inst-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-left: 4px solid var(--accent-tg);
+      border-radius: 0.6rem;
+      padding: 0.9rem 1rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .inst-card.muted {
+      border-left-color: var(--danger);
+    }
+
+    .inst-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .inst-id {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.82rem;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 1rem;
+    }
+    .status-pill.active {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+    .status-pill.muted {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .inst-detail-row {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .inst-detail-row strong {
+      color: var(--text-main);
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
+    }
+    .btn {
+      flex: 1;
+      font-family: var(--font-grotesk);
+      font-weight: 600;
+      font-size: 0.78rem;
+      padding: 0.45rem 0.5rem;
+      border-radius: 0.375rem;
+      border: 1px solid var(--card-border);
+      background: var(--primary);
+      color: #fff;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity 0.15s ease;
+    }
+    body.dark-mode .btn {
+      color: #1a1612;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-main);
+    }
+    body.dark-mode .btn-secondary {
+      color: var(--text-main);
+    }
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+      border-color: var(--danger);
+    }
+
+    /* Fixed Telegram Bottom Main Button Simulation */
+    .tg-main-button {
+      background: var(--accent-tg);
+      color: #ffffff;
+      font-family: var(--font-grotesk);
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-align: center;
+      padding: 0.9rem;
+      cursor: pointer;
+      user-select: none;
+      letter-spacing: 0.02em;
+      transition: background 0.2s ease;
+    }
+    .tg-main-button:hover {
+      background: var(--accent-tg-hover);
+    }
+
+    /* Form Styles for Wizard Screen */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .form-group label {
+      font-family: var(--font-grotesk);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .form-input {
+      font-family: var(--font-mono);
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--card-border);
+      border-radius: 0.375rem;
+      background: var(--card-bg);
+      color: var(--text-main);
+      font-size: 0.85rem;
+    }
+
+    /* Secret Display Box */
+    .secret-box {
+      background: var(--code-bg);
+      border: 1px dashed var(--code-text);
+      border-radius: 0.5rem;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .secret-code {
+      font-family: var(--font-mono);
+      color: var(--code-text);
+      font-weight: 700;
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="mockup-controls">
+    <span style="font-family: var(--font-grotesk); font-weight:700; font-size:0.9rem;">Screen View:</span>
+    <button class="active" onclick="showScreen('dashboard')">1. Dashboard</button>
+    <button onclick="showScreen('wizard')">2. Setup Wizard</button>
+    <button onclick="showScreen('secret')">3. Credential Reveal</button>
+    <button onclick="toggleTheme()">🌓 Light / Dark</button>
+    <select onchange="changeContext(this.value)">
+      <option value="group">Context: Group Chat</option>
+      <option value="topic">Context: Forum Topic (#42)</option>
+      <option value="dm">Context: Private DM</option>
+    </select>
+  </div>
+
+  <div class="tg-phone-frame">
+    <!-- Telegram Top Header -->
+    <div class="tg-header">
+      <div class="tg-header-left">
+        <span class="tg-close-btn">Close</span>
+        <div class="tg-title-group">
+          <span class="tg-bot-title">Nuecagram</span>
+          <span class="tg-bot-sub">bot management</span>
+        </div>
+      </div>
+      <span class="tg-menu-dots">•••</span>
+    </div>
+
+    <!-- Screen 1: Dashboard View -->
+    <div id="screen-dashboard" class="webapp-body">
+      <div class="context-banner">
+        <div>
+          <span class="context-badge" id="ctx-badge">Group Chat</span>
+          <div style="font-weight:600; font-size:0.85rem;" id="ctx-name">Backend Team Group</div>
+        </div>
+        <span style="font-size:0.75rem; color:var(--text-muted);">2 Installs</span>
+      </div>
+
+      <div class="section-title">
+        <span>Installations</span>
+        <span style="font-size:0.75rem; color:var(--accent-tg); cursor:pointer;" onclick="showScreen('wizard')">+ Add</span>
+      </div>
+
+      <!-- Installation Card 1 -->
+      <div class="inst-card">
+        <div class="inst-card-header">
+          <span class="inst-id">a1b2c3d4</span>
+          <span class="status-pill active"><span class="status-dot"></span> Active</span>
+        </div>
+        <div class="inst-detail-row">
+          <span>GitLab Project:</span>
+          <strong>ID #12345678</strong>
+        </div>
+        <div class="inst-detail-row">
+          <span>Destination:</span>
+          <strong>Topic #42 (Deployments)</strong>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="alert('Test delivery sent to Topic #42!')">Test</button>
+          <button class="btn btn-secondary" onclick="toggleMute(this)">Mute</button>
+          <button class="btn" onclick="showScreen('secret')">Rotate Secret</button>
+        </div>
+      </div>
+
+      <!-- Installation Card 2 -->
+      <div class="inst-card muted">
+        <div class="inst-card-header">
+          <span class="inst-id">e5f6g7h8</span>
+          <span class="status-pill muted"><span class="status-dot"></span> Muted</span>
+        </div>
+        <div class="inst-detail-row">
+          <span>GitLab Project:</span>
+          <strong>ID #87654321</strong>
+        </div>
+        <div class="inst-detail-row">
+          <span>Destination:</span>
+          <strong>Main Group Chat</strong>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-secondary" onclick="alert('Test delivery sent!')">Test</button>
+          <button class="btn btn-secondary" onclick="toggleMute(this)">Unmute</button>
+          <button class="btn" onclick="showScreen('secret')">Rotate Secret</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 2: Guided Setup Wizard -->
+    <div id="screen-wizard" class="webapp-body" style="display:none;">
+      <div class="section-title">
+        <span>Connect New Project</span>
+        <span style="font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="showScreen('dashboard')">Cancel</span>
+      </div>
+
+      <div class="form-group">
+        <label>GitLab Base URL</label>
+        <input class="form-input" type="text" value="https://gitlab.com">
+      </div>
+
+      <div class="form-group">
+        <label>GitLab Project ID</label>
+        <input class="form-input" type="number" placeholder="e.g. 12345678">
+      </div>
+
+      <div class="form-group">
+        <label>Telegram Notification Target</label>
+        <input class="form-input" type="text" value="Current Topic (#42 Deployments)" readonly style="opacity:0.8;">
+      </div>
+
+      <div style="font-size:0.78rem; color:var(--text-muted); margin-top:0.5rem; line-height:1.4;">
+        ℹ️ Nuecagram will generate a unique webhook endpoint URL and secret token for your GitLab repository settings.
+      </div>
+    </div>
+
+    <!-- Screen 3: Secret Reveal View -->
+    <div id="screen-secret" class="webapp-body" style="display:none;">
+      <div class="section-title">
+        <span>Credential Issued</span>
+        <span style="font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="showScreen('dashboard')">Done</span>
+      </div>
+
+      <div style="font-size:0.82rem; color:var(--text-muted);">
+        Store this secret token now in your GitLab Webhook settings. It is shown <strong>only once</strong> for security.
+      </div>
+
+      <div class="secret-box">
+        <span style="font-size:0.72rem; text-transform:uppercase; font-weight:700; color:var(--code-text);">Webhook Secret Token</span>
+        <span class="secret-code">nc_sec_9f83a17c2b4e6d5a1098</span>
+      </div>
+
+      <div class="form-group">
+        <label>GitLab Webhook URL</label>
+        <input class="form-input" type="text" value="https://nuecagram.example.com/webhook" readonly>
+      </div>
+
+      <button class="btn" style="padding:0.7rem; font-size:0.88rem;" onclick="navigator.clipboard?.writeText('nc_sec_9f83a17c2b4e6d5a1098'); alert('Secret copied to clipboard!');">📋 Copy Secret Token</button>
+    </div>
+
+    <!-- Telegram Bottom Main Button -->
+    <div class="tg-main-button" id="tg-main-btn" onclick="handleMainButtonClick()">
+      + NEW INSTALLATION
+    </div>
+  </div>
+
+  <script>
+    let currentScreen = 'dashboard';
+
+    function showScreen(name) {
+      currentScreen = name;
+      document.querySelectorAll('.webapp-body').forEach(el => el.style.display = 'none');
+      document.getElementById('screen-' + name).style.display = 'flex';
+      
+      document.querySelectorAll('.mockup-controls button').forEach(btn => btn.classList.remove('active'));
+      const activeIdx = name === 'dashboard' ? 0 : name === 'wizard' ? 1 : 2;
+      document.querySelectorAll('.mockup-controls button')[activeIdx].classList.add('active');
+
+      const mainBtn = document.getElementById('tg-main-btn');
+      if (name === 'dashboard') {
+        mainBtn.innerText = '+ NEW INSTALLATION';
+      } else if (name === 'wizard') {
+        mainBtn.innerText = 'CREATE INSTALLATION';
+      } else if (name === 'secret') {
+        mainBtn.innerText = 'RETURN TO DASHBOARD';
+      }
+    }
+
+    function handleMainButtonClick() {
+      if (currentScreen === 'dashboard') showScreen('wizard');
+      else if (currentScreen === 'wizard') showScreen('secret');
+      else showScreen('dashboard');
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle('dark-mode');
+    }
+
+    function changeContext(val) {
+      const badge = document.getElementById('ctx-badge');
+      const name = document.getElementById('ctx-name');
+      if (val === 'group') {
+        badge.innerText = 'Group Chat';
+        name.innerText = 'Backend Team Group';
+      } else if (val === 'topic') {
+        badge.innerText = 'Forum Topic (#42)';
+        name.innerText = 'Deployments Topic';
+      } else if (val === 'dm') {
+        badge.innerText = 'Private DM';
+        name.innerText = 'Personal Admin Space';
+      }
+    }
+
+    function toggleMute(btn) {
+      if (btn.innerText === 'Mute') {
+        btn.innerText = 'Unmute';
+        btn.closest('.inst-card').classList.add('muted');
+        const pill = btn.closest('.inst-card').querySelector('.status-pill');
+        pill.className = 'status-pill muted';
+        pill.innerHTML = '<span class="status-dot"></span> Muted';
+      } else {
+        btn.innerText = 'Mute';
+        btn.closest('.inst-card').classList.remove('muted');
+        const pill = btn.closest('.inst-card').querySelector('.status-pill');
+        pill.className = 'status-pill active';
+        pill.innerHTML = '<span class="status-dot"></span> Active';
+      }
+    }
+  </script>
+</body>
+</html>
