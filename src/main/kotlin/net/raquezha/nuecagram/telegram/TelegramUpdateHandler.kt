@@ -312,53 +312,78 @@ class TelegramUpdateHandler(
         usageMessage: String,
         requireArguments: Boolean = true,
     ): AuthorizedGroupAdmin? {
-        if (message.chat.type == "private") {
-            send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
-            return null
-        }
         val text = message.text?.trim().orEmpty()
-        if (requireArguments && text.substringAfter(' ', "").isBlank()) {
-            send(message.chat.id, usageMessage, message.messageThreadId)
-            return null
-        }
         val userId = message.from?.id
-        val privateChatId = if (userId == null) null else installationRepository.telegramPrivateChatId(userId)
-        if (userId == null || privateChatId == null) {
-            send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
-            return null
+        val privateChatId = if (userId != null) installationRepository.telegramPrivateChatId(userId) else null
+        val status = if (userId != null) {
+            runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
+        } else {
+            null
         }
-        val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        if (status !in ADMIN_STATUSES) {
-            send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
-            return null
+
+        val result = when {
+            message.chat.type == "private" -> {
+                send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
+                null
+            }
+            requireArguments && text.substringAfter(' ', "").isBlank() -> {
+                send(message.chat.id, usageMessage, message.messageThreadId)
+                null
+            }
+            userId == null || privateChatId == null -> {
+                send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
+                null
+            }
+            status !in ADMIN_STATUSES -> {
+                send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
+                null
+            }
+            else -> AuthorizedGroupAdmin(userId, privateChatId)
         }
-        return AuthorizedGroupAdmin(userId, privateChatId)
+
+        return result
     }
 
     private suspend fun authorizeInstallationCommand(
         message: TelegramMessage,
         usageMessage: String,
     ): AuthorizedInstallationCommand? {
-        if (message.chat.type == "private") {
-            send(message.chat.id, PRIVATE_COMMAND_MESSAGE, message.messageThreadId)
-            return null
-        }
         val query = parseInstallationQuery(message.text)
-        if (query == null) {
-            send(message.chat.id, usageMessage, message.messageThreadId)
-            return null
+        val groupAdmin =
+            if (query != null && message.chat.type != "private") {
+                authorizeGroupAdmin(message, usageMessage)
+            } else {
+                null
+            }
+        val installation =
+            if (groupAdmin != null && query != null) {
+                installationRepository.findInstallationByQuery(query, message.chat.id)
+            } else {
+                null
+            }
+
+        val result = when {
+            message.chat.type == "private" -> {
+                send(message.chat.id, PRIVATE_COMMAND_MESSAGE, message.messageThreadId)
+                null
+            }
+            query == null -> {
+                send(message.chat.id, usageMessage, message.messageThreadId)
+                null
+            }
+            groupAdmin == null -> null
+            installation == null -> {
+                send(message.chat.id, WRONG_CHAT_MESSAGE, message.messageThreadId)
+                null
+            }
+            else -> AuthorizedInstallationCommand(
+                installation = installation,
+                actorId = groupAdmin.actorId,
+                privateChatId = groupAdmin.privateChatId,
+            )
         }
-        val groupAdmin = authorizeGroupAdmin(message, usageMessage) ?: return null
-        val installation = installationRepository.findInstallationByQuery(query, message.chat.id)
-        if (installation == null) {
-            send(message.chat.id, WRONG_CHAT_MESSAGE, message.messageThreadId)
-            return null
-        }
-        return AuthorizedInstallationCommand(
-            installation = installation,
-            actorId = groupAdmin.actorId,
-            privateChatId = groupAdmin.privateChatId,
-        )
+
+        return result
     }
 
     private fun parseInstallationQuery(text: String?): String? =
@@ -398,44 +423,33 @@ class TelegramUpdateHandler(
         threadId: Long? = null,
         replyMarkup: InlineKeyboardMarkup? = null,
     ) {
-        val sent =
-            runCatching {
-                telegramService.sendMessage(
-                    Message(
-                        chatId = chatId.toString(),
-                        text = text,
-                        threadId = threadId,
-                        replyMarkup = replyMarkup,
-                    ),
+        val attempts = listOfNotNull(
+            Message(chatId = chatId.toString(), text = text, threadId = threadId, replyMarkup = replyMarkup),
+            Message(
+                chatId = chatId.toString(),
+                text = text,
+                threadId = threadId,
+                parseMode = "",
+                replyMarkup = replyMarkup,
+            ),
+            if (threadId != null) {
+                Message(
+                    chatId = chatId.toString(),
+                    text = text,
+                    threadId = null,
+                    parseMode = "",
+                    replyMarkup = replyMarkup,
                 )
-            }
-        if (sent.isFailure) {
-            val fallbackSent =
-                runCatching {
-                    telegramService.sendMessage(
-                        Message(
-                            chatId = chatId.toString(),
-                            text = text,
-                            threadId = threadId,
-                            parseMode = "",
-                            replyMarkup = replyMarkup,
-                        ),
-                    )
-                }
-            if (fallbackSent.isFailure && threadId != null) {
-                runCatching {
-                    telegramService.sendMessage(
-                        Message(
-                            chatId = chatId.toString(),
-                            text = text,
-                            threadId = null,
-                            parseMode = "",
-                            replyMarkup = replyMarkup,
-                        ),
-                    )
-                }
-            }
+            } else {
+                null
+            },
+        )
+
+        attempts.firstNotNullOfOrNull { msg ->
+            runCatching { telegramService.sendMessage(msg) }.getOrNull()
         }
+
+        return
     }
 }
 
