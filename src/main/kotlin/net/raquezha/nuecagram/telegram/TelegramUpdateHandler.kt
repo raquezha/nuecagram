@@ -86,15 +86,32 @@ class TelegramUpdateHandler(
         when (command) {
             "/start" -> handleStart(message)
             "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.", message.messageThreadId)
-            "/help" ->
+            "/help" -> {
+                val userId = message.from?.id
+                val markup = if (userId != null) {
+                    webAppLauncherMarkup(message.chat.id, message.messageThreadId, userId, "Open Web App")
+                } else null
                 send(
                     message.chat.id,
                     HELP_MESSAGE,
                     message.messageThreadId,
+                    replyMarkup = markup,
                 )
+            }
             "/status" -> {
                 val authorized = authorizeInstallationCommand(message, STATUS_USAGE_MESSAGE) ?: return
-                send(message.chat.id, authorized.installation.statusText(), message.messageThreadId)
+                val markup = webAppLauncherMarkup(
+                    message.chat.id,
+                    message.messageThreadId,
+                    authorized.actorId,
+                    "Open Web App",
+                )
+                send(
+                    message.chat.id,
+                    authorized.installation.statusText(),
+                    message.messageThreadId,
+                    replyMarkup = markup,
+                )
             }
             "/digest" -> handleDigest(message)
             "/test" -> handleDeliveryTest(message)
@@ -119,7 +136,12 @@ class TelegramUpdateHandler(
         val userId = message.from?.id
         if (message.chat.type == "private" && userId != null) {
             installationRepository.upsertTelegramPrivateChat(userId, message.chat.id)
-            send(message.chat.id, "Private onboarding is ready. Return to your group to continue.")
+            val markup = webAppLauncherMarkup(message.chat.id, null, userId, "Open Management Dashboard")
+            send(
+                message.chat.id,
+                "Private onboarding is ready. Return to your group to continue.",
+                replyMarkup = markup,
+            )
         } else {
             send(message.chat.id, "Start a private chat with the bot first.", message.messageThreadId)
         }
@@ -196,7 +218,13 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             setupDetailsText(config, installation, credential.raw, managementLink.raw),
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
+        val markup = webAppLauncherMarkup(
+            message.chat.id,
+            message.messageThreadId,
+            authorized.actorId,
+            "Open Setup in Web App",
+        )
+        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private suspend fun handleManage(message: TelegramMessage) {
@@ -216,16 +244,23 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             managementLinkText(config, authorized.installation.id, managementLink.raw),
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
+        val markup = webAppLauncherMarkup(
+            message.chat.id,
+            message.messageThreadId,
+            authorized.actorId,
+            "Open Dashboard in Web App",
+        )
+        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private suspend fun handleWebApp(message: TelegramMessage) {
-        val groupAdmin = authorizeGroupAdmin(message, "Usage: <code>/webapp</code>") ?: return
-        val nonce = installationRepository.issueLaunchNonce(
-            telegramChatId = message.chat.id,
-            telegramTopicId = message.messageThreadId,
-            telegramUserId = groupAdmin.actorId,
-            expiresAt = Instant.now().plus(LAUNCH_NONCE_TTL_MINUTES, ChronoUnit.MINUTES),
+        val groupAdmin =
+            authorizeGroupAdmin(message, "Usage: <code>/webapp</code>", requireArguments = false) ?: return
+        val markup = webAppLauncherMarkup(
+            message.chat.id,
+            message.messageThreadId,
+            groupAdmin.actorId,
+            "Open Nuecagram Web App",
         )
         installationRepository.writeAuditEvent(
             installationId = null,
@@ -233,11 +268,11 @@ class TelegramUpdateHandler(
             actorId = groupAdmin.actorId.toString(),
             action = "telegram_webapp_launch",
         )
-        val webAppUrl = "${config.publicBaseUrl()}/webapp?startapp=nonce_${nonce.raw}"
         send(
             message.chat.id,
-            "Open Nuecagram Web App:\n$webAppUrl",
+            "Open Nuecagram Web App:",
             message.messageThreadId,
+            replyMarkup = markup,
         )
     }
 
@@ -275,13 +310,14 @@ class TelegramUpdateHandler(
     private suspend fun authorizeGroupAdmin(
         message: TelegramMessage,
         usageMessage: String,
+        requireArguments: Boolean = true,
     ): AuthorizedGroupAdmin? {
         if (message.chat.type == "private") {
             send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
             return null
         }
         val text = message.text?.trim().orEmpty()
-        if (text.substringAfter(' ', "").isBlank()) {
+        if (requireArguments && text.substringAfter(' ', "").isBlank()) {
             send(message.chat.id, usageMessage, message.messageThreadId)
             return null
         }
@@ -331,22 +367,71 @@ class TelegramUpdateHandler(
             ?.trim()
             ?.takeIf(String::isNotBlank)
 
-    private suspend fun send(chatId: Long, text: String, threadId: Long? = null) {
+    private suspend fun webAppLauncherMarkup(
+        chatId: Long,
+        threadId: Long?,
+        userId: Long,
+        buttonText: String = "Open Nuecagram Web App",
+    ): InlineKeyboardMarkup {
+        val nonce = installationRepository.issueLaunchNonce(
+            telegramChatId = chatId,
+            telegramTopicId = threadId,
+            telegramUserId = userId,
+            expiresAt = Instant.now().plus(LAUNCH_NONCE_TTL_MINUTES, ChronoUnit.MINUTES),
+        )
+        val url = "${config.publicBaseUrl()}/webapp?startapp=nonce_${nonce.raw}"
+        return InlineKeyboardMarkup(
+            inlineKeyboard = listOf(
+                listOf(
+                    InlineKeyboardButton(
+                        text = buttonText,
+                        webApp = WebAppInfo(url = url),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    private suspend fun send(
+        chatId: Long,
+        text: String,
+        threadId: Long? = null,
+        replyMarkup: InlineKeyboardMarkup? = null,
+    ) {
         val sent =
             runCatching {
-                telegramService.sendMessage(Message(chatId = chatId.toString(), text = text, threadId = threadId))
+                telegramService.sendMessage(
+                    Message(
+                        chatId = chatId.toString(),
+                        text = text,
+                        threadId = threadId,
+                        replyMarkup = replyMarkup,
+                    ),
+                )
             }
         if (sent.isFailure) {
             val fallbackSent =
                 runCatching {
                     telegramService.sendMessage(
-                        Message(chatId = chatId.toString(), text = text, threadId = threadId, parseMode = ""),
+                        Message(
+                            chatId = chatId.toString(),
+                            text = text,
+                            threadId = threadId,
+                            parseMode = "",
+                            replyMarkup = replyMarkup,
+                        ),
                     )
                 }
             if (fallbackSent.isFailure && threadId != null) {
                 runCatching {
                     telegramService.sendMessage(
-                        Message(chatId = chatId.toString(), text = text, threadId = null, parseMode = ""),
+                        Message(
+                            chatId = chatId.toString(),
+                            text = text,
+                            threadId = null,
+                            parseMode = "",
+                            replyMarkup = replyMarkup,
+                        ),
                     )
                 }
             }
