@@ -30,7 +30,7 @@ private const val CSRF_HEADER_NAME = "X-CSRF-Token"
 private const val SESSION_TTL_HOURS = 8L
 private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
 private const val CONTAINER_MAX_WIDTH_PX = 480
-
+private val ADMIN_STATUSES = setOf("creator", "administrator")
 
 @Serializable
 private data class AuthRequestPayload(
@@ -101,20 +101,29 @@ fun Route.webAppRouting(basePath: String) {
         )
     }
 
+    get("$basePath/webapp/app.js") {
+        call.appendWebAppSecurityHeaders()
+        call.respondText(
+            webAppJsScript(basePath),
+            ContentType.Text.JavaScript,
+            HttpStatusCode.OK,
+        )
+    }
+
     post("$basePath/api/webapp/auth") {
         call.handleWebAppAuth(installationRepository, config, json, basePath)
     }
 
     get("$basePath/api/webapp/installations") {
-        call.handleGetInstallations(installationRepository)
+        call.handleGetInstallations(installationRepository, telegramService)
     }
 
     get("$basePath/api/webapp/installations/{id}") {
-        call.handleGetInstallationDetail(installationRepository)
+        call.handleGetInstallationDetail(installationRepository, telegramService)
     }
 
     post("$basePath/api/webapp/installations/{id}/mute") {
-        call.handleMuteInstallation(installationRepository, json)
+        call.handleMuteInstallation(installationRepository, telegramService, json)
     }
 
     post("$basePath/api/webapp/installations/{id}/test") {
@@ -191,20 +200,29 @@ private suspend fun ApplicationCall.handleWebAppAuth(
 
 private suspend fun ApplicationCall.handleGetInstallations(
     installationRepository: InstallationRepository,
+    telegramService: TelegramService,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
-    val reqChatId = parameters["chatId"]?.toLongOrNull() ?: session.telegramChatId
-    val reqTopicId = parameters["topicId"]?.toLongOrNull() ?: session.telegramTopicId
+    if (!verifyAdminStatus(session, telegramService)) return
 
-    val items = installationRepository.listInstallationsForContext(reqChatId, reqTopicId)
+    if (session.telegramChatId == null) {
+        appendWebAppSecurityHeaders()
+        respond(HttpStatusCode.OK, emptyList<InstallationResponsePayload>())
+        return
+    }
+
+    val items = installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, items.map { it.toResponsePayload() })
 }
 
 private suspend fun ApplicationCall.handleGetInstallationDetail(
     installationRepository: InstallationRepository,
+    telegramService: TelegramService,
 ) {
-    authenticateWebAppSession(installationRepository) ?: return
+    val session = authenticateWebAppSession(installationRepository) ?: return
+    if (!verifyAdminStatus(session, telegramService)) return
+
     val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
     if (idParam == null) {
         respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
@@ -212,7 +230,7 @@ private suspend fun ApplicationCall.handleGetInstallationDetail(
     }
 
     val item = installationRepository.installationAdminContext(idParam)
-    if (item == null) {
+    if (item == null || !session.canAccess(item)) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
@@ -223,9 +241,11 @@ private suspend fun ApplicationCall.handleGetInstallationDetail(
 
 private suspend fun ApplicationCall.handleMuteInstallation(
     installationRepository: InstallationRepository,
+    telegramService: TelegramService,
     json: Json,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
+    if (!verifyAdminStatus(session, telegramService)) return
     if (!verifyCsrfHeader(installationRepository, session)) return
 
     val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
@@ -235,7 +255,7 @@ private suspend fun ApplicationCall.handleMuteInstallation(
     }
 
     val item = installationRepository.installationAdminContext(idParam)
-    if (item == null) {
+    if (item == null || !session.canAccess(item)) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
@@ -248,7 +268,7 @@ private suspend fun ApplicationCall.handleMuteInstallation(
     installationRepository.writeAuditEvent(
         installationId = item.id,
         actorType = "webapp_session",
-        actorId = session.sessionId.toString(),
+        actorId = session.telegramUserId.toString(),
         action = if (targetMuted) "webapp_mute" else "webapp_unmute",
     )
 
@@ -261,6 +281,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
     telegramService: TelegramService,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
+    if (!verifyAdminStatus(session, telegramService)) return
     if (!verifyCsrfHeader(installationRepository, session)) return
 
     val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
@@ -270,7 +291,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
     }
 
     val item = installationRepository.installationAdminContext(idParam)
-    if (item == null) {
+    if (item == null || !session.canAccess(item)) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
@@ -286,12 +307,32 @@ private suspend fun ApplicationCall.handleTestInstallation(
     installationRepository.writeAuditEvent(
         installationId = item.id,
         actorType = "webapp_session",
-        actorId = session.sessionId.toString(),
+        actorId = session.telegramUserId.toString(),
         action = "webapp_test",
     )
 
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, TestResponsePayload(success = true, message = "Test delivery dispatched."))
+}
+
+private fun WebAppSessionContext.canAccess(item: InstallationAdminContext): Boolean {
+    if (telegramChatId == null) return false
+    if (item.telegramChatId != telegramChatId) return false
+    if (telegramTopicId != null && item.telegramTopicId != telegramTopicId) return false
+    return true
+}
+
+private suspend fun ApplicationCall.verifyAdminStatus(
+    session: WebAppSessionContext,
+    telegramService: TelegramService,
+): Boolean {
+    val chatId = session.telegramChatId ?: return true
+    val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
+    if (status !in ADMIN_STATUSES) {
+        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
+        return false
+    }
+    return true
 }
 
 private suspend fun ApplicationCall.authenticateWebAppSession(
@@ -427,80 +468,84 @@ private fun webAppShellHtml(basePath: String): String = """
         <div class="card"><p>Loading installations...</p></div>
       </div>
     </div>
-    <script>
-      let userCsrf = '';
-
-      async function initWebApp() {
-        if (window.Telegram && window.Telegram.WebApp) {
-          window.Telegram.WebApp.ready();
-          window.Telegram.WebApp.expand();
-        }
-        const tgInitData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
-        try {
-          const res = await fetch('${basePath}/api/webapp/auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ initData: tgInitData })
-          });
-          if (res.ok) {
-            const data = await res.json();
-            userCsrf = data.csrf;
-            document.getElementById('contextText').innerText = data.telegramChatId
-              ? 'Chat #' + data.telegramChatId + (data.telegramTopicId ? ' (Topic #' + data.telegramTopicId + ')' : '')
-              : 'All Accessible Installations';
-            await loadInstallations();
-          } else {
-            document.getElementById('contextText').innerText = 'Authentication required.';
-          }
-        } catch (e) {
-          document.getElementById('contextText').innerText = 'Error connecting to server.';
-        }
-      }
-
-      async function loadInstallations() {
-        const res = await fetch('${basePath}/api/webapp/installations');
-        if (!res.ok) return;
-        const items = await res.json();
-        const el = document.getElementById('installationsList');
-        if (items.length === 0) {
-          el.innerHTML = '<div class="card"><p>No installations found for this context.</p></div>';
-          return;
-        }
-        el.innerHTML = items.map(function(item) {
-          var statusBadge = item.muted ? '<span class="badge badge-muted">Muted</span>' : '<span class="badge badge-active">Active</span>';
-          var muteText = item.muted ? 'Unmute' : 'Mute';
-          return '<div class="card">' +
-            '<div class="card-header">' +
-            '<span class="card-id">' + item.id.substring(0, 8) + '</span>' +
-            statusBadge +
-            '</div>' +
-            '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + '</p>' +
-            '<div class="actions">' +
-            '<button onclick="testDelivery('' + item.id + '')">Test</button>' +
-            '<button onclick="toggleMute('' + item.id + '', ' + (!item.muted) + ')">' + muteText + '</button>' +
-            '</div>' +
-            '</div>';
-        }).join('');
-      }
-
-      async function toggleMute(id, muted) {
-        await fetch('${basePath}/api/webapp/installations/' + id + '/mute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf },
-          body: JSON.stringify({ muted: muted })
-        });
-        await loadInstallations();
-      }
-
-      async function testDelivery(id) {
-        await fetch('${basePath}/api/webapp/installations/' + id + '/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf }
-        });
-      }
-
-      initWebApp();
-    </script>
+    <script src="${basePath}/webapp/app.js"></script>
   </body>
 </html>
+""".trimIndent()
+
+@Suppress("LongMethod", "MagicNumber")
+private fun webAppJsScript(basePath: String): String = """
+let userCsrf = '';
+
+async function initWebApp() {
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+  }
+  const tgInitData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
+  try {
+    const res = await fetch('${basePath}/api/webapp/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData: tgInitData })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      userCsrf = data.csrf;
+      document.getElementById('contextText').innerText = data.telegramChatId
+        ? 'Chat #' + data.telegramChatId + (data.telegramTopicId ? ' (Topic #' + data.telegramTopicId + ')' : '')
+        : 'All Accessible Installations';
+      await loadInstallations();
+    } else {
+      document.getElementById('contextText').innerText = 'Authentication required.';
+    }
+  } catch (e) {
+    document.getElementById('contextText').innerText = 'Error connecting to server.';
+  }
+}
+
+async function loadInstallations() {
+  const res = await fetch('${basePath}/api/webapp/installations');
+  if (!res.ok) return;
+  const items = await res.json();
+  const el = document.getElementById('installationsList');
+  if (items.length === 0) {
+    el.innerHTML = '<div class="card"><p>No installations found for this context.</p></div>';
+    return;
+  }
+  el.innerHTML = '';
+  items.forEach(function(item) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const statusBadge = item.muted ? '<span class="badge badge-muted">Muted</span>' : '<span class="badge badge-active">Active</span>';
+    card.innerHTML = '<div class="card-header"><span class="card-id">' + item.id.substring(0, 8) + '</span>' + statusBadge + '</div>' +
+      '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + '</p>' +
+      '<div class="actions">' +
+      '<button class="btn-test">Test</button>' +
+      '<button class="btn-mute">' + (item.muted ? 'Unmute' : 'Mute') + '</button>' +
+      '</div>';
+    
+    card.querySelector('.btn-test').addEventListener('click', function() { testDelivery(item.id); });
+    card.querySelector('.btn-mute').addEventListener('click', function() { toggleMute(item.id, !item.muted); });
+    el.appendChild(card);
+  });
+}
+
+async function toggleMute(id, muted) {
+  await fetch('${basePath}/api/webapp/installations/' + id + '/mute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf },
+    body: JSON.stringify({ muted: muted })
+  });
+  await loadInstallations();
+}
+
+async function testDelivery(id) {
+  await fetch('${basePath}/api/webapp/installations/' + id + '/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf }
+  });
+}
+
+initWebApp();
 """.trimIndent()

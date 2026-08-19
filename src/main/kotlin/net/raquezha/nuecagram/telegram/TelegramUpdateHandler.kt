@@ -49,6 +49,7 @@ private const val SETUP_ARG_COUNT_MIN = 3
 private const val SETUP_ARG_COUNT_MAX = 3
 private const val SETUP_URL_INDEX = 1
 private const val SETUP_PROJECT_INDEX = 2
+private const val LAUNCH_NONCE_TTL_MINUTES = 10L
 
 private data class AuthorizedGroupAdmin(
     val actorId: Long,
@@ -66,6 +67,7 @@ private data class SetupArguments(
     val projectId: Long,
 )
 
+@Suppress("TooManyFunctions")
 class TelegramUpdateHandler(
     private val installationRepository: InstallationRepository,
     private val telegramService: TelegramService,
@@ -100,6 +102,7 @@ class TelegramUpdateHandler(
             "/unmute" -> handleUnmute(message)
             "/setup" -> handleSetup(message)
             "/manage" -> handleManage(message)
+            "/webapp" -> handleWebApp(message)
             "/rotate" -> handleRotate(message)
             else ->
                 if (command.startsWith("/")) {
@@ -214,6 +217,28 @@ class TelegramUpdateHandler(
             managementLinkText(config, authorized.installation.id, managementLink.raw),
         )
         send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId)
+    }
+
+    private suspend fun handleWebApp(message: TelegramMessage) {
+        val groupAdmin = authorizeGroupAdmin(message, "Usage: <code>/webapp</code>") ?: return
+        val nonce = installationRepository.issueLaunchNonce(
+            telegramChatId = message.chat.id,
+            telegramTopicId = message.messageThreadId,
+            telegramUserId = groupAdmin.actorId,
+            expiresAt = Instant.now().plus(LAUNCH_NONCE_TTL_MINUTES, ChronoUnit.MINUTES),
+        )
+        installationRepository.writeAuditEvent(
+            installationId = null,
+            actorType = "telegram",
+            actorId = groupAdmin.actorId.toString(),
+            action = "telegram_webapp_launch",
+        )
+        val webAppUrl = "${config.publicBaseUrl()}/webapp?startapp=nonce_${nonce.raw}"
+        send(
+            message.chat.id,
+            "Open Nuecagram Web App:\n$webAppUrl",
+            message.messageThreadId,
+        )
     }
 
     private suspend fun handleRotate(message: TelegramMessage) {

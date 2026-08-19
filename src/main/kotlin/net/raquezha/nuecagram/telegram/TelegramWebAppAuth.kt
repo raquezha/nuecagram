@@ -76,7 +76,7 @@ object TelegramWebAppAuth {
 
     private fun verifyAuthDate(authDate: Long, maxAgeSeconds: Long): Boolean {
         val now = System.currentTimeMillis() / 1000
-        return now - authDate <= maxAgeSeconds
+        return authDate <= now && (now - authDate) <= maxAgeSeconds
     }
 
     private fun parseQueryString(query: String): Map<String, String> {
