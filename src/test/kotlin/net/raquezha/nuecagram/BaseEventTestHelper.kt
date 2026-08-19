@@ -17,6 +17,8 @@ import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.di.testAppModule
 import net.raquezha.nuecagram.plugins.configureRouting
+import net.raquezha.nuecagram.plugins.configureSerialization
+
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
@@ -43,9 +45,12 @@ abstract class BaseEventTestHelper : KoinTest {
 
     fun ApplicationTestBuilder.configureTestApplication() {
         application {
+            configureSerialization()
             configureRouting()
         }
     }
+
+
 
     @Before
     fun setUp() {

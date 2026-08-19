@@ -53,6 +53,32 @@ data class ManagementSessionContext(
 
 data class IssuedPlatformAdminSession(val id: UUID, val raw: String, val csrf: String)
 data class PlatformAdminSessionContext(val id: UUID, val csrfDigest: ByteArray, val csrfHash: String)
+
+data class IssuedWebAppSession(
+    val sessionId: UUID,
+    val telegramUserId: Long,
+    val telegramChatId: Long?,
+    val telegramTopicId: Long?,
+    val raw: String,
+    val csrf: String,
+)
+
+data class WebAppSessionContext(
+    val sessionId: UUID,
+    val telegramUserId: Long,
+    val telegramChatId: Long?,
+    val telegramTopicId: Long?,
+    val csrfDigest: ByteArray,
+    val csrfHash: String,
+)
+
+data class LaunchNonceContext(
+    val id: UUID,
+    val telegramChatId: Long,
+    val telegramTopicId: Long?,
+    val telegramUserId: Long,
+)
+
 data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
 
 data class PlatformAdminInstallationsPage(
@@ -221,7 +247,22 @@ class InstallationRepository(
             installationWithMuteQuery(installationId).firstOrNull()?.toAdminContext()
         }
 
+    suspend fun listInstallationsForContext(
+        chatId: Long?,
+        topicId: Long?,
+    ): List<InstallationAdminContext> = databaseFactory.dbTransaction {
+        val query = installationWithMuteQuery()
+        if (chatId != null) {
+            query.andWhere { Installations.telegramChatId eq chatId }
+            if (topicId != null) {
+                query.andWhere { Installations.telegramTopicId eq topicId }
+            }
+        }
+        query.map { it.toAdminContext() }
+    }
+
     suspend fun findInstallationByQuery(
+
         rawQuery: String,
         chatId: Long,
     ): InstallationAdminContext? = databaseFactory.dbTransaction {
@@ -383,6 +424,108 @@ class InstallationRepository(
     suspend fun deletePlatformAdminSession(id: UUID): Boolean = databaseFactory.dbTransaction {
         PlatformAdminSessions.deleteWhere { PlatformAdminSessions.id eq id } == 1
     }
+
+    suspend fun issueLaunchNonce(
+        telegramChatId: Long,
+        telegramTopicId: Long?,
+        telegramUserId: Long,
+        expiresAt: Instant,
+    ): IssuedCredential = databaseFactory.dbTransaction {
+        val id = UUID.randomUUID()
+        val (raw, stored) = CredentialCodec.issueCredential()
+        TelegramLaunchNonces.insert {
+            it[TelegramLaunchNonces.id] = id
+            it[TelegramLaunchNonces.nonceDigest] = stored.digest
+            it[TelegramLaunchNonces.telegramChatId] = telegramChatId
+            it[TelegramLaunchNonces.telegramTopicId] = telegramTopicId
+            it[TelegramLaunchNonces.telegramUserId] = telegramUserId
+            it[TelegramLaunchNonces.expiresAt] = expiresAt.databaseTime()
+        }
+        IssuedCredential(id, id, raw)
+    }
+
+    suspend fun consumeLaunchNonce(
+        raw: String,
+        now: Instant = Instant.now(),
+    ): LaunchNonceContext? = databaseFactory.dbTransaction {
+        val databaseNow = now.databaseTime()
+        val row = TelegramLaunchNonces.selectAll().where {
+            TelegramLaunchNonces.consumedAt.isNull() and
+                (TelegramLaunchNonces.expiresAt greater databaseNow) and
+                (TelegramLaunchNonces.nonceDigest eq CredentialCodec.digest(raw))
+        }.firstOrNull() ?: return@dbTransaction null
+
+        val consumed = TelegramLaunchNonces.update({
+            (TelegramLaunchNonces.id eq row[TelegramLaunchNonces.id]) and TelegramLaunchNonces.consumedAt.isNull()
+        }) {
+            it[consumedAt] = databaseNow
+        } == 1
+
+        if (consumed) {
+            LaunchNonceContext(
+                id = row[TelegramLaunchNonces.id],
+                telegramChatId = row[TelegramLaunchNonces.telegramChatId],
+                telegramTopicId = row[TelegramLaunchNonces.telegramTopicId],
+                telegramUserId = row[TelegramLaunchNonces.telegramUserId],
+            )
+        } else null
+    }
+
+    suspend fun issueWebAppSession(
+        telegramUserId: Long,
+        telegramChatId: Long?,
+        telegramTopicId: Long?,
+        expiresAt: Instant,
+    ): IssuedWebAppSession = databaseFactory.dbTransaction {
+        val id = UUID.randomUUID()
+        val (raw, stored) = CredentialCodec.issueCredential()
+        val (csrf, storedCsrf) = CredentialCodec.issueCredential()
+        WebAppSessions.insert {
+            it[WebAppSessions.id] = id
+            it[WebAppSessions.telegramUserId] = telegramUserId
+            it[WebAppSessions.telegramChatId] = telegramChatId
+            it[WebAppSessions.telegramTopicId] = telegramTopicId
+            it[tokenDigest] = stored.digest
+            it[tokenHash] = stored.hash
+            it[csrfDigest] = storedCsrf.digest
+            it[csrfHash] = storedCsrf.hash
+            it[WebAppSessions.expiresAt] = expiresAt.databaseTime()
+        }
+        IssuedWebAppSession(id, telegramUserId, telegramChatId, telegramTopicId, raw, csrf)
+    }
+
+    suspend fun verifyWebAppSession(
+        raw: String,
+        now: Instant = Instant.now(),
+    ): WebAppSessionContext? = databaseFactory.dbTransaction {
+        WebAppSessions.selectAll().where {
+            (WebAppSessions.expiresAt greater now.databaseTime()) and
+                (WebAppSessions.tokenDigest eq CredentialCodec.digest(raw))
+        }.firstOrNull { row ->
+            CredentialCodec.matches(raw, row[WebAppSessions.tokenDigest], row[WebAppSessions.tokenHash])
+        }?.let { row ->
+            WebAppSessionContext(
+                sessionId = row[WebAppSessions.id],
+                telegramUserId = row[WebAppSessions.telegramUserId],
+                telegramChatId = row[WebAppSessions.telegramChatId],
+                telegramTopicId = row[WebAppSessions.telegramTopicId],
+                csrfDigest = row[WebAppSessions.csrfDigest],
+                csrfHash = row[WebAppSessions.csrfHash],
+            )
+        }
+    }
+
+    fun verifyWebAppCsrf(session: WebAppSessionContext, raw: String): Boolean =
+        CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
+
+    suspend fun deleteWebAppSession(id: UUID): Boolean = databaseFactory.dbTransaction {
+        WebAppSessions.deleteWhere { WebAppSessions.id eq id } == 1
+    }
+
+    suspend fun cleanupExpiredWebAppSessions(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
+        WebAppSessions.deleteWhere { WebAppSessions.expiresAt lessEq now.databaseTime() }
+    }
+
 
     suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
         ManagementLinks.deleteWhere { ManagementLinks.expiresAt lessEq now.databaseTime() }

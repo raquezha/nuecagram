@@ -79,6 +79,8 @@ fun Application.configureRouting() {
         telegramRouting(this@configureRouting.basePath())
         managementRouting(this@configureRouting.basePath())
         platformAdminRouting(this@configureRouting.basePath())
+        webAppRouting(this@configureRouting.basePath())
+
 
         post(configuredRoute("/webhook")) {
             try {
@@ -126,6 +128,8 @@ fun Application.configureRouting() {
                     installationRepository.cleanupExpiredManagementLinks()
                     installationRepository.cleanupExpiredManagementSessions()
                     installationRepository.cleanupExpiredPlatformAdminSessions()
+                    installationRepository.cleanupExpiredWebAppSessions()
+
                     logger.debug { "Periodic cleanup completed" }
                 } catch (e: Exception) {
                     logger.error(e) { "Periodic cleanup failed: ${e.message}" }

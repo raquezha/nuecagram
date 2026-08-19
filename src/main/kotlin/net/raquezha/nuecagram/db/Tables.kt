@@ -126,3 +126,32 @@ object MrParticipantCaches : Table("mr_participant_caches") {
 
     override val primaryKey = PrimaryKey(installationId, projectId, mrIid)
 }
+
+object TelegramLaunchNonces : Table("telegram_launch_nonces") {
+    val id = javaUUID("id")
+    val nonceDigest = binary("nonce_digest")
+    val telegramChatId = long("telegram_chat_id")
+    val telegramTopicId = long("telegram_topic_id").nullable()
+    val telegramUserId = long("telegram_user_id")
+    val expiresAt = timestampWithTimeZone("expires_at")
+    val consumedAt = timestampWithTimeZone("consumed_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at").databaseGenerated()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+object WebAppSessions : Table("webapp_sessions") {
+    val id = javaUUID("id")
+    val telegramUserId = long("telegram_user_id")
+    val telegramChatId = long("telegram_chat_id").nullable()
+    val telegramTopicId = long("telegram_topic_id").nullable()
+    val tokenDigest = binary("token_digest")
+    val tokenHash = text("token_hash")
+    val csrfDigest = binary("csrf_digest")
+    val csrfHash = text("csrf_hash")
+    val expiresAt = timestampWithTimeZone("expires_at")
+    val createdAt = timestampWithTimeZone("created_at").databaseGenerated()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
