@@ -247,7 +247,22 @@ class InstallationRepository(
             installationWithMuteQuery(installationId).firstOrNull()?.toAdminContext()
         }
 
+    suspend fun listInstallationsForContext(
+        chatId: Long?,
+        topicId: Long?,
+    ): List<InstallationAdminContext> = databaseFactory.dbTransaction {
+        val query = installationWithMuteQuery()
+        if (chatId != null) {
+            query.andWhere { Installations.telegramChatId eq chatId }
+            if (topicId != null) {
+                query.andWhere { Installations.telegramTopicId eq topicId }
+            }
+        }
+        query.map { it.toAdminContext() }
+    }
+
     suspend fun findInstallationByQuery(
+
         rawQuery: String,
         chatId: Long,
     ): InstallationAdminContext? = databaseFactory.dbTransaction {
