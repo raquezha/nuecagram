@@ -148,16 +148,16 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - Generated code in `generated/` is excluded from linting
 
 ## SOLID Principles & Clean Kotlin Guidelines
-- **SOLID Architecture**:
-  - **Single Responsibility (SRP)**: Keep handler functions, routes, and services focused on one responsibility. Separate request parsing and validation from execution/dispatch.
+- **SOLID Architecture (Enforced)**:
+  - **Single Responsibility (SRP)**: Keep handler functions, routes, and services focused strictly on one responsibility. Separate request parsing, context resolution, and validation from execution/dispatch.
   - **Open-Closed (OCP)**: Use sealed interfaces and polymorphic handlers rather than modifying core routing when adding capabilities.
   - **Interface Segregation (ISP) & Dependency Inversion (DIP)**: Define focused interfaces (`TelegramService`, `InstallationRepository`) and inject dependencies via Koin.
+- **Idiomatic Kotlin Expressions**:
+  - **Always prefer Kotlin `when` expressions**, `takeIf`, `let`, `runCatching`, and functional constructs over imperative nested `if-else` branching and scattered return guards.
+  - **Use single-expression function bodies** (`= when { ... }`) where appropriate for transformation, mapping, and decision functions.
 - **Detekt Guidelines**:
   - Maintain low cyclomatic and cognitive complexity. Avoid code smells like `CyclomaticComplexMethod`, `LongMethod`, or `TooManyFunctions`.
-  - Keep function length short and focused.
-- **Single Return & Idiomatic Kotlin**:
-  - Prefer single return points or single expression bodies (`= when { ... }`) over multiple scattered `return` guards in main logic methods when applicable.
-  - Prefer Kotlin `when` expressions, `takeIf`, `runCatching`, and functional constructs over multiple nested `if` statements.
+  - Keep function length short, focused, and idiomatic.
 
 ## Naming Conventions
 - **Packages:** lowercase dot-separated (`net.raquezha.nuecagram`)
