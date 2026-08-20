@@ -234,18 +234,8 @@ private suspend fun ApplicationCall.resolveLaunchContext(
         installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
     }?.takeIf { it.telegramUserId == verifiedUserId }
 
-    val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
-        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
-        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
-    val existingSession = when (nonceCtx) {
-        null -> existingToken?.let { installationRepository.verifyWebAppSession(it) }
-            ?.takeIf { it.telegramUserId == verifiedUserId }
-        else -> null
-    }
-
     return when {
         nonceCtx != null -> Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
-        existingSession != null -> Pair(existingSession.telegramChatId, existingSession.telegramTopicId)
         else -> Pair(null, null)
     }
 }
