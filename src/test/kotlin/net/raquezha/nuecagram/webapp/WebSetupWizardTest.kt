@@ -60,15 +60,28 @@ class WebSetupWizardTest : BaseEventTestHelper() {
         setCookies.joinToString("; ").split(";").map { it.trim() }
             .firstOrNull { it.startsWith("$name=") }?.substringAfter("$name=")
 
+    private fun createGroupInstallation(): net.raquezha.nuecagram.db.InstallationRecord = runBlocking {
+        installationRepository.createInstallation(
+            gitlabBaseUrl = "https://gitlab.com",
+            gitlabProjectId = 99999L,
+            telegramChatId = -100123456L,
+            telegramTopicId = 42L,
+        )
+    }
+
     /** Issue a session for userId with DM bootstrap pre-seeded. Returns (sessionCookie, csrf). */
-    private fun sessionFor(client: io.ktor.client.HttpClient, userId: Long): Pair<String, String> {
-        val chatId = -100123456L
+    private fun sessionFor(
+        client: io.ktor.client.HttpClient,
+        userId: Long,
+        targetInstallation: net.raquezha.nuecagram.db.InstallationRecord = installation,
+    ): Pair<String, String> {
+        val chatId = targetInstallation.telegramChatId
         mockTelegram.setChatMemberStatus(chatId, userId, "administrator")
         runBlocking { installationRepository.upsertTelegramPrivateChat(userId, chatId) }
         val nonce = runBlocking {
             installationRepository.issueLaunchNonce(
                 telegramChatId = chatId,
-                telegramTopicId = 42L,
+                telegramTopicId = targetInstallation.telegramTopicId,
                 telegramUserId = userId,
                 expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
             )
@@ -174,14 +187,14 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     @Test
     fun rotateEndpointRequiresDmBootstrapAndCsrf() = testApplication {
         configureTestApplication()
-        // Session without DM
+        val groupInst = createGroupInstallation()
         val userId = 7005L
-        val chatId = installation.telegramChatId
+        val chatId = groupInst.telegramChatId
         mockTelegram.setChatMemberStatus(chatId, userId, "administrator")
         val nonce = runBlocking {
             installationRepository.issueLaunchNonce(
                 telegramChatId = chatId,
-                telegramTopicId = installation.telegramTopicId,
+                telegramTopicId = groupInst.telegramTopicId,
                 telegramUserId = userId,
                 expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
             )
@@ -194,7 +207,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
         val sess = extractCookie(authResp.headers.getAll("Set-Cookie").orEmpty(), "nuecagram_webapp_session")!!
         val csrf = json.decodeFromString<WizardAuthPayload>(authResp.bodyAsText()).csrf
 
-        val resp = client.post("/nuecagram/api/webapp/installations/${installation.id}/rotate") {
+        val resp = client.post("/nuecagram/api/webapp/installations/${groupInst.id}/rotate") {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
@@ -205,17 +218,18 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     @Test
     fun rotateEndpointRotatesCredentialAndInvalidatesOld() = testApplication {
         configureTestApplication()
-        val (sess, csrf) = sessionFor(client, 7006L)
-        val oldToken = runBlocking { installationRepository.issueWebhookSecret(installation.id).raw }
+        val groupInst = createGroupInstallation()
+        val (sess, csrf) = sessionFor(client, 7006L, groupInst)
+        val oldToken = runBlocking { installationRepository.issueWebhookSecret(groupInst.id).raw }
 
-        val resp = client.post("/nuecagram/api/webapp/installations/${installation.id}/rotate") {
+        val resp = client.post("/nuecagram/api/webapp/installations/${groupInst.id}/rotate") {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.OK)
         val body = json.decodeFromString<WizardRotatePayload>(resp.bodyAsText())
-        assertThat(body.id).isEqualTo(installation.id.toString())
+        assertThat(body.id).isEqualTo(groupInst.id.toString())
         assertThat(body.credential).isNotEmpty()
         assertThat(body.credential).isNotEqualTo(oldToken)
 
@@ -226,9 +240,10 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     @Test
     fun rotateEndpointRequiresCsrfHeader() = testApplication {
         configureTestApplication()
-        val (sess, _) = sessionFor(client, 7007L)
+        val groupInst = createGroupInstallation()
+        val (sess, _) = sessionFor(client, 7007L, groupInst)
 
-        val resp = client.post("/nuecagram/api/webapp/installations/${installation.id}/rotate") {
+        val resp = client.post("/nuecagram/api/webapp/installations/${groupInst.id}/rotate") {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             // no CSRF header
@@ -254,7 +269,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     fun createInstallationInDmSessionWithTargetChatIdAcceptsHeaderAuth() = testApplication {
         configureTestApplication()
         val userId = 7009L
-        val targetChatId = installation.telegramChatId
+        val targetChatId = -100987654L
         mockTelegram.setChatMemberStatus(targetChatId, userId, "administrator")
         runBlocking { installationRepository.upsertTelegramPrivateChat(userId, targetChatId) }
 
