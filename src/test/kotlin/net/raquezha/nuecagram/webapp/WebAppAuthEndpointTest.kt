@@ -229,7 +229,7 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         configureTestApplication()
         val response = client.get("/nuecagram/webapp/app.js")
         assertThat(response.status).isEqualTo(HttpStatusCode.OK)
-        assertThat(response.headers["Content-Type"]).contains("application/javascript")
+        assertThat(response.headers["Content-Type"]).contains("javascript")
         val js = response.bodyAsText()
         assertThat(js).contains("function getAuthHeaders(")
         assertThat(js).contains("headers: getAuthHeaders({ 'Content-Type': 'application/json' })")

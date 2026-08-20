@@ -62,13 +62,13 @@ class WebSetupWizardTest : BaseEventTestHelper() {
 
     /** Issue a session for userId with DM bootstrap pre-seeded. Returns (sessionCookie, csrf). */
     private fun sessionFor(client: io.ktor.client.HttpClient, userId: Long): Pair<String, String> {
-        val chatId = installation.telegramChatId
+        val chatId = -100123456L
         mockTelegram.setChatMemberStatus(chatId, userId, "administrator")
         runBlocking { installationRepository.upsertTelegramPrivateChat(userId, chatId) }
         val nonce = runBlocking {
             installationRepository.issueLaunchNonce(
                 telegramChatId = chatId,
-                telegramTopicId = installation.telegramTopicId,
+                telegramTopicId = 42L,
                 telegramUserId = userId,
                 expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
             )

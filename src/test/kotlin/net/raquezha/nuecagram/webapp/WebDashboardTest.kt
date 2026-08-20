@@ -314,11 +314,12 @@ class WebDashboardTest : BaseEventTestHelper() {
     @Test
     fun nonAdminUserIsRejectedWithForbidden() = testApplication {
         configureTestApplication()
-        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 7777L, "member")
+        val groupChatId = -100123456L
+        mockTelegramService.setChatMemberStatus(groupChatId, 7777L, "member")
         val nonce = runBlocking {
             installationRepository.issueLaunchNonce(
-                telegramChatId = installation.telegramChatId,
-                telegramTopicId = installation.telegramTopicId,
+                telegramChatId = groupChatId,
+                telegramTopicId = null,
                 telegramUserId = 7777L,
                 expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
             )
@@ -437,6 +438,7 @@ class WebDashboardTest : BaseEventTestHelper() {
     fun rotateEndpointAcceptsSessionHeaderWithoutCookie() = testApplication {
         configureTestApplication()
         mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(9999L, installation.telegramChatId) }
         val nonce = runBlocking {
             installationRepository.issueLaunchNonce(
                 telegramChatId = installation.telegramChatId,
