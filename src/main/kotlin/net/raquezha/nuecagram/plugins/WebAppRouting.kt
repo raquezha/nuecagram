@@ -236,8 +236,19 @@ private suspend fun ApplicationCall.resolveLaunchContext(
         installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
     }?.takeIf { it.telegramUserId == verifiedUserId }
 
+    if (nonceCtx != null) {
+        return Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
+    }
+
+    val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
+        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
+        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
+
+    val existingSession = existingToken?.let { installationRepository.verifyWebAppSession(it) }
+        ?.takeIf { it.telegramUserId == verifiedUserId }
+
     return when {
-        nonceCtx != null -> Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
+        existingSession != null -> Pair(existingSession.telegramChatId, existingSession.telegramTopicId)
         else -> Pair(null, null)
     }
 }
@@ -742,8 +753,9 @@ private fun webAppShellHtml(basePath: String): String = """
   </head>
   <body>
     <div class="container">
-      <div id="contextBanner" class="context-banner">
-        <strong>Context:</strong> <span id="contextText">Resolving Telegram context...</span>
+      <div id="contextBanner" class="context-banner" style="display:flex;justify-content:space-between;align-items:center;">
+        <div><strong>Context:</strong> <span id="contextText">Resolving Telegram context...</span></div>
+        <button id="btnAdd" style="display:none;font-size:0.8rem;padding:0.25rem 0.6rem;background:var(--accent-tg);color:#fff;border:none;border-radius:4px;cursor:pointer;">+ Add</button>
       </div>
       <div id="installationsList">
         <div class="card"><p>Loading installations...</p></div>
@@ -832,7 +844,7 @@ async function initWebApp() {
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ initData: tgInitData, startParam: startParam })
     });
     if (res.ok) {
@@ -841,6 +853,10 @@ async function initWebApp() {
       const st = data.sessionToken;
       if (st) sToken = st;
       currentContext = { chatId: data.telegramChatId, topicId: data.telegramTopicId };
+      const btnAdd = document.getElementById('btnAdd');
+      if (btnAdd) {
+        btnAdd.style.display = (data.telegramChatId != null && data.telegramChatId < 0) ? 'inline-block' : 'none';
+      }
       const ctxText = document.getElementById('contextText');
       if (ctxText) ctxText.innerText = data.telegramChatId
         ? 'Chat #' + data.telegramChatId + (data.telegramTopicId ? ' / Topic #' + data.telegramTopicId : '')
@@ -872,7 +888,7 @@ async function loadInstallations() {
     const items = await res.json();
     if (!el) return;
     if (items.length === 0) {
-      const emptyMsg = currentContext.chatId
+      const emptyMsg = (currentContext.chatId != null && currentContext.chatId < 0)
         ? 'No installations found. Tap + Add to create one.'
         : 'No accessible installations found. Open this Web App inside a Telegram group or topic to set up notifications.';
       el.innerHTML = '<div class="card"><p>' + emptyMsg + '</p></div>';
@@ -922,6 +938,10 @@ function showScreen(name) {
   const rev = document.getElementById('screen-reveal');
   if (wiz) wiz.style.display = name === 'wizard' ? '' : 'none';
   if (rev) rev.style.display = name === 'reveal' ? '' : 'none';
+  const btnAdd = document.getElementById('btnAdd');
+  if (btnAdd) {
+    btnAdd.style.display = (name === 'dashboard' && currentContext.chatId != null && currentContext.chatId < 0) ? 'inline-block' : 'none';
+  }
 }
 
 async function createInstallation() {
@@ -937,10 +957,17 @@ async function createInstallation() {
   document.getElementById('btnCreate').disabled = true;
   document.getElementById('btnCreate').innerText = 'Creating...';
   try {
+    const payload = { gitlabBaseUrl: url, gitlabProjectId: pid };
+    if (currentContext.chatId != null && currentContext.chatId < 0) {
+      payload.telegramChatId = currentContext.chatId;
+      if (currentContext.topicId != null) {
+        payload.telegramTopicId = currentContext.topicId;
+      }
+    }
     const res = await fetch('${basePath}/api/webapp/installations', {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ gitlabBaseUrl: url, gitlabProjectId: pid })
+      body: JSON.stringify(payload)
     });
     if (res.status === 201) {
       const data = await res.json();

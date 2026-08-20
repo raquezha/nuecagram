@@ -14,7 +14,7 @@ Nuecagram features a **Telegram Web App-first** management experience. Group adm
 
 1. In your destination Telegram group chat or forum topic, tap the **Open Nuecagram** inline button on any bot reply or open `/webapp`.
 2. The Web App automatically resolves your current Telegram context (Group Chat vs. Forum Topic #id).
-3. Tap **+ Connect New Project** to launch the Setup Wizard.
+3. Tap **+ Add** in the dashboard header to launch the Setup Wizard (visible when group context is active).
 4. Enter your **GitLab Base URL** (e.g. `https://gitlab.com`) and numeric **Project ID**.
 5. Tap **Create Installation**. The Web App generates a unique webhook endpoint URL and single-view `X-Gitlab-Token` secret.
 6. Copy the secret token immediately and configure your GitLab webhook. For security, raw secrets are displayed **only once** in the UI.

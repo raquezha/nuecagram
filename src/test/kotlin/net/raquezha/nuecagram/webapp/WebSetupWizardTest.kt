@@ -25,6 +25,7 @@ import org.koin.test.inject
 private data class WizardAuthPayload(
     val success: Boolean,
     val csrf: String,
+    val sessionToken: String? = null,
     val telegramChatId: Long? = null,
 )
 
@@ -247,5 +248,34 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":1}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
+    }
+
+    @Test
+    fun createInstallationInDmSessionWithTargetChatIdAcceptsHeaderAuth() = testApplication {
+        configureTestApplication()
+        val userId = 7009L
+        val targetChatId = installation.telegramChatId
+        mockTelegram.setChatMemberStatus(targetChatId, userId, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(userId, targetChatId) }
+
+        val iData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$iData"}""")
+        }
+        assertThat(authResp.status).isEqualTo(HttpStatusCode.OK)
+        val authPayload = json.decodeFromString<WizardAuthPayload>(authResp.bodyAsText())
+        val token = authPayload.sessionToken
+        assertThat(token).isNotNull()
+
+        val resp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("X-Session-Token", token)
+            header("X-CSRF-Token", authPayload.csrf)
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":88888,"telegramChatId":$targetChatId}""")
+        }
+        assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
+        val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
+        assertThat(body.installation.telegramChatId).isEqualTo(targetChatId)
     }
 }
