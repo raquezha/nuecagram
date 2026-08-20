@@ -228,30 +228,24 @@ private suspend fun ApplicationCall.resolveLaunchContext(
     verifiedUserId: Long,
     installationRepository: InstallationRepository,
 ): Pair<Long?, Long?> {
-    var resolvedChatId: Long? = null
-    var resolvedTopicId: Long? = null
+    val nonceCtx = startParam?.takeIf { it.startsWith("nonce_") }?.let { param ->
+        installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
+    }?.takeIf { it.telegramUserId == verifiedUserId }
 
-    if (!startParam.isNullOrBlank() && startParam.startsWith("nonce_")) {
-        val rawNonce = startParam.removePrefix("nonce_")
-        val nonceCtx = installationRepository.consumeLaunchNonce(rawNonce)
-        if (nonceCtx != null && nonceCtx.telegramUserId == verifiedUserId) {
-            resolvedChatId = nonceCtx.telegramChatId
-            resolvedTopicId = nonceCtx.telegramTopicId
-        }
+    val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
+        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
+        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
+    val existingSession = when (nonceCtx) {
+        null -> existingToken?.let { installationRepository.verifyWebAppSession(it) }
+            ?.takeIf { it.telegramUserId == verifiedUserId }
+        else -> null
     }
 
-    if (resolvedChatId == null) {
-        val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
-            ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
-            ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
-        val existingSession = existingToken?.let { installationRepository.verifyWebAppSession(it) }
-        if (existingSession != null && existingSession.telegramUserId == verifiedUserId) {
-            resolvedChatId = existingSession.telegramChatId
-            resolvedTopicId = existingSession.telegramTopicId
-        }
+    return when {
+        nonceCtx != null -> Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
+        existingSession != null -> Pair(existingSession.telegramChatId, existingSession.telegramTopicId)
+        else -> Pair(null, null)
     }
-
-    return Pair(resolvedChatId, resolvedTopicId)
 }
 
 private suspend fun ApplicationCall.handleGetInstallations(
