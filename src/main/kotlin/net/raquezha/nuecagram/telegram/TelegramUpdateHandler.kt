@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package net.raquezha.nuecagram.telegram
 
 import java.time.Instant
@@ -88,29 +90,26 @@ class TelegramUpdateHandler(
             "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.", message.messageThreadId)
             "/help" -> {
                 val userId = message.from?.id
-                val markup = if (userId != null) {
-                    webAppLauncherMarkup(message.chat.id, message.messageThreadId, userId, "Open Web App")
-                } else null
-                send(
-                    message.chat.id,
-                    HELP_MESSAGE,
-                    message.messageThreadId,
-                    replyMarkup = markup,
-                )
+                if (userId != null) {
+                    sendLauncherMessage(
+                        message.chat.id,
+                        message.messageThreadId,
+                        userId,
+                        HELP_MESSAGE,
+                        "Open Web App",
+                    )
+                } else {
+                    send(message.chat.id, HELP_MESSAGE, message.messageThreadId)
+                }
             }
             "/status" -> {
                 val authorized = authorizeInstallationCommand(message, STATUS_USAGE_MESSAGE) ?: return
-                val markup = webAppLauncherMarkup(
+                sendLauncherMessage(
                     message.chat.id,
                     message.messageThreadId,
                     authorized.actorId,
-                    "Open Web App",
-                )
-                send(
-                    message.chat.id,
                     authorized.installation.statusText(),
-                    message.messageThreadId,
-                    replyMarkup = markup,
+                    "Open Web App",
                 )
             }
             "/digest" -> handleDigest(message)
@@ -136,12 +135,14 @@ class TelegramUpdateHandler(
         val userId = message.from?.id
         if (message.chat.type == "private" && userId != null) {
             installationRepository.upsertTelegramPrivateChat(userId, message.chat.id)
-            val markup = webAppLauncherMarkup(message.chat.id, null, userId, "Open Management Dashboard")
-            send(
+            sendLauncherMessage(
                 message.chat.id,
+                null,
+                userId,
                 "Private onboarding is ready. Return to your group to continue.",
-                replyMarkup = markup,
+                "Open Management Dashboard",
             )
+            return
         } else {
             send(message.chat.id, "Start a private chat with the bot first.", message.messageThreadId)
         }
@@ -218,13 +219,13 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             setupDetailsText(config, installation, credential.raw, managementLink.raw),
         )
-        val markup = webAppLauncherMarkup(
+        sendLauncherMessage(
             message.chat.id,
             message.messageThreadId,
             authorized.actorId,
+            PRIVATE_DELIVERY_MESSAGE,
             "Open Setup in Web App",
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private suspend fun handleManage(message: TelegramMessage) {
@@ -244,13 +245,13 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             managementLinkText(config, authorized.installation.id, managementLink.raw),
         )
-        val markup = webAppLauncherMarkup(
+        sendLauncherMessage(
             message.chat.id,
             message.messageThreadId,
             authorized.actorId,
+            PRIVATE_DELIVERY_MESSAGE,
             "Open Dashboard in Web App",
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private suspend fun handleWebApp(message: TelegramMessage) {
@@ -264,23 +265,18 @@ class TelegramUpdateHandler(
             send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
             return
         }
-        val markup = webAppLauncherMarkup(
-            message.chat.id,
-            message.messageThreadId,
-            userId,
-            "Open Nuecagram Web App",
-        )
         installationRepository.writeAuditEvent(
             installationId = null,
             actorType = "telegram",
             actorId = userId.toString(),
             action = "telegram_webapp_launch",
         )
-        send(
+        sendLauncherMessage(
             message.chat.id,
-            "Open Nuecagram Web App:",
             message.messageThreadId,
-            replyMarkup = markup,
+            userId,
+            "Open Nuecagram Web App:",
+            "Open Nuecagram Web App",
         )
     }
 
@@ -312,13 +308,13 @@ class TelegramUpdateHandler(
             authorized.privateChatId,
             rotationDetailsText(config, authorized.installation, credential.raw, managementLink.raw),
         )
-        val markup = webAppLauncherMarkup(
+        sendLauncherMessage(
             message.chat.id,
             message.messageThreadId,
             authorized.actorId,
+            PRIVATE_DELIVERY_MESSAGE,
             "Open Dashboard in Web App",
         )
-        send(message.chat.id, PRIVATE_DELIVERY_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private suspend fun authorizeGroupAdmin(
@@ -406,12 +402,13 @@ class TelegramUpdateHandler(
             ?.trim()
             ?.takeIf(String::isNotBlank)
 
-    private suspend fun webAppLauncherMarkup(
+    private suspend fun sendLauncherMessage(
         chatId: Long,
         threadId: Long?,
         userId: Long,
+        text: String,
         buttonText: String = "Open Nuecagram Web App",
-    ): InlineKeyboardMarkup {
+    ) {
         val nonce = installationRepository.issueLaunchNonce(
             telegramChatId = chatId,
             telegramTopicId = threadId,
@@ -419,16 +416,27 @@ class TelegramUpdateHandler(
             expiresAt = Instant.now().plus(LAUNCH_NONCE_TTL_MINUTES, ChronoUnit.MINUTES),
         )
         val url = "${config.publicBaseUrl()}/webapp?startapp=nonce_${nonce.raw}"
-        return InlineKeyboardMarkup(
-            inlineKeyboard = listOf(
-                listOf(
-                    InlineKeyboardButton(
-                        text = buttonText,
-                        webApp = WebAppInfo(url = url),
-                    ),
-                ),
-            ),
+        val webAppMarkup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = buttonText, webApp = WebAppInfo(url = url)))),
         )
+        val directUrlMarkup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = buttonText, url = url))),
+        )
+        val cid = chatId.toString()
+        val textWithLink = "$text\n\n<a href=\"$url\">$buttonText</a>"
+
+        val attempts = listOfNotNull(
+            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = webAppMarkup),
+            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = directUrlMarkup),
+            threadId?.let { Message(chatId = cid, text = text, threadId = null, replyMarkup = webAppMarkup) },
+            threadId?.let { Message(chatId = cid, text = text, threadId = null, replyMarkup = directUrlMarkup) },
+            Message(chatId = cid, text = textWithLink, threadId = threadId),
+            threadId?.let { Message(chatId = cid, text = textWithLink, threadId = null) },
+        )
+
+        attempts.firstNotNullOfOrNull { msg ->
+            runCatching { telegramService.sendMessage(msg) }.getOrNull()
+        }
     }
 
     private fun buildSendAttempts(
@@ -536,7 +544,7 @@ private fun setupDetailsText(
         append(installation.id)
         append("\nWebhook URL: ")
         append(config.webhookUrl())
-        append("\nGitLab credential: ")
+        append("\nGitLab secret token: ")
         append(credential)
         append("\nManagement URL: ")
         append(config.managementUrl(managementCode))
@@ -560,7 +568,7 @@ private fun rotationDetailsText(
         append(installation.id)
         append("\nWebhook URL: ")
         append(config.webhookUrl())
-        append("\nGitLab credential: ")
+        append("\nGitLab secret token: ")
         append(credential)
         append("\nManagement URL: ")
         append(config.managementUrl(managementCode))

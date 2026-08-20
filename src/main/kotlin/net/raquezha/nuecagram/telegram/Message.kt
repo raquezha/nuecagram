@@ -19,6 +19,10 @@ data class InlineKeyboardButton(
     @SerialName("text")
     val text: String,
     @JsonInclude(Include.NON_NULL)
+    @get:JsonProperty("url")
+    @SerialName("url")
+    val url: String? = null,
+    @JsonInclude(Include.NON_NULL)
     @get:JsonProperty("web_app")
     @SerialName("web_app")
     val webApp: WebAppInfo? = null,

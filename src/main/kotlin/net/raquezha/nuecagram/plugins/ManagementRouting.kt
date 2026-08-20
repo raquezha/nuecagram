@@ -340,7 +340,7 @@ private fun buildCookie(
     secure: Boolean,
 ): String =
     buildString {
-        append("$name=$value; Path=$basePath/manage; Max-Age=$maxAge; HttpOnly; SameSite=Strict")
+        append("$name=$value; Path=$basePath/manage; Max-Age=$maxAge; HttpOnly; SameSite=Lax")
         if (secure) append("; Secure")
     }
 
@@ -349,7 +349,7 @@ private fun buildExpiredSessionCookie(basePath: String, secure: Boolean): String
         append(SESSION_COOKIE_NAME)
         append("=; Path=")
         append(basePath)
-        append("/manage; Max-Age=0; HttpOnly; SameSite=Strict")
+        append("/manage; Max-Age=0; HttpOnly; SameSite=Lax")
         if (secure) append("; Secure")
     }
 
