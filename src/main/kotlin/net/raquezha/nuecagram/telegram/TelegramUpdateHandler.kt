@@ -431,39 +431,41 @@ class TelegramUpdateHandler(
         )
     }
 
+    private fun buildSendAttempts(
+        chatId: Long,
+        text: String,
+        threadId: Long?,
+        replyMarkup: InlineKeyboardMarkup?,
+    ): List<Message> {
+        val cid = chatId.toString()
+        val withMarkup = listOfNotNull(
+            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = replyMarkup),
+            Message(chatId = cid, text = text, threadId = threadId, parseMode = "", replyMarkup = replyMarkup),
+            threadId?.let {
+                Message(chatId = cid, text = text, threadId = null, parseMode = "", replyMarkup = replyMarkup)
+            },
+        )
+        val fallbackWithoutMarkup = if (replyMarkup != null) {
+            listOfNotNull(
+                Message(chatId = cid, text = text, threadId = threadId),
+                threadId?.let { Message(chatId = cid, text = text, threadId = null) },
+            )
+        } else {
+            emptyList()
+        }
+
+        return withMarkup + fallbackWithoutMarkup
+    }
+
     private suspend fun send(
         chatId: Long,
         text: String,
         threadId: Long? = null,
         replyMarkup: InlineKeyboardMarkup? = null,
     ) {
-        val attempts = listOfNotNull(
-            Message(chatId = chatId.toString(), text = text, threadId = threadId, replyMarkup = replyMarkup),
-            Message(
-                chatId = chatId.toString(),
-                text = text,
-                threadId = threadId,
-                parseMode = "",
-                replyMarkup = replyMarkup,
-            ),
-            if (threadId != null) {
-                Message(
-                    chatId = chatId.toString(),
-                    text = text,
-                    threadId = null,
-                    parseMode = "",
-                    replyMarkup = replyMarkup,
-                )
-            } else {
-                null
-            },
-        )
-
-        attempts.firstNotNullOfOrNull { msg ->
+        buildSendAttempts(chatId, text, threadId, replyMarkup).firstNotNullOfOrNull { msg ->
             runCatching { telegramService.sendMessage(msg) }.getOrNull()
         }
-
-        return
     }
 }
 

@@ -208,7 +208,7 @@ private suspend fun ApplicationCall.handleWebAppAuth(
         buildCookie(WEBAPP_CSRF_COOKIE_NAME, session.csrf, basePath, SESSION_TTL_SECONDS, isHttps()),
     )
 
-    val sessionTokenValue = session.component5()
+    val sessionTokenValue = session.raw
     appendWebAppSecurityHeaders()
     respond(
         HttpStatusCode.OK,
@@ -227,6 +227,11 @@ private suspend fun ApplicationCall.handleWebAppAuth(
     )
 }
 
+private fun ApplicationCall.extractSessionToken(): String? =
+    request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
+        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
+        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
+
 private suspend fun ApplicationCall.resolveLaunchContext(
     startParam: String?,
     verifiedUserId: Long,
@@ -236,18 +241,12 @@ private suspend fun ApplicationCall.resolveLaunchContext(
         installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
     }?.takeIf { it.telegramUserId == verifiedUserId }
 
-    if (nonceCtx != null) {
-        return Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
-    }
-
-    val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
-        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
-        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
-
-    val existingSession = existingToken?.let { installationRepository.verifyWebAppSession(it) }
+    val existingSession = extractSessionToken()
+        ?.let { installationRepository.verifyWebAppSession(it) }
         ?.takeIf { it.telegramUserId == verifiedUserId }
 
     return when {
+        nonceCtx != null -> Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
         existingSession != null -> Pair(existingSession.telegramChatId, existingSession.telegramTopicId)
         else -> Pair(null, null)
     }
@@ -610,10 +609,7 @@ private suspend fun ApplicationCall.verifyAdminStatus(
 private suspend fun ApplicationCall.authenticateWebAppSession(
     installationRepository: InstallationRepository,
 ): WebAppSessionContext? {
-    val sessionToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
-        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
-        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
-
+    val sessionToken = extractSessionToken()
     if (sessionToken == null) {
         respond(HttpStatusCode.Unauthorized, ErrorResponsePayload("Web App session required"))
         return null
