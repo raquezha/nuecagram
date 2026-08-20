@@ -189,6 +189,27 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun installationDetailEndpointAllowsAccessForUnscopedAdminSession() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val setCookies = authResp.headers.getAll("Set-Cookie").orEmpty()
+        val sessionCookie = extractCookie(setCookies, "nuecagram_webapp_session")
+
+        val detailResp = client.get("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(detailResp.status).isEqualTo(HttpStatusCode.OK)
+        val item = json.decodeFromString<TestInstallationPayload>(detailResp.bodyAsText())
+        assertThat(item.id).isEqualTo(installation.id.toString())
+    }
+
+    @Test
     fun muteEndpointRequiresCsrfAndUpdatesMuteStatus() = testApplication {
         configureTestApplication()
         val (sessionCookie, csrf) = issueSessionWithNonce(

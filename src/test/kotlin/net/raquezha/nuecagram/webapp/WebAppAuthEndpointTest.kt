@@ -122,4 +122,33 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         val payload2 = json.decodeFromString<TestAuthResponsePayload>(response2.bodyAsText())
         assertThat(payload2.telegramChatId).isNull()
     }
+
+    @Test
+    fun authEndpointFallsBackToInitDataStartParamWhenPayloadStartParamIsBlank() = testApplication {
+        configureTestApplication()
+        val nonce = runBlocking {
+            installationRepository.issueLaunchNonce(
+                telegramChatId = -100987654L,
+                telegramTopicId = 99L,
+                telegramUserId = 12345L,
+                expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
+            )
+        }
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(
+            botToken,
+            userId = 12345L,
+            extraParams = mapOf("start_param" to "nonce_${nonce.raw}"),
+        )
+
+        // Send payload with blank startParam string: should fall back to verified.startParam
+        val response = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData","startParam":""}""")
+        }
+        assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+        val payload = json.decodeFromString<TestAuthResponsePayload>(response.bodyAsText())
+        assertThat(payload.telegramChatId).isEqualTo(-100987654L)
+        assertThat(payload.telegramTopicId).isEqualTo(99L)
+    }
 }

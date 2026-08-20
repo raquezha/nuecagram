@@ -254,18 +254,26 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleWebApp(message: TelegramMessage) {
-        val groupAdmin =
-            authorizeGroupAdmin(message, "Usage: <code>/webapp</code>", requireArguments = false) ?: return
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
+            return
+        }
+        val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
+        if (status !in ADMIN_STATUSES) {
+            send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
+            return
+        }
         val markup = webAppLauncherMarkup(
             message.chat.id,
             message.messageThreadId,
-            groupAdmin.actorId,
+            userId,
             "Open Nuecagram Web App",
         )
         installationRepository.writeAuditEvent(
             installationId = null,
             actorType = "telegram",
-            actorId = groupAdmin.actorId.toString(),
+            actorId = userId.toString(),
             action = "telegram_webapp_launch",
         )
         send(
