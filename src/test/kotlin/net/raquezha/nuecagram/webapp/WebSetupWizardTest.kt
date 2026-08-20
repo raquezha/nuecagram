@@ -131,7 +131,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":99999}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70001}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
         assertThat(resp.bodyAsText()).contains("DM bootstrap")
@@ -146,7 +146,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"http://not-https.com","gitlabProjectId":1}""")
+            setBody("""{"gitlabBaseUrl":"http://not-https.com","gitlabProjectId":70002}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.BadRequest)
         assertThat(resp.bodyAsText()).contains("https://")
@@ -161,7 +161,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":55555}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70003}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
@@ -182,7 +182,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":66666}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70004}""")
         }
         // audit event written — verified via no exception (repository writes async, no public read API needed)
     }
@@ -263,7 +263,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             // no CSRF header
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":1}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70008}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
     }
@@ -290,7 +290,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("X-Session-Token", token)
             header("X-CSRF-Token", authPayload.csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":88888,"telegramChatId":$targetChatId}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70009,"telegramChatId":$targetChatId}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
