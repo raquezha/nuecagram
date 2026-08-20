@@ -76,7 +76,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     private fun sessionFor(
         client: io.ktor.client.HttpClient,
         userId: Long,
-        targetInstallation: net.raquezha.nuecagram.db.InstallationRecord = installation,
+        targetInstallation: net.raquezha.nuecagram.db.InstallationRecord = createGroupInstallation(),
     ): Pair<String, String> {
         val chatId = targetInstallation.telegramChatId
         mockTelegram.setChatMemberStatus(chatId, userId, "administrator")
@@ -221,18 +221,18 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     @Test
     fun rotateEndpointRotatesCredentialAndInvalidatesOld() = testApplication {
         configureTestApplication()
-        val groupInst = createGroupInstallation()
-        val (sess, csrf) = sessionFor(client, 7006L, groupInst)
-        val oldToken = runBlocking { installationRepository.issueWebhookSecret(groupInst.id).raw }
+        val targetInst = createGroupInstallation()
+        val (sess, csrf) = sessionFor(client, 7006L, targetInst)
+        val oldToken = runBlocking { installationRepository.issueWebhookSecret(targetInst.id).raw }
 
-        val resp = client.post("/nuecagram/api/webapp/installations/${groupInst.id}/rotate") {
+        val resp = client.post("/nuecagram/api/webapp/installations/${targetInst.id}/rotate") {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.OK)
         val body = json.decodeFromString<WizardRotatePayload>(resp.bodyAsText())
-        assertThat(body.id).isEqualTo(groupInst.id.toString())
+        assertThat(body.id).isEqualTo(targetInst.id.toString())
         assertThat(body.credential).isNotEmpty()
         assertThat(body.credential).isNotEqualTo(oldToken)
 
@@ -243,10 +243,10 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     @Test
     fun rotateEndpointRequiresCsrfHeader() = testApplication {
         configureTestApplication()
-        val groupInst = createGroupInstallation()
-        val (sess, _) = sessionFor(client, 7007L, groupInst)
+        val targetInst = createGroupInstallation()
+        val (sess, _) = sessionFor(client, 7007L, targetInst)
 
-        val resp = client.post("/nuecagram/api/webapp/installations/${groupInst.id}/rotate") {
+        val resp = client.post("/nuecagram/api/webapp/installations/${targetInst.id}/rotate") {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             // no CSRF header
