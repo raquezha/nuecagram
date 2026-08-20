@@ -94,6 +94,8 @@ private data class ErrorResponsePayload(
 private data class CreateInstallationRequestPayload(
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long,
+    val telegramChatId: Long? = null,
+    val telegramTopicId: Long? = null,
 )
 
 @Serializable
@@ -255,7 +257,8 @@ private suspend fun ApplicationCall.handleGetInstallations(
     val session = authenticateWebAppSession(installationRepository) ?: return
     if (!verifyAdminStatus(session, telegramService)) return
 
-    val items = if (session.telegramChatId != null) {
+    val isGroupContext = session.telegramChatId != null && session.telegramChatId < 0
+    val items = if (isGroupContext) {
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
@@ -389,6 +392,52 @@ private suspend fun ApplicationCall.handleCreateInstallation(
     }
 }
 
+private suspend fun ApplicationCall.respondError(
+    status: HttpStatusCode,
+    error: String,
+): WebAppResponseSpec? {
+    respond(status, ErrorResponsePayload(error))
+    return null
+}
+
+private data class TargetDestination(val chatId: Long?, val topicId: Long?)
+
+private fun resolveTargetDestination(
+    session: WebAppSessionContext,
+    parsed: CreateInstallationRequestPayload?,
+): TargetDestination {
+    val isGroup = session.telegramChatId != null && session.telegramChatId < 0
+    return TargetDestination(
+        chatId = if (isGroup) session.telegramChatId else parsed?.telegramChatId,
+        topicId = if (isGroup) session.telegramTopicId else parsed?.telegramTopicId,
+    )
+}
+
+private suspend fun resolveDmId(
+    session: WebAppSessionContext,
+    repository: InstallationRepository,
+): Long? {
+    val isDmSession = session.telegramChatId != null &&
+        session.telegramChatId > 0 &&
+        session.telegramChatId == session.telegramUserId
+    return if (isDmSession) {
+        session.telegramUserId
+    } else {
+        repository.telegramPrivateChatId(session.telegramUserId)
+    }
+}
+
+private suspend fun isTargetAdmin(
+    session: WebAppSessionContext,
+    targetChatId: Long?,
+    telegramService: TelegramService,
+): Boolean {
+    if (session.telegramChatId != null && session.telegramChatId < 0) return true
+    if (targetChatId == null || targetChatId >= 0) return true
+    val status = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
+    return status in ADMIN_STATUSES
+}
+
 private suspend fun ApplicationCall.processCreateInstallation(
     installationRepository: InstallationRepository,
     telegramService: TelegramService,
@@ -400,48 +449,62 @@ private suspend fun ApplicationCall.processCreateInstallation(
     if (!verifyAdminStatus(session, telegramService)) return null
     if (!verifyCsrfHeader(installationRepository, session)) return null
 
-    val chatId = session.telegramChatId
-    val dmId = if (chatId != null) installationRepository.telegramPrivateChatId(session.telegramUserId) else null
     val bodyText = receiveText()
     val parsed = runCatching { json.decodeFromString<CreateInstallationRequestPayload>(bodyText) }.getOrNull()
+    val target = resolveTargetDestination(session, parsed)
+    val dmId = resolveDmId(session, installationRepository)
 
     return when {
-        chatId == null -> {
-            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Session has no Telegram context"))
-            null
-        }
-        dmId == null -> {
-            respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
-            null
-        }
-        parsed == null || parsed.gitlabBaseUrl.isBlank() -> {
-            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Missing or invalid payload"))
-            null
-        }
-        !parsed.gitlabBaseUrl.startsWith("https://") -> {
-            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("gitlabBaseUrl must start with https://"))
-            null
-        }
-        else -> {
-            val installation = installationRepository.createInstallation(
-                gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
-                gitlabProjectId = parsed.gitlabProjectId,
-                telegramChatId = chatId,
-                telegramTopicId = session.telegramTopicId,
+        dmId == null -> respondError(HttpStatusCode.Forbidden, "DM bootstrap required")
+        target.chatId == null || target.chatId >= 0 ->
+            respondError(HttpStatusCode.BadRequest, "Valid target Telegram group chat ID required")
+        !isTargetAdmin(session, target.chatId, telegramService) ->
+            respondError(
+                HttpStatusCode.Forbidden,
+                "Telegram group administrator permissions required for target group",
             )
-            val tok = installationRepository.issueWebhookSecret(installation.id)
-            installationRepository.writeAuditEvent(
-                installationId = installation.id,
-                actorType = "webapp_session",
-                actorId = session.telegramUserId.toString(),
-                action = "webapp_setup",
-            )
-            WebAppResponseSpec(
-                HttpStatusCode.Created,
-                toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
-            )
-        }
+        parsed == null || parsed.gitlabBaseUrl.isBlank() ->
+            respondError(HttpStatusCode.BadRequest, "Missing or invalid payload")
+        !parsed.gitlabBaseUrl.startsWith("https://") ->
+            respondError(HttpStatusCode.BadRequest, "gitlabBaseUrl must start with https://")
+        else -> createAndRespond(
+            installationRepository = installationRepository,
+            config = config,
+            basePath = basePath,
+            parsed = parsed,
+            targetChatId = target.chatId,
+            targetTopicId = target.topicId,
+            telegramUserId = session.telegramUserId,
+        )
     }
+}
+
+private suspend fun createAndRespond(
+    installationRepository: InstallationRepository,
+    config: ConfigWithSecrets,
+    basePath: String,
+    parsed: CreateInstallationRequestPayload,
+    targetChatId: Long,
+    targetTopicId: Long?,
+    telegramUserId: Long,
+): WebAppResponseSpec {
+    val installation = installationRepository.createInstallation(
+        gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
+        gitlabProjectId = parsed.gitlabProjectId,
+        telegramChatId = targetChatId,
+        telegramTopicId = targetTopicId,
+    )
+    val tok = installationRepository.issueWebhookSecret(installation.id)
+    installationRepository.writeAuditEvent(
+        installationId = installation.id,
+        actorType = "webapp_session",
+        actorId = telegramUserId.toString(),
+        action = "webapp_setup",
+    )
+    return WebAppResponseSpec(
+        HttpStatusCode.Created,
+        toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
+    )
 }
 
 private fun toCreateResponse(
@@ -478,7 +541,7 @@ private suspend fun ApplicationCall.processRotateInstallation(
     if (!verifyAdminStatus(session, telegramService)) return null
     if (!verifyCsrfHeader(installationRepository, session)) return null
 
-    val dmId = installationRepository.telegramPrivateChatId(session.telegramUserId)
+    val dmId = resolveDmId(session, installationRepository)
     val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
     val item = if (idParam != null) installationRepository.installationAdminContext(idParam) else null
 
@@ -516,7 +579,7 @@ private suspend fun canAccess(
     item: InstallationAdminContext,
     telegramService: TelegramService,
 ): Boolean {
-    if (session.telegramChatId != null) {
+    if (session.telegramChatId != null && session.telegramChatId < 0) {
         if (item.telegramChatId != session.telegramChatId) return false
         if (session.telegramTopicId != null && item.telegramTopicId != session.telegramTopicId) return false
         return true
@@ -532,6 +595,7 @@ private suspend fun ApplicationCall.verifyAdminStatus(
     telegramService: TelegramService,
 ): Boolean {
     val chatId = session.telegramChatId ?: return true
+    if (chatId > 0) return true
     val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
     if (status !in ADMIN_STATUSES) {
         respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
