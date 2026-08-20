@@ -50,6 +50,13 @@ private data class TestActionResponsePayload(
     val message: String,
 )
 
+@Serializable
+private data class TestCreateInstallationResponsePayload(
+    val installation: TestInstallationPayload,
+    val credential: String,
+    val webhookUrl: String,
+)
+
 class WebDashboardTest : BaseEventTestHelper() {
     private val testConfig: ConfigWithSecrets by inject()
     private val mockTelegramService: MockTelegramService
@@ -326,5 +333,37 @@ class WebDashboardTest : BaseEventTestHelper() {
             header("Cookie", "nuecagram_webapp_session=$sessionCookie")
         }
         assertThat(listResp.status).isEqualTo(HttpStatusCode.Forbidden)
+    }
+
+    @Test
+    fun createInstallationInDmSessionWithTargetChatId() = testApplication {
+        configureTestApplication()
+        val targetChatId = -100987654L
+        mockTelegramService.setChatMemberStatus(targetChatId, 9999L, "administrator")
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = 9999L,
+            topicId = null,
+        )
+
+        val createResp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody(
+                """
+                {
+                    "gitlabBaseUrl": "https://gitlab.example.com",
+                    "gitlabProjectId": 456,
+                    "telegramChatId": $targetChatId
+                }
+                """.trimIndent(),
+            )
+        }
+        assertThat(createResp.status).isEqualTo(HttpStatusCode.Created)
+        val created = json.decodeFromString<TestCreateInstallationResponsePayload>(createResp.bodyAsText())
+        assertThat(created.installation.telegramChatId).isEqualTo(targetChatId)
+        assertThat(created.installation.gitlabBaseUrl).isEqualTo("https://gitlab.example.com")
     }
 }
