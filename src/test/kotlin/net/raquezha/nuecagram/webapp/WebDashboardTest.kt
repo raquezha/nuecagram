@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package net.raquezha.nuecagram.webapp
 
 import com.google.common.truth.Truth.assertThat
@@ -312,11 +314,12 @@ class WebDashboardTest : BaseEventTestHelper() {
     @Test
     fun nonAdminUserIsRejectedWithForbidden() = testApplication {
         configureTestApplication()
-        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 7777L, "member")
+        val groupChatId = -100123456L
+        mockTelegramService.setChatMemberStatus(groupChatId, 7777L, "member")
         val nonce = runBlocking {
             installationRepository.issueLaunchNonce(
-                telegramChatId = installation.telegramChatId,
-                telegramTopicId = installation.telegramTopicId,
+                telegramChatId = groupChatId,
+                telegramTopicId = null,
                 telegramUserId = 7777L,
                 expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
             )
@@ -365,5 +368,101 @@ class WebDashboardTest : BaseEventTestHelper() {
         val created = json.decodeFromString<TestCreateInstallationResponsePayload>(createResp.bodyAsText())
         assertThat(created.installation.telegramChatId).isEqualTo(targetChatId)
         assertThat(created.installation.gitlabBaseUrl).isEqualTo("https://gitlab.example.com")
+    }
+
+    @Test
+    fun installationsEndpointAcceptsBearerTokenHeader() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        assertThat(authResp.status).isEqualTo(HttpStatusCode.OK)
+        val authPayload = json.decodeFromString<DashboardTestAuthPayload>(authResp.bodyAsText())
+        val token = authPayload.sessionToken
+        assertThat(token).isNotNull()
+
+        val listResp = client.get("/nuecagram/api/webapp/installations") {
+            header("Authorization", "Bearer $token")
+        }
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())
+        assertThat(items).isNotEmpty()
+    }
+
+    @Test
+    fun mutatingEndpointsAcceptSessionHeaderWithoutCookie() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        val nonce = runBlocking {
+            installationRepository.issueLaunchNonce(
+                telegramChatId = installation.telegramChatId,
+                telegramTopicId = installation.telegramTopicId,
+                telegramUserId = 9999L,
+                expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
+            )
+        }
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData","startParam":"nonce_${nonce.raw}"}""")
+        }
+        assertThat(authResp.status).isEqualTo(HttpStatusCode.OK)
+        val authPayload = json.decodeFromString<DashboardTestAuthPayload>(authResp.bodyAsText())
+        val token = authPayload.sessionToken!!
+        val csrf = authPayload.csrf
+
+        // Mute via X-Session-Token
+        val muteResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/mute") {
+            contentType(ContentType.Application.Json)
+            header("X-Session-Token", token)
+            header("X-CSRF-Token", csrf)
+            setBody("""{"muted":true}""")
+        }
+        assertThat(muteResp.status).isEqualTo(HttpStatusCode.OK)
+
+        // Test delivery via X-Session-Token
+        val testResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/test") {
+            contentType(ContentType.Application.Json)
+            header("X-Session-Token", token)
+            header("X-CSRF-Token", csrf)
+        }
+        assertThat(testResp.status).isEqualTo(HttpStatusCode.OK)
+    }
+
+    @Test
+    fun rotateEndpointAcceptsSessionHeaderWithoutCookie() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(9999L, installation.telegramChatId) }
+        val nonce = runBlocking {
+            installationRepository.issueLaunchNonce(
+                telegramChatId = installation.telegramChatId,
+                telegramTopicId = installation.telegramTopicId,
+                telegramUserId = 9999L,
+                expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
+            )
+        }
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData","startParam":"nonce_${nonce.raw}"}""")
+        }
+        assertThat(authResp.status).isEqualTo(HttpStatusCode.OK)
+        val authPayload = json.decodeFromString<DashboardTestAuthPayload>(authResp.bodyAsText())
+        val token = authPayload.sessionToken!!
+        val csrf = authPayload.csrf
+
+        val rotateResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/rotate") {
+            contentType(ContentType.Application.Json)
+            header("X-Session-Token", token)
+            header("X-CSRF-Token", csrf)
+        }
+        assertThat(rotateResp.status).isEqualTo(HttpStatusCode.OK)
     }
 }

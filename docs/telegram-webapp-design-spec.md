@@ -225,11 +225,13 @@ Telegram Web Apps send authentication payload `window.Telegram.WebApp.initData` 
 1. **HMAC Validation Algorithm**: Strict implementation of Telegram official Web App data validation algorithm using HMAC-SHA256.
 2. **Replay Protection**: Reject `auth_date` older than 86,400 seconds (24 hours).
 3. **Admin Verification**: Require Telegram chat membership status in `["creator", "administrator"]` for group-bound requests.
-4. **Session Cookie**:
-   - Cookie Name: `nuecagram_webapp_session`
-   - Security: `HttpOnly; SameSite=Strict; Path=<basePath>/webapp` (and `Secure` on HTTPS).
+4. **Dual Auth & Session Cookie**:
+   - Cookie Name: `nuecagram_webapp_session` (also returned in POST `/auth` response payload as `sessionToken`).
+   - Authentication Precedence: `nuecagram_webapp_session` Cookie -> `X-Session-Token` HTTP Header -> `Authorization: Bearer <token>` HTTP Header.
+   - Security: `HttpOnly; Path=<basePath>` (`SameSite=None; Secure` when request is HTTPS, `SameSite=Lax` on HTTP).
    - TTL: 8 hours.
-5. **CSRF Protection**: All mutating HTTP requests (`POST`, `PUT`, `DELETE`) require header `X-CSRF-Token` matching the session's stored CSRF digest.
+5. **Context Re-authentication Fallback**: When `startParam` lacks a launch nonce on re-authentication, `resolveLaunchContext` restores group/topic context from the existing valid session token (cookie or header) matching the authenticated Telegram user ID.
+6. **CSRF Protection**: All mutating HTTP requests (`POST`, `PUT`, `DELETE`) require header `X-CSRF-Token` matching the session's stored CSRF digest.
 
 ---
 
@@ -256,8 +258,8 @@ All endpoints are hosted under Ktor application routing taking `configuredBasePa
 - **`GET {basePath}/webapp`**
   - Serves Web App HTML container rendering `#app` shell with script reference to Telegram Web App JS SDK (`https://telegram.org/js/telegram-web-app.js`).
 - **`POST {basePath}/api/webapp/auth`**
-  - Payload: `{ "initData": "<raw_init_data_string>", "chatId": 12345678, "topicId": 42 }`
-  - Response (200): `{ "success": true, "user": { "id": 98765, "firstName": "Alice" }, "csrf": "<csrf_token>" }`
+  - Payload: `{ "initData": "<raw_init_data_string>", "startParam": "nonce_..." }`
+  - Response (200): `{ "success": true, "user": { "id": 98765, "firstName": "Alice" }, "csrf": "<csrf_token>", "sessionToken": "<session_token_string>", "telegramChatId": -100123, "telegramTopicId": 42 }`
 
 ### Management REST API Endpoints (Web App Session Authenticated)
 
@@ -385,7 +387,8 @@ The page must not require JavaScript-disabled support inside Telegram, but all d
 - Validate the official HMAC-SHA-256 algorithm using the bot token and constant `WebAppData`.
 - Compare hashes in constant time.
 - Validate `auth_date` against a short configured freshness window and reject replayed launch states.
-- Treat `initDataUnsafe`, URL query parameters, `start_param`, and client-supplied chat/topic IDs as untrusted hints.
+- Support dual authentication transport (`nuecagram_webapp_session` Cookie, `X-Session-Token` header, or `Authorization: Bearer <token>` header) to accommodate webviews where third-party cookies are partitioned or restricted.
+- Restore context from active session token when `startParam` lacks a launch nonce on re-authentication.
 - Bind the authenticated Telegram user to every server session and re-check group administrator status for group-scoped actions.
 - Do not expose the bot token, raw database credentials, webhook secret, or management token to browser logs or third-party scripts.
 - Use HTTPS, `Cache-Control: no-store`, restrictive CSP, `Referrer-Policy: no-referrer`, and secure, short-lived cookies.
@@ -507,7 +510,7 @@ Extend `src/main/kotlin/net/raquezha/nuecagram/db/Tables.kt`:
 Web App route `$basePath/webapp` responds with the following hardened headers:
 
 ```http
-Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; frame-ancestors 'none';
+Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org;
 Cache-Control: no-store, no-cache, must-revalidate
 Pragma: no-cache
 X-Frame-Options: DENY

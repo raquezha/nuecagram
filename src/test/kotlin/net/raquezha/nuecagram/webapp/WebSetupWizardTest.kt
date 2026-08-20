@@ -25,6 +25,7 @@ import org.koin.test.inject
 private data class WizardAuthPayload(
     val success: Boolean,
     val csrf: String,
+    val sessionToken: String? = null,
     val telegramChatId: Long? = null,
 )
 
@@ -114,7 +115,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":99999}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70001}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
         assertThat(resp.bodyAsText()).contains("DM bootstrap")
@@ -129,7 +130,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"http://not-https.com","gitlabProjectId":1}""")
+            setBody("""{"gitlabBaseUrl":"http://not-https.com","gitlabProjectId":70002}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.BadRequest)
         assertThat(resp.bodyAsText()).contains("https://")
@@ -144,7 +145,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":55555}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70003}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
@@ -165,7 +166,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":66666}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70004}""")
         }
         // audit event written — verified via no exception (repository writes async, no public read API needed)
     }
@@ -244,8 +245,37 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             // no CSRF header
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":1}""")
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70008}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
+    }
+
+    @Test
+    fun createInstallationInDmSessionWithTargetChatIdAcceptsHeaderAuth() = testApplication {
+        configureTestApplication()
+        val userId = 7009L
+        val targetChatId = -100987654L
+        mockTelegram.setChatMemberStatus(targetChatId, userId, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(userId, targetChatId) }
+
+        val iData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$iData"}""")
+        }
+        assertThat(authResp.status).isEqualTo(HttpStatusCode.OK)
+        val authPayload = json.decodeFromString<WizardAuthPayload>(authResp.bodyAsText())
+        val token = authPayload.sessionToken
+        assertThat(token).isNotNull()
+
+        val resp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("X-Session-Token", token)
+            header("X-CSRF-Token", authPayload.csrf)
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70009,"telegramChatId":$targetChatId}""")
+        }
+        assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
+        val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
+        assertThat(body.installation.telegramChatId).isEqualTo(targetChatId)
     }
 }

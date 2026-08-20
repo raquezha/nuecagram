@@ -64,7 +64,7 @@ abstract class BaseEventTestHelper : KoinTest {
                 installationRepository.createInstallation(
                     gitlabBaseUrl = INSTANCE,
                     gitlabProjectId = installationNumber,
-                    telegramChatId = 100000 + installationNumber,
+                    telegramChatId = -(100000 + installationNumber),
                     telegramTopicId = 200000 + installationNumber,
                 )
             webhookToken = installationRepository.issueWebhookSecret(installation.id).raw
