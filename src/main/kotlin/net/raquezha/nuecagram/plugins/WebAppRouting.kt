@@ -53,6 +53,7 @@ private data class AuthResponsePayload(
     val success: Boolean,
     val user: AuthResponseUser,
     val csrf: String,
+    val sessionToken: String? = null,
     val telegramChatId: Long? = null,
     val telegramTopicId: Long? = null,
 )
@@ -181,18 +182,12 @@ private suspend fun ApplicationCall.handleWebAppAuth(
         return
     }
 
-    var resolvedChatId: Long? = null
-    var resolvedTopicId: Long? = null
-
-    val startParam = payload.startParam ?: verified.startParam
-    if (!startParam.isNullOrBlank() && startParam.startsWith("nonce_")) {
-        val rawNonce = startParam.removePrefix("nonce_")
-        val nonceCtx = installationRepository.consumeLaunchNonce(rawNonce)
-        if (nonceCtx != null && nonceCtx.telegramUserId == verified.user.id) {
-            resolvedChatId = nonceCtx.telegramChatId
-            resolvedTopicId = nonceCtx.telegramTopicId
-        }
-    }
+    val startParam = payload.startParam?.takeIf { it.isNotBlank() } ?: verified.startParam
+    val (resolvedChatId, resolvedTopicId) = resolveLaunchContext(
+        startParam,
+        verified.user.id,
+        installationRepository,
+    )
 
     val sessionExpiry = Instant.now().plus(SESSION_TTL_HOURS, ChronoUnit.HOURS)
     val session = installationRepository.issueWebAppSession(
@@ -226,6 +221,31 @@ private suspend fun ApplicationCall.handleWebAppAuth(
             telegramTopicId = resolvedTopicId,
         ),
     )
+}
+
+private suspend fun ApplicationCall.resolveLaunchContext(
+    startParam: String?,
+    verifiedUserId: Long,
+    installationRepository: InstallationRepository,
+): Pair<Long?, Long?> {
+    val nonceCtx = startParam?.takeIf { it.startsWith("nonce_") }?.let { param ->
+        installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
+    }?.takeIf { it.telegramUserId == verifiedUserId }
+
+    val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
+        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
+        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
+    val existingSession = when (nonceCtx) {
+        null -> existingToken?.let { installationRepository.verifyWebAppSession(it) }
+            ?.takeIf { it.telegramUserId == verifiedUserId }
+        else -> null
+    }
+
+    return when {
+        nonceCtx != null -> Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
+        existingSession != null -> Pair(existingSession.telegramChatId, existingSession.telegramTopicId)
+        else -> Pair(null, null)
+    }
 }
 
 private suspend fun ApplicationCall.handleGetInstallations(
@@ -266,7 +286,7 @@ private suspend fun ApplicationCall.handleGetInstallationDetail(
     }
 
     val item = installationRepository.installationAdminContext(idParam)
-    if (item == null || !session.canAccess(item)) {
+    if (item == null || !canAccess(session, item, telegramService)) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
@@ -291,7 +311,7 @@ private suspend fun ApplicationCall.handleMuteInstallation(
     }
 
     val item = installationRepository.installationAdminContext(idParam)
-    if (item == null || !session.canAccess(item)) {
+    if (item == null || !canAccess(session, item, telegramService)) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
@@ -327,7 +347,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
     }
 
     val item = installationRepository.installationAdminContext(idParam)
-    if (item == null || !session.canAccess(item)) {
+    if (item == null || !canAccess(session, item, telegramService)) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
@@ -471,7 +491,7 @@ private suspend fun ApplicationCall.processRotateInstallation(
             respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
             null
         }
-        item == null || !session.canAccess(item) -> {
+        item == null || !canAccess(session, item, telegramService) -> {
             respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
             null
         }
@@ -491,11 +511,20 @@ private suspend fun ApplicationCall.processRotateInstallation(
     }
 }
 
-private fun WebAppSessionContext.canAccess(item: InstallationAdminContext): Boolean = when {
-    telegramChatId == null -> false
-    item.telegramChatId != telegramChatId -> false
-    telegramTopicId != null && item.telegramTopicId != telegramTopicId -> false
-    else -> true
+private suspend fun canAccess(
+    session: WebAppSessionContext,
+    item: InstallationAdminContext,
+    telegramService: TelegramService,
+): Boolean {
+    if (session.telegramChatId != null) {
+        if (item.telegramChatId != session.telegramChatId) return false
+        if (session.telegramTopicId != null && item.telegramTopicId != session.telegramTopicId) return false
+        return true
+    }
+    val status = runCatching {
+        telegramService.chatMemberStatus(item.telegramChatId, session.telegramUserId)
+    }.getOrNull()
+    return status in ADMIN_STATUSES
 }
 
 private suspend fun ApplicationCall.verifyAdminStatus(
@@ -708,13 +737,29 @@ private fun webAppJsScript(basePath: String): String = """
 let userCsrf = '';
 let currentContext = {};
 
+function extractStartParam() {
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param) {
+    return window.Telegram.WebApp.initDataUnsafe.start_param;
+  }
+  const searchParams = new URLSearchParams(window.location.search);
+  const fromSearch = searchParams.get('startapp') || searchParams.get('tgWebAppStartParam') || searchParams.get('start_param');
+  if (fromSearch) return fromSearch;
+
+  if (window.location.hash && window.location.hash.length > 1) {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const fromHash = hashParams.get('tgWebAppStartParam') || hashParams.get('startapp') || hashParams.get('start_param');
+    if (fromHash) return fromHash;
+  }
+  return '';
+}
+
 async function initWebApp() {
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.ready();
     window.Telegram.WebApp.expand();
   }
   const tgInitData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
-  const startParam = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param) || '';
+  const startParam = extractStartParam();
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
       method: 'POST',
