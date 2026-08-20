@@ -60,11 +60,14 @@ class WebSetupWizardTest : BaseEventTestHelper() {
         setCookies.joinToString("; ").split(";").map { it.trim() }
             .firstOrNull { it.startsWith("$name=") }?.substringAfter("$name=")
 
+    private val groupInstallCounter = java.util.concurrent.atomic.AtomicLong(0)
+
     private fun createGroupInstallation(): net.raquezha.nuecagram.db.InstallationRecord = runBlocking {
+        val count = groupInstallCounter.incrementAndGet()
         installationRepository.createInstallation(
             gitlabBaseUrl = "https://gitlab.com",
-            gitlabProjectId = 99999L,
-            telegramChatId = -100123456L,
+            gitlabProjectId = 900000L + count,
+            telegramChatId = -100123456L - count,
             telegramTopicId = 42L,
         )
     }
