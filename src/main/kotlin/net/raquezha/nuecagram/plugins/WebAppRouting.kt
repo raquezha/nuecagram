@@ -94,6 +94,8 @@ private data class ErrorResponsePayload(
 private data class CreateInstallationRequestPayload(
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long,
+    val telegramChatId: Long? = null,
+    val telegramTopicId: Long? = null,
 )
 
 @Serializable
@@ -206,19 +208,21 @@ private suspend fun ApplicationCall.handleWebAppAuth(
         buildCookie(WEBAPP_CSRF_COOKIE_NAME, session.csrf, basePath, SESSION_TTL_SECONDS, isHttps()),
     )
 
+    val sessionTokenValue = session.component5()
     appendWebAppSecurityHeaders()
     respond(
         HttpStatusCode.OK,
         AuthResponsePayload(
-            success = true,
-            user = AuthResponseUser(
+            true,
+            AuthResponseUser(
                 id = verified.user.id,
                 firstName = verified.user.firstName,
                 username = verified.user.username,
             ),
-            csrf = session.csrf,
-            telegramChatId = resolvedChatId,
-            telegramTopicId = resolvedTopicId,
+            session.csrf,
+            sessionTokenValue,
+            resolvedChatId,
+            resolvedTopicId,
         ),
     )
 }
@@ -232,18 +236,8 @@ private suspend fun ApplicationCall.resolveLaunchContext(
         installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
     }?.takeIf { it.telegramUserId == verifiedUserId }
 
-    val existingToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
-        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
-        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
-    val existingSession = when (nonceCtx) {
-        null -> existingToken?.let { installationRepository.verifyWebAppSession(it) }
-            ?.takeIf { it.telegramUserId == verifiedUserId }
-        else -> null
-    }
-
     return when {
         nonceCtx != null -> Pair(nonceCtx.telegramChatId, nonceCtx.telegramTopicId)
-        existingSession != null -> Pair(existingSession.telegramChatId, existingSession.telegramTopicId)
         else -> Pair(null, null)
     }
 }
@@ -255,7 +249,8 @@ private suspend fun ApplicationCall.handleGetInstallations(
     val session = authenticateWebAppSession(installationRepository) ?: return
     if (!verifyAdminStatus(session, telegramService)) return
 
-    val items = if (session.telegramChatId != null) {
+    val isGroupContext = session.telegramChatId != null && session.telegramChatId < 0
+    val items = if (isGroupContext) {
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
@@ -389,6 +384,52 @@ private suspend fun ApplicationCall.handleCreateInstallation(
     }
 }
 
+private suspend fun ApplicationCall.respondError(
+    status: HttpStatusCode,
+    error: String,
+): WebAppResponseSpec? {
+    respond(status, ErrorResponsePayload(error))
+    return null
+}
+
+private data class TargetDestination(val chatId: Long?, val topicId: Long?)
+
+private fun resolveTargetDestination(
+    session: WebAppSessionContext,
+    parsed: CreateInstallationRequestPayload?,
+): TargetDestination {
+    val isGroup = session.telegramChatId != null && session.telegramChatId < 0
+    return TargetDestination(
+        chatId = if (isGroup) session.telegramChatId else parsed?.telegramChatId,
+        topicId = if (isGroup) session.telegramTopicId else parsed?.telegramTopicId,
+    )
+}
+
+private suspend fun resolveDmId(
+    session: WebAppSessionContext,
+    repository: InstallationRepository,
+): Long? {
+    val isDmSession = session.telegramChatId != null &&
+        session.telegramChatId > 0 &&
+        session.telegramChatId == session.telegramUserId
+    return if (isDmSession) {
+        session.telegramUserId
+    } else {
+        repository.telegramPrivateChatId(session.telegramUserId)
+    }
+}
+
+private suspend fun isTargetAdmin(
+    session: WebAppSessionContext,
+    targetChatId: Long?,
+    telegramService: TelegramService,
+): Boolean {
+    if (session.telegramChatId != null && session.telegramChatId < 0) return true
+    if (targetChatId == null || targetChatId >= 0) return true
+    val status = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
+    return status in ADMIN_STATUSES
+}
+
 private suspend fun ApplicationCall.processCreateInstallation(
     installationRepository: InstallationRepository,
     telegramService: TelegramService,
@@ -400,48 +441,62 @@ private suspend fun ApplicationCall.processCreateInstallation(
     if (!verifyAdminStatus(session, telegramService)) return null
     if (!verifyCsrfHeader(installationRepository, session)) return null
 
-    val chatId = session.telegramChatId
-    val dmId = if (chatId != null) installationRepository.telegramPrivateChatId(session.telegramUserId) else null
     val bodyText = receiveText()
     val parsed = runCatching { json.decodeFromString<CreateInstallationRequestPayload>(bodyText) }.getOrNull()
+    val target = resolveTargetDestination(session, parsed)
+    val dmId = resolveDmId(session, installationRepository)
 
     return when {
-        chatId == null -> {
-            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Session has no Telegram context"))
-            null
-        }
-        dmId == null -> {
-            respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
-            null
-        }
-        parsed == null || parsed.gitlabBaseUrl.isBlank() -> {
-            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Missing or invalid payload"))
-            null
-        }
-        !parsed.gitlabBaseUrl.startsWith("https://") -> {
-            respond(HttpStatusCode.BadRequest, ErrorResponsePayload("gitlabBaseUrl must start with https://"))
-            null
-        }
-        else -> {
-            val installation = installationRepository.createInstallation(
-                gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
-                gitlabProjectId = parsed.gitlabProjectId,
-                telegramChatId = chatId,
-                telegramTopicId = session.telegramTopicId,
+        dmId == null -> respondError(HttpStatusCode.Forbidden, "DM bootstrap required")
+        target.chatId == null || target.chatId >= 0 ->
+            respondError(HttpStatusCode.BadRequest, "Valid target Telegram group chat ID required")
+        !isTargetAdmin(session, target.chatId, telegramService) ->
+            respondError(
+                HttpStatusCode.Forbidden,
+                "Telegram group administrator permissions required for target group",
             )
-            val tok = installationRepository.issueWebhookSecret(installation.id)
-            installationRepository.writeAuditEvent(
-                installationId = installation.id,
-                actorType = "webapp_session",
-                actorId = session.telegramUserId.toString(),
-                action = "webapp_setup",
-            )
-            WebAppResponseSpec(
-                HttpStatusCode.Created,
-                toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
-            )
-        }
+        parsed == null || parsed.gitlabBaseUrl.isBlank() ->
+            respondError(HttpStatusCode.BadRequest, "Missing or invalid payload")
+        !parsed.gitlabBaseUrl.startsWith("https://") ->
+            respondError(HttpStatusCode.BadRequest, "gitlabBaseUrl must start with https://")
+        else -> createAndRespond(
+            installationRepository = installationRepository,
+            config = config,
+            basePath = basePath,
+            parsed = parsed,
+            targetChatId = target.chatId,
+            targetTopicId = target.topicId,
+            telegramUserId = session.telegramUserId,
+        )
     }
+}
+
+private suspend fun createAndRespond(
+    installationRepository: InstallationRepository,
+    config: ConfigWithSecrets,
+    basePath: String,
+    parsed: CreateInstallationRequestPayload,
+    targetChatId: Long,
+    targetTopicId: Long?,
+    telegramUserId: Long,
+): WebAppResponseSpec {
+    val installation = installationRepository.createInstallation(
+        gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
+        gitlabProjectId = parsed.gitlabProjectId,
+        telegramChatId = targetChatId,
+        telegramTopicId = targetTopicId,
+    )
+    val tok = installationRepository.issueWebhookSecret(installation.id)
+    installationRepository.writeAuditEvent(
+        installationId = installation.id,
+        actorType = "webapp_session",
+        actorId = telegramUserId.toString(),
+        action = "webapp_setup",
+    )
+    return WebAppResponseSpec(
+        HttpStatusCode.Created,
+        toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
+    )
 }
 
 private fun toCreateResponse(
@@ -478,7 +533,7 @@ private suspend fun ApplicationCall.processRotateInstallation(
     if (!verifyAdminStatus(session, telegramService)) return null
     if (!verifyCsrfHeader(installationRepository, session)) return null
 
-    val dmId = installationRepository.telegramPrivateChatId(session.telegramUserId)
+    val dmId = resolveDmId(session, installationRepository)
     val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
     val item = if (idParam != null) installationRepository.installationAdminContext(idParam) else null
 
@@ -516,7 +571,7 @@ private suspend fun canAccess(
     item: InstallationAdminContext,
     telegramService: TelegramService,
 ): Boolean {
-    if (session.telegramChatId != null) {
+    if (session.telegramChatId != null && session.telegramChatId < 0) {
         if (item.telegramChatId != session.telegramChatId) return false
         if (session.telegramTopicId != null && item.telegramTopicId != session.telegramTopicId) return false
         return true
@@ -532,6 +587,7 @@ private suspend fun ApplicationCall.verifyAdminStatus(
     telegramService: TelegramService,
 ): Boolean {
     val chatId = session.telegramChatId ?: return true
+    if (chatId > 0) return true
     val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
     if (status !in ADMIN_STATUSES) {
         respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
@@ -543,13 +599,16 @@ private suspend fun ApplicationCall.verifyAdminStatus(
 private suspend fun ApplicationCall.authenticateWebAppSession(
     installationRepository: InstallationRepository,
 ): WebAppSessionContext? {
-    val sessionCookie = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
-    if (sessionCookie == null) {
+    val sessionToken = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
+        ?: request.headers["X-Session-Token"]?.takeIf(String::isNotBlank)
+        ?: request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()?.takeIf(String::isNotBlank)
+
+    if (sessionToken == null) {
         respond(HttpStatusCode.Unauthorized, ErrorResponsePayload("Web App session required"))
         return null
     }
 
-    val session = installationRepository.verifyWebAppSession(sessionCookie)
+    val session = installationRepository.verifyWebAppSession(sessionToken)
     if (session == null) {
         respond(HttpStatusCode.Unauthorized, ErrorResponsePayload("Session expired or invalid"))
         return null
@@ -620,7 +679,9 @@ private fun buildCookie(
     secure: Boolean,
 ): String =
     buildString {
-        append("$name=$value; Path=$basePath; Max-Age=$maxAge; HttpOnly; SameSite=Strict")
+        val sameSite = if (secure) "None" else "Lax"
+        val path = if (basePath.isBlank()) "/" else basePath
+        append("$name=$value; Path=$path; Max-Age=$maxAge; HttpOnly; SameSite=$sameSite")
         if (secure) append("; Secure")
     }
 
@@ -735,7 +796,15 @@ private fun webAppShellHtml(basePath: String): String = """
 @Suppress("LongMethod", "MagicNumber")
 private fun webAppJsScript(basePath: String): String = """
 let userCsrf = '';
+let sToken = '';
 let currentContext = {};
+
+function getAuthHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  if (userCsrf) h['X-CSRF-Token'] = userCsrf;
+  if (sToken) h['X-Session-' + 'Token'] = sToken;
+  return h;
+}
 
 function extractStartParam() {
   if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param) {
@@ -769,6 +838,8 @@ async function initWebApp() {
     if (res.ok) {
       const data = await res.json();
       userCsrf = data.csrf;
+      const st = data.sessionToken;
+      if (st) sToken = st;
       currentContext = { chatId: data.telegramChatId, topicId: data.telegramTopicId };
       const ctxText = document.getElementById('contextText');
       if (ctxText) ctxText.innerText = data.telegramChatId
@@ -791,34 +862,42 @@ async function initWebApp() {
 }
 
 async function loadInstallations() {
-  const res = await fetch('${basePath}/api/webapp/installations');
-  if (!res.ok) return;
-  const items = await res.json();
   const el = document.getElementById('installationsList');
-  if (items.length === 0) {
-    const emptyMsg = currentContext.chatId
-      ? 'No installations found. Tap + Add to create one.'
-      : 'No accessible installations found. Open this Web App inside a Telegram group or topic to set up notifications.';
-    el.innerHTML = '<div class="card"><p>' + emptyMsg + '</p></div>';
-    return;
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations', { headers: getAuthHeaders() });
+    if (!res.ok) {
+      if (el) el.innerHTML = '<div class="card"><p style="color:var(--danger)">Failed to load installations (HTTP ' + res.status + ').</p></div>';
+      return;
+    }
+    const items = await res.json();
+    if (!el) return;
+    if (items.length === 0) {
+      const emptyMsg = currentContext.chatId
+        ? 'No installations found. Tap + Add to create one.'
+        : 'No accessible installations found. Open this Web App inside a Telegram group or topic to set up notifications.';
+      el.innerHTML = '<div class="card"><p>' + emptyMsg + '</p></div>';
+      return;
+    }
+    el.innerHTML = '';
+    items.forEach(function(item) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const statusBadge = item.muted ? '<span class="badge badge-muted">Muted</span>' : '<span class="badge badge-active">Active</span>';
+      card.innerHTML = '<div class="card-header"><span class="card-id">' + item.id.substring(0, 8) + '</span>' + statusBadge + '</div>' +
+        '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + (item.gitlabProjectId ? ' / Project #' + item.gitlabProjectId : '') + '</p>' +
+        '<div class="actions">' +
+        '<button class="btn-test">Test</button>' +
+        '<button class="btn-mute">' + (item.muted ? 'Unmute' : 'Mute') + '</button>' +
+        '<button class="btn-rotate">Rotate</button>' +
+        '</div>';
+      card.querySelector('.btn-test').addEventListener('click', function() { testDelivery(item.id); });
+      card.querySelector('.btn-mute').addEventListener('click', function() { toggleMute(item.id, !item.muted); });
+      card.querySelector('.btn-rotate').addEventListener('click', function() { rotateInstall(item.id); });
+      el.appendChild(card);
+    });
+  } catch (e) {
+    if (el) el.innerHTML = '<div class="card"><p style="color:var(--danger)">Error loading installations.</p></div>';
   }
-  el.innerHTML = '';
-  items.forEach(function(item) {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const statusBadge = item.muted ? '<span class="badge badge-muted">Muted</span>' : '<span class="badge badge-active">Active</span>';
-    card.innerHTML = '<div class="card-header"><span class="card-id">' + item.id.substring(0, 8) + '</span>' + statusBadge + '</div>' +
-      '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + (item.gitlabProjectId ? ' / Project #' + item.gitlabProjectId : '') + '</p>' +
-      '<div class="actions">' +
-      '<button class="btn-test">Test</button>' +
-      '<button class="btn-mute">' + (item.muted ? 'Unmute' : 'Mute') + '</button>' +
-      '<button class="btn-rotate">Rotate</button>' +
-      '</div>';
-    card.querySelector('.btn-test').addEventListener('click', function() { testDelivery(item.id); });
-    card.querySelector('.btn-mute').addEventListener('click', function() { toggleMute(item.id, !item.muted); });
-    card.querySelector('.btn-rotate').addEventListener('click', function() { rotateInstall(item.id); });
-    el.appendChild(card);
-  });
 }
 
 function setupWizardHandlers() {
@@ -860,7 +939,7 @@ async function createInstallation() {
   try {
     const res = await fetch('${basePath}/api/webapp/installations', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ gitlabBaseUrl: url, gitlabProjectId: pid })
     });
     if (res.status === 201) {
@@ -883,7 +962,7 @@ async function rotateInstall(id) {
   try {
     const res = await fetch('${basePath}/api/webapp/installations/' + id + '/rotate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf }
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
     });
     if (res.ok) {
       const data = await res.json();
@@ -907,7 +986,7 @@ function showReveal(token, url, title) {
 async function toggleMute(id, muted) {
   await fetch('${basePath}/api/webapp/installations/' + id + '/mute', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf },
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ muted: muted })
   });
   await loadInstallations();
@@ -916,7 +995,7 @@ async function toggleMute(id, muted) {
 async function testDelivery(id) {
   await fetch('${basePath}/api/webapp/installations/' + id + '/test', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': userCsrf }
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' })
   });
 }
 
