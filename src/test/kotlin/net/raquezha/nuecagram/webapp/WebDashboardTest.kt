@@ -26,6 +26,7 @@ import org.koin.test.inject
 private data class DashboardTestAuthPayload(
     val success: Boolean,
     val csrf: String,
+    val sessionToken: String? = null,
 )
 
 @Serializable
@@ -96,6 +97,29 @@ class WebDashboardTest : BaseEventTestHelper() {
         configureTestApplication()
         val response = client.get("/nuecagram/api/webapp/installations")
         assertThat(response.status).isEqualTo(HttpStatusCode.Unauthorized)
+    }
+
+    @Test
+    fun installationsEndpointAcceptsSessionHeaderWithoutCookie() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        assertThat(authResp.status).isEqualTo(HttpStatusCode.OK)
+        val authPayload = json.decodeFromString<DashboardTestAuthPayload>(authResp.bodyAsText())
+        val token = authPayload.sessionToken
+        assertThat(token).isNotNull()
+
+        val listResp = client.get("/nuecagram/api/webapp/installations") {
+            header("X-Session-Token", token)
+        }
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())
+        assertThat(items).isNotEmpty()
     }
 
     @Test
