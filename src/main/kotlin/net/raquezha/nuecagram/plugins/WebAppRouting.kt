@@ -264,7 +264,14 @@ private suspend fun ApplicationCall.handleGetInstallations(
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
-        installationRepository.listInstallationsForContext(null, null).filter { inst ->
+        val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
+        val candidates =
+            if (recorded.isNotEmpty()) {
+                recorded
+            } else {
+                installationRepository.listInstallationsForContext(null, null)
+            }
+        candidates.filter { inst ->
             adminChatIds.getOrPut(inst.telegramChatId) {
                 val status = runCatching {
                     telegramService.chatMemberStatus(inst.telegramChatId, session.telegramUserId)
@@ -496,6 +503,7 @@ private suspend fun createAndRespond(
         telegramChatId = targetChatId,
         telegramTopicId = targetTopicId,
     )
+    installationRepository.recordInstallationAdmin(installation.id, telegramUserId)
     val tok = installationRepository.issueWebhookSecret(installation.id)
     installationRepository.writeAuditEvent(
         installationId = installation.id,

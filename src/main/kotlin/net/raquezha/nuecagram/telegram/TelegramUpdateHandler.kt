@@ -368,7 +368,7 @@ class TelegramUpdateHandler(
             }
         val installation =
             if (groupAdmin != null && query != null) {
-                installationRepository.findInstallationByQuery(query, message.chat.id)
+                installationRepository.findInstallationByQuery(query, message.chat.id, message.messageThreadId)
             } else {
                 null
             }

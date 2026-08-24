@@ -295,22 +295,32 @@ class InstallationRepository(
         }
 
     suspend fun findInstallationByQuery(
-
         rawQuery: String,
         chatId: Long,
+        topicId: Long? = null,
     ): InstallationAdminContext? = databaseFactory.dbTransaction {
         val queryStr = rawQuery.trim().lowercase()
         if (queryStr.isBlank()) return@dbTransaction null
         val uuid = runCatching { UUID.fromString(queryStr) }.getOrNull()
         if (uuid != null) {
-            return@dbTransaction installationWithMuteQuery(uuid)
+            val query = installationWithMuteQuery(uuid)
                 .andWhere { Installations.telegramChatId eq chatId }
-                .firstOrNull()?.toAdminContext()
+            if (topicId != null) {
+                query.andWhere { Installations.telegramTopicId eq topicId }
+            }
+            return@dbTransaction query.firstOrNull()?.toAdminContext()
         }
-        installationWithMuteQuery()
+        val query = installationWithMuteQuery()
             .andWhere { Installations.telegramChatId eq chatId }
-            .map { it.toAdminContext() }
-            .firstOrNull { it.id.toString().lowercase().startsWith(queryStr) }
+        if (topicId != null) {
+            query.andWhere { Installations.telegramTopicId eq topicId }
+        }
+        query.map { it.toAdminContext() }
+            .firstOrNull { inst ->
+                inst.id.toString().lowercase().startsWith(queryStr) ||
+                    inst.gitlabProjectId?.toString() == queryStr ||
+                    inst.gitlabBaseUrl.lowercase().contains(queryStr)
+            }
     }
 
     suspend fun setMuted(installationId: UUID, muted: Boolean) {
