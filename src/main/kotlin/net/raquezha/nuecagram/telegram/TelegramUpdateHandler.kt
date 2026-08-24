@@ -336,16 +336,16 @@ class TelegramUpdateHandler(
                 send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
                 null
             }
+            status !in ADMIN_STATUSES -> {
+                send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
+                null
+            }
             requireArguments && text.substringAfter(' ', "").isBlank() -> {
                 send(message.chat.id, usageMessage, message.messageThreadId)
                 null
             }
             userId == null || privateChatId == null -> {
                 send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
-                null
-            }
-            status !in ADMIN_STATUSES -> {
-                send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
                 null
             }
             else -> AuthorizedGroupAdmin(userId, privateChatId)

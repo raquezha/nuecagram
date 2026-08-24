@@ -14,11 +14,13 @@ import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.telegram.Message
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
     @Test
     fun setupRequiresPrivateBootstrap() =
         testApplication {
             configureTestApplication()
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 70, "administrator")
             val initialAuditCount = auditEventCount()
             val initialSetupAuditCount = auditActionCount("telegram_setup")
 
@@ -32,6 +34,57 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             ).isEqualTo("Use /start in a private chat before using admin commands.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount)
+        }
+
+    @Test
+    fun setupRejectsNonAdminBeforePrivateBootstrap() =
+        testApplication {
+            configureTestApplication()
+            val initialAuditCount = auditEventCount()
+            val initialSetupAuditCount = auditActionCount("telegram_setup")
+
+            assertThat(
+                postTelegram(
+                    groupUpdate(175, "/setup https://gitlab.example.com 321", installation.telegramChatId, userId = 75),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
+            assertThat(auditEventCount()).isEqualTo(initialAuditCount)
+            assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount)
+        }
+
+    @Test
+    fun setupRejectsNonAdminBeforeUsageMessage() =
+        testApplication {
+            configureTestApplication()
+
+            assertThat(
+                postTelegram(
+                    groupUpdate(176, "/setup", installation.telegramChatId, userId = 76),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
+        }
+
+    @Test
+    fun setupShowsUsageToConfirmedAdminWithoutArguments() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(77)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 77, "administrator")
+
+            assertThat(
+                postTelegram(
+                    groupUpdate(177, "/setup", installation.telegramChatId, userId = 77),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                sentMessages().last().text,
+            ).isEqualTo(
+                "Usage: <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code>\n" +
+                    "Example: <code>/setup https://gitlab.com 12345678</code>",
+            )
         }
 
     @Test

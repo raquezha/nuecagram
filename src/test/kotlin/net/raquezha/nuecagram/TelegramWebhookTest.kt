@@ -36,7 +36,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun statusRequiresValidInstallationIdAndPrivateBootstrap() =
+    fun statusRequiresValidInstallationIdAndChecksTelegramAdminBeforePrivateBootstrap() =
         testApplication {
             configureTestApplication()
             val initialAuditCount = auditEventCount()
@@ -53,7 +53,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(
                 sentMessages().last().text,
-            ).isEqualTo("Use /start in a private chat before using admin commands.")
+            ).isEqualTo("Only Telegram group administrators can use this command.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
@@ -233,7 +233,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(
                 sentMessages().last().text,
-            ).isEqualTo("Use /start in a private chat before using admin commands.")
+            ).isEqualTo("Only Telegram group administrators can use this command.")
             assertThat(installationMuted(installation.id)).isFalse()
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
