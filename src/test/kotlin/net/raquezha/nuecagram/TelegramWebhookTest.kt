@@ -148,6 +148,70 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun recordsInstallationAdminMembershipOnSuccessfulGroupCommand() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(970)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 970, "administrator")
+
+            assertThat(
+                runBlocking { installationRepository.installationsForAdmin(970) },
+            ).isEmpty()
+
+            assertThat(
+                postTelegram(
+                    groupUpdate(970, "/status ${installation.id}", installation.telegramChatId, userId = 970),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val adminInstalls = runBlocking { installationRepository.installationsForAdmin(970) }
+            assertThat(adminInstalls).hasSize(1)
+            assertThat(adminInstalls.first().id).isEqualTo(installation.id)
+        }
+
+    @Test
+    fun liveReVerificationBlocksDemotedAdminsWithStaleRecord() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(971)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 971, "administrator")
+
+            // First execution records membership
+            assertThat(
+                postTelegram(
+                    groupUpdate(971, "/status ${installation.id}", installation.telegramChatId, userId = 971),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                runBlocking { installationRepository.installationsForAdmin(971) },
+            ).hasSize(1)
+
+            // Admin is demoted to member
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 971, "member")
+
+            // Destructive command execution live re-verification blocks demoted admin
+            assertThat(
+                postTelegram(
+                    groupUpdate(972, "/rotate ${installation.id}", installation.telegramChatId, userId = 971),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                sentMessages().last().text,
+            ).isEqualTo("Only Telegram group administrators can use this command.")
+
+            // Mute is also blocked
+            assertThat(
+                postTelegram(
+                    groupUpdate(973, "/mute ${installation.id}", installation.telegramChatId, userId = 971),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                sentMessages().last().text,
+            ).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(installationMuted(installation.id)).isFalse()
+        }
+
+    @Test
     fun digestReturnsSafeInstallationSummary() =
         testApplication {
             configureTestApplication()

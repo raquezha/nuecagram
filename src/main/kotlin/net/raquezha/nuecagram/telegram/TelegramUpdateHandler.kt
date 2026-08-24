@@ -201,6 +201,7 @@ class TelegramUpdateHandler(
                 telegramChatId = message.chat.id,
                 telegramTopicId = message.messageThreadId,
             )
+        installationRepository.recordInstallationAdmin(installation.id, authorized.actorId)
         val credential = installationRepository.issueWebhookSecret(installation.id)
         val managementLink = installationRepository.issueManagementLink(installation.id, managementLinkExpiry())
         installationRepository.writeAuditEvent(
@@ -386,11 +387,14 @@ class TelegramUpdateHandler(
                 send(message.chat.id, WRONG_CHAT_MESSAGE, message.messageThreadId)
                 null
             }
-            else -> AuthorizedInstallationCommand(
-                installation = installation,
-                actorId = groupAdmin.actorId,
-                privateChatId = groupAdmin.privateChatId,
-            )
+            else -> {
+                installationRepository.recordInstallationAdmin(installation.id, groupAdmin.actorId)
+                AuthorizedInstallationCommand(
+                    installation = installation,
+                    actorId = groupAdmin.actorId,
+                    privateChatId = groupAdmin.privateChatId,
+                )
+            }
         }
 
         return result
