@@ -91,6 +91,14 @@ object TelegramPrivateChats : Table("telegram_private_chats") {
     override val primaryKey = PrimaryKey(telegramUserId)
 }
 
+object InstallationAdmins : Table("installation_admins") {
+    val installationId = javaUUID("installation_id")
+    val telegramUserId = long("telegram_user_id")
+    val confirmedAt = timestampWithTimeZone("confirmed_at")
+
+    override val primaryKey = PrimaryKey(installationId, telegramUserId)
+}
+
 object ManagementSessions : Table("management_sessions") {
     val id = javaUUID("id")
     val installationId = javaUUID("installation_id")

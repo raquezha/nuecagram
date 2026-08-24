@@ -201,6 +201,29 @@ val InstallationRepositoryTests by testSuite {
         }
     }
 
+    postgresTest("records and lists installation admins newest first") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val older = repository.createInstallation("https://admin-old.example.com", 101, -1001, null)
+            val newer = repository.createInstallation("https://admin-new.example.com", 102, -1002, 9)
+            val otherAdmin = repository.createInstallation("https://admin-other.example.com", 103, -1003, null)
+            repository.setMuted(newer.id, true)
+
+            repository.recordInstallationAdmin(older.id, 42, Instant.parse("2026-08-24T01:00:00Z"))
+            repository.recordInstallationAdmin(newer.id, 42, Instant.parse("2026-08-24T02:00:00Z"))
+            repository.recordInstallationAdmin(otherAdmin.id, 99, Instant.parse("2026-08-24T03:00:00Z"))
+
+            val installations = repository.installationsForAdmin(42)
+
+            assertThat(installations.map { it.id }).containsExactly(newer.id, older.id).inOrder()
+            assertThat(installations.first().telegramTopicId).isEqualTo(9)
+            assertThat(installations.first().muted).isTrue()
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
+
     postgresTest("filters and paginates platform admin audit events in the database") { config ->
         try {
             DatabaseFactory.initialize(config)
