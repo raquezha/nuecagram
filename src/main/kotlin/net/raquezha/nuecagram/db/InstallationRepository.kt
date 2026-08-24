@@ -7,6 +7,7 @@ import java.util.UUID
 import net.raquezha.nuecagram.webhook.ChatDetails
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
@@ -260,6 +261,38 @@ class InstallationRepository(
         }
         query.map { it.toAdminContext() }
     }
+
+    suspend fun recordInstallationAdmin(
+        installationId: UUID,
+        telegramUserId: Long,
+        confirmedAt: Instant = Instant.now(),
+    ) {
+        databaseFactory.dbTransaction {
+            InstallationAdmins.upsert(InstallationAdmins.installationId, InstallationAdmins.telegramUserId) {
+                it[InstallationAdmins.installationId] = installationId
+                it[InstallationAdmins.telegramUserId] = telegramUserId
+                it[InstallationAdmins.confirmedAt] = confirmedAt.databaseTime()
+            }
+        }
+    }
+
+    suspend fun installationsForAdmin(telegramUserId: Long): List<InstallationAdminContext> =
+        databaseFactory.dbTransaction {
+            Installations.join(
+                InstallationAdmins,
+                JoinType.INNER,
+                Installations.id,
+                InstallationAdmins.installationId,
+            ).join(
+                MuteStates,
+                JoinType.LEFT,
+                Installations.id,
+                MuteStates.installationId,
+            ).selectAll()
+                .where { InstallationAdmins.telegramUserId eq telegramUserId }
+                .orderBy(InstallationAdmins.confirmedAt to SortOrder.DESC)
+                .map { it.toAdminContext() }
+        }
 
     suspend fun findInstallationByQuery(
 
