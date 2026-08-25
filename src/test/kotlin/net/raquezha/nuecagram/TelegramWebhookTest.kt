@@ -75,6 +75,67 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun groupHelpReturnsShortGuidanceAndUrlButtonWithoutWebappLauncher() =
+        testApplication {
+            configureTestApplication()
+
+            assertThat(
+                postTelegram(groupUpdate(500, "/help", installation.telegramChatId)).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val message = sentMessages().last()
+            assertThat(message.text).contains("bind notifications")
+            assertThat(message.text).doesNotContain("Open Web App")
+            assertThat(message.replyMarkup).isNotNull()
+            val button = message.replyMarkup!!.inlineKeyboard.first().first()
+            assertThat(button.url).isEqualTo("https://t.me/NuecagramBot")
+            assertThat(button.webApp).isNull()
+        }
+
+    @Test
+    fun privateHelpReturnsCategorizedInlineMenuAndHandlesHelpCallbacks() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(501)
+
+            assertThat(
+                postTelegram(privateUpdate(501, "/help", userId = 501)).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val helpMsg = sentMessages().last()
+            assertThat(helpMsg.text).contains("Nuecagram Assistant")
+            assertThat(helpMsg.replyMarkup).isNotNull()
+            val rows = helpMsg.replyMarkup!!.inlineKeyboard
+            assertThat(rows).hasSize(3)
+            assertThat(rows[0][0].text).isEqualTo("📦 My Installations")
+            assertThat(rows[0][0].callbackData).isEqualTo("inst:list:page=0")
+            assertThat(rows[1][0].text).isEqualTo("⚙️ Setup Instructions")
+            assertThat(rows[1][0].callbackData).isEqualTo("inst:help_setup:all")
+            assertThat(rows[2][0].text).isEqualTo("📖 Command List")
+            assertThat(rows[2][0].callbackData).isEqualTo("inst:help_commands:all")
+
+            val setupCallback = callbackPrivateUpdate(
+                updateId = 502,
+                callbackId = "cb_help_setup",
+                data = "inst:help_setup:all",
+                userId = 501,
+            )
+            assertThat(postTelegram(setupCallback).status).isEqualTo(HttpStatusCode.OK)
+            val setupMsg = sentMessages().last()
+            assertThat(setupMsg.text).contains("First-Time Setup Instructions")
+
+            val commandsCallback = callbackPrivateUpdate(
+                updateId = 503,
+                callbackId = "cb_help_commands",
+                data = "inst:help_commands:all",
+                userId = 501,
+            )
+            assertThat(postTelegram(commandsCallback).status).isEqualTo(HttpStatusCode.OK)
+            val commandsMsg = sentMessages().last()
+            assertThat(commandsMsg.text).contains("Command Reference")
+        }
+
+    @Test
     fun statusSupportsShort8CharInstallationIdPrefixInDm() =
         testApplication {
             configureTestApplication()

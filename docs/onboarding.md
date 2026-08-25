@@ -60,7 +60,7 @@ Telegram group administrators run `/setup` in the target group/topic, then manag
 | Command | Location | Access Level | Required Parameters | Success Response | Common Errors / Warnings |
 |---------|----------|--------------|---------------------|------------------|--------------------------|
 | `/start` | Private DM | All Users | None | DM: `Private onboarding is ready.` | Group: `Start a private chat with the bot first.` |
-| `/help` | Group or DM | All Users | None | Help guide with command syntax | None |
+| `/help` | Group or DM | All Users | None | Group: Short guidance + DM button<br>DM: Categorized inline menu | None |
 | `/setup` | Group / Topic | Group Admins | `<gitlab-base-url> <project-id>` | Group: `Private setup details sent.`<br>DM: Credential, Webhook URL, Management URL | Missing args: Usage & example<br>No DM start: `Use /start in a private chat...`<br>Non-admin: `Only Telegram group administrators...` |
 | `/manage` | Private DM | Group Admins | Optional `<installation-id>` | DM: Installation picker or single-use management URL | Group: DM redirect button<br>Missing ID with picker unavailable: no installations found<br>Unauthorized: `Only Telegram group administrators...` |
 | `/test` | Private DM | Group Admins | `<installation-id>` | Stored group/topic receives test notification | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |

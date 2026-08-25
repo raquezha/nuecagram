@@ -12,19 +12,10 @@ import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
 
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
-private const val HELP_MESSAGE =
+private const val GROUP_HELP_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
-        "1. First-time setup:\n" +
-        " - Send <code>/start</code> in a private DM with the bot.\n" +
-        " - Add bot as Admin to your Telegram group or topic.\n" +
-        " - Run <code>/setup &lt;gitlab-url&gt; &lt;project-id&gt;</code> in your group/topic.\n\n" +
-        "2. Group commands:\n" +
-        " - <code>/status &lt;inst-id&gt;</code> : View installation status\n" +
-        " - <code>/test &lt;inst-id&gt;</code> : Send test notification\n" +
-        " - <code>/manage &lt;inst-id&gt;</code> : Web management link\n" +
-        " - <code>/rotate &lt;inst-id&gt;</code> : Rotate webhook secret\n" +
-        " - <code>/mute &lt;inst-id&gt;</code> : Pause notifications\n" +
-        " - <code>/unmute &lt;inst-id&gt;</code> : Resume notifications"
+        "Run <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in this group to bind notifications.\n" +
+        "For status, management, and configuration options, open a private chat with the bot."
 private const val STATUS_USAGE_MESSAGE = "Usage: <code>/status &lt;installation-id&gt;</code>"
 private const val DIGEST_USAGE_MESSAGE = "Usage: <code>/digest &lt;installation-id&gt;</code>"
 private const val TEST_USAGE_MESSAGE =
@@ -209,20 +200,7 @@ class TelegramUpdateHandler(
         when (command) {
             "/start" -> handleStart(message)
             "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.", message.messageThreadId)
-            "/help" -> {
-                val userId = message.from?.id
-                if (userId != null) {
-                    sendLauncherMessage(
-                        message.chat.id,
-                        message.messageThreadId,
-                        userId,
-                        HELP_MESSAGE,
-                        "Open Web App",
-                    )
-                } else {
-                    send(message.chat.id, HELP_MESSAGE, message.messageThreadId)
-                }
-            }
+            "/help" -> handleHelp(message)
             "/status" -> {
                 val authorized = authorizeInstallationCommand(message, STATUS_USAGE_MESSAGE) ?: return
                 sendLauncherMessage(
@@ -249,6 +227,19 @@ class TelegramUpdateHandler(
                         message.messageThreadId,
                     )
                 }
+        }
+    }
+
+    private suspend fun handleHelp(message: TelegramUpdate.Message) {
+        if (message.chat.type == "private") {
+            menuHandler.sendPrivateHelpMenu(message)
+        } else {
+            val markup = InlineKeyboardMarkup(
+                inlineKeyboard = listOf(
+                    listOf(InlineKeyboardButton(text = "Open Private Chat", url = MANAGEMENT_DM_URL)),
+                ),
+            )
+            send(message.chat.id, GROUP_HELP_MESSAGE, message.messageThreadId, replyMarkup = markup)
         }
     }
 
