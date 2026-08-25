@@ -18,6 +18,8 @@ sealed interface PrivateCallbackAction {
     data class RotateConfirm(val targetId: String) : PrivateCallbackAction
     data class RotateExecute(val targetId: String) : PrivateCallbackAction
     data class Back(val page: Int) : PrivateCallbackAction
+    data object HelpSetup : PrivateCallbackAction
+    data object HelpCommands : PrivateCallbackAction
     data object Unknown : PrivateCallbackAction
 
     companion object {
@@ -33,6 +35,8 @@ sealed interface PrivateCallbackAction {
                 "rotate:confirm" -> RotateConfirm(payload.targetId)
                 "rotate:execute" -> RotateExecute(payload.targetId)
                 "back" -> Back(parsePageIndex(payload.targetId))
+                "help_setup" -> HelpSetup
+                "help_commands" -> HelpCommands
                 else -> Unknown
             }
 
@@ -92,6 +96,23 @@ object TelegramMenuMessages {
     }
 
     const val LIST_HEADER = "Select an installation to manage:"
+
+    const val HELP_SETUP_TEXT =
+        "⚙️ <b>First-Time Setup Instructions</b>\n\n" +
+            "1. Send <code>/start</code> in a private chat with the bot.\n" +
+            "2. Add the bot as an Administrator to your Telegram group or topic.\n" +
+            "3. Run <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in your group/topic."
+
+    const val HELP_COMMANDS_TEXT =
+        "📖 <b>Command Reference</b>\n\n" +
+            "• <code>/setup &lt;url&gt; &lt;project-id&gt;</code> (Group) : Bind project\n" +
+            "• <code>/status &lt;inst-id&gt;</code> (DM) : View installation status\n" +
+            "• <code>/test &lt;inst-id&gt;</code> (DM) : Send test notification\n" +
+            "• <code>/manage [inst-id]</code> (DM) : Management dashboard / menu\n" +
+            "• <code>/rotate &lt;inst-id&gt;</code> (DM) : Rotate secret token\n" +
+            "• <code>/mute &lt;inst-id&gt;</code> / <code>/unmute &lt;inst-id&gt;</code> (DM) :\n" +
+            "  Pause / resume notifications\n" +
+            "• <code>/digest &lt;inst-id&gt;</code> (DM) : View summary text"
 }
 
 private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
@@ -159,6 +180,8 @@ class TelegramMenuHandler(
                 handlePrivateRotateConfirmCallback(callbackQuery, message, userId, action.targetId)
             is PrivateCallbackAction.RotateExecute ->
                 handlePrivateRotateExecuteCallback(callbackQuery, message, userId, action.targetId)
+            PrivateCallbackAction.HelpSetup -> handlePrivateHelpSetupCallback(callbackQuery, message)
+            PrivateCallbackAction.HelpCommands -> handlePrivateHelpCommandsCallback(callbackQuery, message)
             PrivateCallbackAction.Unknown -> answerCallbackError(callbackQuery.id, "Unknown callback action.")
         }
     }
@@ -448,6 +471,56 @@ class TelegramMenuHandler(
             ),
         )
         return text to markup
+    }
+
+    suspend fun sendPrivateHelpMenu(message: TelegramUpdate.Message) {
+        val text =
+            "<b>Nuecagram Assistant</b>\n\n" +
+                "Select an option below to manage notification installations or view command instructions:"
+        val markup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(
+                listOf(InlineKeyboardButton(text = "📦 My Installations", callbackData = "inst:list:page=0")),
+                listOf(InlineKeyboardButton(text = "⚙️ Setup Instructions", callbackData = "inst:help_setup:all")),
+                listOf(InlineKeyboardButton(text = "📖 Command List", callbackData = "inst:help_commands:all")),
+            ),
+        )
+        send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+    }
+
+    private suspend fun handlePrivateHelpSetupCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+    ) {
+        val markup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(
+                listOf(InlineKeyboardButton(text = "⬅️ Back", callbackData = "inst:back:page=0")),
+            ),
+        )
+        send(
+            chatId = message.chat.id,
+            text = TelegramMenuMessages.HELP_SETUP_TEXT,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id)
+    }
+
+    private suspend fun handlePrivateHelpCommandsCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+    ) {
+        val markup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(
+                listOf(InlineKeyboardButton(text = "⬅️ Back", callbackData = "inst:back:page=0")),
+            ),
+        )
+        send(
+            chatId = message.chat.id,
+            text = TelegramMenuMessages.HELP_COMMANDS_TEXT,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id)
     }
 
     private suspend fun findAdminInstallation(

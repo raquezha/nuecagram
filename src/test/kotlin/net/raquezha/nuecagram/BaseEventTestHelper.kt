@@ -135,7 +135,7 @@ abstract class BaseEventTestHelper : KoinTest {
         const val EVENT_RELEASE = "Release Hook"
         const val EVENT_NOTE = "Note Hook"
 
-        private val installationCounter = AtomicLong(0)
+        private val installationCounter = AtomicLong(10000)
 
         @BeforeClass
         @JvmStatic
