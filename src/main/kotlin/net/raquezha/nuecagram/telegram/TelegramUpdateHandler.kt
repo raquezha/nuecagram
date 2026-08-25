@@ -48,6 +48,9 @@ private const val SETUP_ARG_COUNT_MAX = 3
 private const val SETUP_URL_INDEX = 1
 private const val SETUP_PROJECT_INDEX = 2
 private const val LAUNCH_NONCE_TTL_MINUTES = 10L
+private const val PAGE_SIZE = 8
+private const val DISPLAY_URL_MAX_LENGTH = 20
+private const val SHORT_ID_LENGTH = 8
 
 private data class AuthorizedGroupAdmin(
     val actorId: Long,
@@ -86,18 +89,29 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleCallbackQuery(callbackQuery: TelegramUpdate.CallbackQuery) {
-        val message = callbackQuery.message ?: run {
+        val message = callbackQuery.message
+        val payload = callbackQuery.data?.let { TelegramCallbackData.parse(it) }
+        if (message == null || payload == null) {
             answerCallbackError(callbackQuery.id, "Invalid or expired callback action.")
             return
         }
-        val payload = TelegramCallbackData.parse(callbackQuery.data) ?: run {
-            answerCallbackError(callbackQuery.id, "Invalid or expired callback action.")
-            return
-        }
-        val userId = callbackQuery.from.id
 
+        val userId = callbackQuery.from.id
+        if (message.chat.type == "private") {
+            handlePrivateCallbackQuery(callbackQuery, message, payload, userId)
+        } else {
+            handleGroupCallbackQuery(callbackQuery, message, payload, userId)
+        }
+    }
+
+    private suspend fun handleGroupCallbackQuery(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        payload: TelegramCallbackPayload,
+        userId: Long,
+    ) {
         val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        if (message.chat.type == "private" || !isTelegramAdmin(status)) {
+        if (!isTelegramAdmin(status)) {
             telegramService.answerCallbackQuery(
                 callbackQueryId = callbackQuery.id,
                 text = TELEGRAM_ADMIN_ONLY_MESSAGE,
@@ -110,10 +124,280 @@ class TelegramUpdateHandler(
             payload.targetId,
             message.chat.id,
             message.messageThreadId,
-        ) ?: return answerCallbackError(callbackQuery.id, WRONG_CHAT_MESSAGE, showAlert = true)
+        ) ?: run {
+            answerCallbackError(callbackQuery.id, WRONG_CHAT_MESSAGE, showAlert = true)
+            return
+        }
 
         installationRepository.recordInstallationAdmin(installation.id, userId)
         executeCallbackAction(callbackQuery.id, userId, installation, payload.action)
+    }
+
+    private suspend fun handlePrivateCallbackQuery(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        payload: TelegramCallbackPayload,
+        userId: Long,
+    ) {
+        when (payload.action) {
+            "list" -> handlePrivateListCallback(callbackQuery, message, userId, payload.targetId)
+            "menu" -> handlePrivateMenuCallback(callbackQuery, message, userId, payload.targetId)
+            "status" -> handlePrivateStatusCallback(callbackQuery, userId, payload.targetId)
+            "test" -> handlePrivateTestCallback(callbackQuery, userId, payload.targetId)
+            "digest" -> handlePrivateDigestCallback(callbackQuery, userId, payload.targetId)
+            "mute" -> handlePrivateMuteCallback(callbackQuery, message, userId, payload.targetId, muted = true)
+            "unmute" -> handlePrivateMuteCallback(callbackQuery, message, userId, payload.targetId, muted = false)
+            "rotate:confirm" -> handlePrivateRotateConfirmCallback(callbackQuery, message, userId, payload.targetId)
+            "rotate:execute" -> handlePrivateRotateExecuteCallback(callbackQuery, message, userId, payload.targetId)
+            "back" -> handlePrivateBackCallback(callbackQuery, message, userId, payload.targetId)
+            else -> telegramService.answerCallbackQuery(callbackQuery.id, "Unknown callback action.")
+        }
+    }
+
+    private suspend fun handlePrivateListCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        userId: Long,
+        targetId: String,
+    ) {
+        val page = parsePageIndex(targetId)
+        val adminInstalls = installationRepository.installationsForAdmin(userId)
+        if (adminInstalls.isEmpty()) {
+            telegramService.answerCallbackQuery(callbackQuery.id, "No installations found.", showAlert = true)
+            return
+        }
+        val (text, markup) = buildInstallationListMarkup(adminInstalls, page)
+        send(
+            chatId = message.chat.id,
+            text = text,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id)
+    }
+
+    private suspend fun handlePrivateMenuCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        userId: Long,
+        targetId: String,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        val (text, markup) = buildSubmenuMarkup(inst)
+        send(
+            chatId = message.chat.id,
+            text = text,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id)
+    }
+
+    private suspend fun handlePrivateStatusCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        userId: Long,
+        targetId: String,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        telegramService.answerCallbackQuery(callbackQuery.id, inst.statusText(), showAlert = true)
+    }
+
+    private suspend fun handlePrivateTestCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        userId: Long,
+        targetId: String,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        telegramService.sendMessage(inst.deliveryTestMessage())
+        installationRepository.writeAuditEvent(
+            installationId = inst.id,
+            actorType = "telegram",
+            actorId = userId.toString(),
+            action = "telegram_delivery_test",
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id, "Test notification sent.")
+    }
+
+    private suspend fun handlePrivateDigestCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        userId: Long,
+        targetId: String,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        telegramService.answerCallbackQuery(callbackQuery.id, inst.digestText(), showAlert = true)
+    }
+
+    private suspend fun handlePrivateMuteCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        userId: Long,
+        targetId: String,
+        muted: Boolean,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        installationRepository.setMuted(inst.id, muted)
+        installationRepository.writeAuditEvent(
+            installationId = inst.id,
+            actorType = "telegram",
+            actorId = userId.toString(),
+            action = if (muted) "telegram_mute" else "telegram_unmute",
+        )
+        val updatedInst = inst.copy(muted = muted)
+        val (text, markup) = buildSubmenuMarkup(updatedInst)
+        send(
+            chatId = message.chat.id,
+            text = text,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(
+            callbackQuery.id,
+            if (muted) "Installation muted." else "Installation unmuted.",
+        )
+    }
+
+    private suspend fun handlePrivateRotateConfirmCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        userId: Long,
+        targetId: String,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        val text =
+            "⚠️ <b>Rotate Webhook Secret</b>\n\n" +
+                "Are you sure you want to rotate the webhook secret for installation <code>${inst.id}</code>?\n\n" +
+                "The existing secret will stop working immediately."
+        val markup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(
+                listOf(
+                    InlineKeyboardButton(
+                        text = "⚠️ Yes, Rotate Secret",
+                        callbackData = "inst:rotate:execute:${inst.id}",
+                    ),
+                ),
+                listOf(
+                    InlineKeyboardButton(
+                        text = "Cancel",
+                        callbackData = "inst:menu:${inst.id}",
+                    ),
+                ),
+            ),
+        )
+        send(
+            chatId = message.chat.id,
+            text = text,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id)
+    }
+
+    private suspend fun handlePrivateRotateExecuteCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        userId: Long,
+        targetId: String,
+    ) {
+        val inst = findAdminInstallation(userId, targetId) ?: run {
+            telegramService.answerCallbackQuery(callbackQuery.id, "Installation not found.", showAlert = true)
+            return
+        }
+        val credential = installationRepository.rotateWebhookSecret(
+            installationId = inst.id,
+            graceUntil = Instant.now().plus(ROTATION_GRACE_MINUTES, ChronoUnit.MINUTES),
+        )
+        val managementLink = installationRepository.issueManagementLink(
+            inst.id,
+            managementLinkExpiry(),
+        )
+        installationRepository.writeAuditEvent(
+            installationId = inst.id,
+            actorType = "telegram",
+            actorId = userId.toString(),
+            action = "telegram_rotate",
+        )
+        installationRepository.writeAuditEvent(
+            installationId = inst.id,
+            actorType = "telegram",
+            actorId = userId.toString(),
+            action = "telegram_management_link",
+        )
+        val text = rotationDetailsText(config, inst, credential.raw, managementLink.raw)
+        val markup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(
+                listOf(
+                    InlineKeyboardButton(
+                        text = "Back to Menu",
+                        callbackData = "inst:menu:${inst.id}",
+                    ),
+                ),
+            ),
+        )
+        send(
+            chatId = message.chat.id,
+            text = text,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id, "Secret rotated.")
+    }
+
+    private suspend fun handlePrivateBackCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        userId: Long,
+        targetId: String,
+    ) {
+        val page = parsePageIndex(targetId)
+        val adminInstalls = installationRepository.installationsForAdmin(userId)
+        if (adminInstalls.isEmpty()) {
+            telegramService.answerCallbackQuery(callbackQuery.id, "No installations found.", showAlert = true)
+            return
+        }
+        val (text, markup) = buildInstallationListMarkup(adminInstalls, page)
+        send(
+            chatId = message.chat.id,
+            text = text,
+            replyMarkup = markup,
+            messageId = message.messageId?.toString(),
+        )
+        telegramService.answerCallbackQuery(callbackQuery.id)
+    }
+
+    private suspend fun findAdminInstallation(
+        userId: Long,
+        query: String,
+    ): InstallationAdminContext? {
+        val adminInstalls = installationRepository.installationsForAdmin(userId)
+        if (adminInstalls.isEmpty()) return null
+        val cleanQuery = query.trim().lowercase()
+        val uuid = runCatching { UUID.fromString(cleanQuery) }.getOrNull()
+        if (uuid != null) {
+            return adminInstalls.firstOrNull { it.id == uuid }
+        }
+        return adminInstalls.firstOrNull { inst ->
+            inst.id.toString().lowercase().startsWith(cleanQuery) ||
+                inst.gitlabProjectId?.toString() == cleanQuery ||
+                inst.gitlabBaseUrl.lowercase().contains(cleanQuery)
+        }
     }
 
     private suspend fun answerCallbackError(
@@ -333,6 +617,14 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleManage(message: TelegramUpdate.Message) {
+        val userId = message.from?.id
+        val query = parseInstallationQuery(message.text)
+
+        if (message.chat.type == "private" && userId != null) {
+            handlePrivateManage(message, userId, query)
+            return
+        }
+
         val authorized = authorizeInstallationCommand(message, MANAGE_USAGE_MESSAGE) ?: return
         val managementLink =
             installationRepository.issueManagementLink(
@@ -356,6 +648,43 @@ class TelegramUpdateHandler(
             PRIVATE_DELIVERY_MESSAGE,
             "Open Dashboard in Web App",
         )
+    }
+
+    private suspend fun handlePrivateManage(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String?,
+    ) {
+        if (query == null) {
+            val adminInstalls = installationRepository.installationsForAdmin(userId)
+            if (adminInstalls.isEmpty()) {
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            } else {
+                val (text, markup) = buildInstallationListMarkup(adminInstalls, page = 0)
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        } else {
+            val inst = findAdminInstallation(userId, query)
+            if (inst == null) {
+                send(message.chat.id, "Installation not found.", message.messageThreadId)
+            } else {
+                val managementLink = installationRepository.issueManagementLink(inst.id, managementLinkExpiry())
+                installationRepository.writeAuditEvent(
+                    installationId = inst.id,
+                    actorType = "telegram",
+                    actorId = userId.toString(),
+                    action = "telegram_management_link",
+                )
+                send(message.chat.id, managementLinkText(config, inst.id, managementLink.raw))
+                sendLauncherMessage(
+                    message.chat.id,
+                    message.messageThreadId,
+                    userId,
+                    PRIVATE_DELIVERY_MESSAGE,
+                    "Open Dashboard in Web App",
+                )
+            }
+        }
     }
 
     private suspend fun handleWebApp(message: TelegramUpdate.Message) {
@@ -546,21 +875,120 @@ class TelegramUpdateHandler(
         }
     }
 
+    private fun buildInstallationListMarkup(
+        installations: List<InstallationAdminContext>,
+        page: Int,
+    ): Pair<String, InlineKeyboardMarkup> {
+        val totalPages = (installations.size + PAGE_SIZE - 1) / PAGE_SIZE
+        val validPage = page.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+        val startIndex = validPage * PAGE_SIZE
+        val pageItems = installations.subList(
+            startIndex,
+            minOf(startIndex + PAGE_SIZE, installations.size),
+        )
+
+        val rows = mutableListOf<List<InlineKeyboardButton>>()
+        for (inst in pageItems) {
+            val label = buildString {
+                inst.gitlabProjectId?.let { append("Project $it ") }
+                    ?: append(
+                        inst.gitlabBaseUrl
+                            .removePrefix("https://")
+                            .removePrefix("http://")
+                            .take(DISPLAY_URL_MAX_LENGTH) + " ",
+                    )
+                append("(${inst.id.toString().take(SHORT_ID_LENGTH)})")
+            }
+            rows += listOf(
+                InlineKeyboardButton(
+                    text = label,
+                    callbackData = "inst:menu:${inst.id}",
+                ),
+            )
+        }
+
+        if (totalPages > 1) {
+            val navButtons = mutableListOf<InlineKeyboardButton>()
+            if (validPage > 0) {
+                navButtons += InlineKeyboardButton(
+                    text = "⬅️ Prev",
+                    callbackData = "inst:list:page=${validPage - 1}",
+                )
+            }
+            navButtons += InlineKeyboardButton(
+                text = "${validPage + 1}/$totalPages",
+                callbackData = "inst:list:page=$validPage",
+            )
+            if (validPage < totalPages - 1) {
+                navButtons += InlineKeyboardButton(
+                    text = "Next ➡️",
+                    callbackData = "inst:list:page=${validPage + 1}",
+                )
+            }
+            rows += navButtons
+        }
+
+        val text = "<b>Select an installation to manage:</b>"
+        return text to InlineKeyboardMarkup(inlineKeyboard = rows)
+    }
+
+    private fun buildSubmenuMarkup(
+        inst: InstallationAdminContext,
+    ): Pair<String, InlineKeyboardMarkup> {
+        val webAppUrl = "${config.publicBaseUrl()}/webapp?startapp=inst_${inst.id.toString().take(SHORT_ID_LENGTH)}"
+        val rows = listOf(
+            listOf(
+                InlineKeyboardButton(text = "Status", callbackData = "inst:status:${inst.id}"),
+                InlineKeyboardButton(text = "Test", callbackData = "inst:test:${inst.id}"),
+            ),
+            listOf(
+                InlineKeyboardButton(
+                    text = if (inst.muted) "Unmute" else "Mute",
+                    callbackData = "inst:${if (inst.muted) "unmute" else "mute"}:${inst.id}",
+                ),
+                InlineKeyboardButton(text = "Digest", callbackData = "inst:digest:${inst.id}"),
+            ),
+            listOf(
+                InlineKeyboardButton(text = "Rotate Secret", callbackData = "inst:rotate:confirm:${inst.id}"),
+                InlineKeyboardButton(text = "Open Web App", webApp = WebAppInfo(url = webAppUrl)),
+            ),
+            listOf(
+                InlineKeyboardButton(text = "⬅️ Back", callbackData = "inst:back:page=0"),
+            ),
+        )
+        return inst.submenuText() to InlineKeyboardMarkup(inlineKeyboard = rows)
+    }
+
     private fun buildSendAttempts(
         chatId: Long,
         text: String,
         threadId: Long?,
         replyMarkup: InlineKeyboardMarkup?,
+        messageId: String? = null,
     ): List<Message> {
         val cid = chatId.toString()
         val withMarkup = listOfNotNull(
-            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = replyMarkup),
-            Message(chatId = cid, text = text, threadId = threadId, parseMode = "", replyMarkup = replyMarkup),
+            Message(chatId = cid, messageId = messageId, text = text, threadId = threadId, replyMarkup = replyMarkup),
+            Message(
+                chatId = cid,
+                messageId = messageId,
+                text = text,
+                threadId = threadId,
+                parseMode = "",
+                replyMarkup = replyMarkup,
+            ),
             threadId?.let {
-                Message(chatId = cid, text = text, threadId = null, parseMode = "", replyMarkup = replyMarkup)
+                Message(
+                    chatId = cid,
+                    messageId = messageId,
+                    text = text,
+                    threadId = null,
+                    parseMode = "",
+                    replyMarkup = replyMarkup,
+                )
             },
         )
-        val fallbackWithoutMarkup = if (replyMarkup != null) {
+        val fallbackWithoutMarkup = if (replyMarkup != null && messageId == null) {
             listOfNotNull(
                 Message(chatId = cid, text = text, threadId = threadId),
                 threadId?.let { Message(chatId = cid, text = text, threadId = null) },
@@ -577,12 +1005,37 @@ class TelegramUpdateHandler(
         text: String,
         threadId: Long? = null,
         replyMarkup: InlineKeyboardMarkup? = null,
+        messageId: String? = null,
     ) {
-        buildSendAttempts(chatId, text, threadId, replyMarkup).firstNotNullOfOrNull { msg ->
+        buildSendAttempts(chatId, text, threadId, replyMarkup, messageId).firstNotNullOfOrNull { msg ->
             runCatching { telegramService.sendMessage(msg) }.getOrNull()
         }
     }
 }
+
+private fun parsePageIndex(targetId: String): Int =
+    when {
+        targetId.startsWith("page=") -> targetId.removePrefix("page=").toIntOrNull() ?: 0
+        else -> targetId.toIntOrNull() ?: 0
+    }
+
+private fun InstallationAdminContext.submenuText(): String =
+    buildString {
+        append("<b>Installation:</b> <code>")
+        append(id)
+        append("</code>\nGitLab: ")
+        append(gitlabBaseUrl)
+        gitlabProjectId?.let {
+            append("\nProject: ")
+            append(it)
+        }
+        telegramTopicId?.let {
+            append("\nTopic: ")
+            append(it)
+        }
+        append("\nStatus: ")
+        append(if (muted) "<b>Muted</b> 🔕" else "<b>Active</b> 🔔")
+    }
 
 private fun parseSetupArgumentsValue(text: String?): SetupArguments? {
     val parts = text?.trim()?.split(Regex("\\s+")) ?: return null

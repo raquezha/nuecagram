@@ -70,4 +70,32 @@ class TelegramCallbackDataTest {
         assertThat(parsed!!.action).isEqualTo("mute")
         assertThat(parsed.targetId).isEqualTo("inst-999")
     }
+
+    @Test
+    fun parsesExtendedInstCallbackPatterns() {
+        val listPage = TelegramCallbackData.parse("inst:list:page=1")
+        assertThat(listPage).isNotNull()
+        assertThat(listPage!!.action).isEqualTo("list")
+        assertThat(listPage.targetId).isEqualTo("page=1")
+
+        val menu = TelegramCallbackData.parse("inst:menu:a1b2c3d4")
+        assertThat(menu).isNotNull()
+        assertThat(menu!!.action).isEqualTo("menu")
+        assertThat(menu.targetId).isEqualTo("a1b2c3d4")
+
+        val rotateConfirm = TelegramCallbackData.parse("inst:rotate:confirm:a1b2c3d4")
+        assertThat(rotateConfirm).isNotNull()
+        assertThat(rotateConfirm!!.action).isEqualTo("rotate:confirm")
+        assertThat(rotateConfirm.targetId).isEqualTo("a1b2c3d4")
+
+        val rotateExecute = TelegramCallbackData.parse("inst:rotate:execute:a1b2c3d4")
+        assertThat(rotateExecute).isNotNull()
+        assertThat(rotateExecute!!.action).isEqualTo("rotate:execute")
+        assertThat(rotateExecute.targetId).isEqualTo("a1b2c3d4")
+
+        val back = TelegramCallbackData.parse("inst:back:page=0")
+        assertThat(back).isNotNull()
+        assertThat(back!!.action).isEqualTo("back")
+        assertThat(back.targetId).isEqualTo("page=0")
+    }
 }

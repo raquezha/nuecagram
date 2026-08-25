@@ -451,6 +451,201 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(answeredStatus.showAlert).isTrue()
         }
 
+    @Test
+    fun dmBareManageDisplaysInteractiveInstallationMenuAndPaginatesOver8Items() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(300)
+
+            // Grant admin on existing installation + create 9 more
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 300)
+                for (i in 1..9) {
+                    val inst = installationRepository.createInstallation(
+                        gitlabBaseUrl = "https://gitlab.com",
+                        gitlabProjectId = 100L + i,
+                        telegramChatId = 1000L + i,
+                        telegramTopicId = null,
+                    )
+                    installationRepository.recordInstallationAdmin(inst.id, 300)
+                }
+            }
+
+            // Bare /manage in DM
+            assertThat(postTelegram(privateUpdate(301, "/manage", userId = 300)).status).isEqualTo(HttpStatusCode.OK)
+            val firstMsg = sentMessages().last()
+            assertThat(firstMsg.text).contains("Select an installation to manage:")
+            assertThat(firstMsg.replyMarkup).isNotNull()
+            val keyboard = firstMsg.replyMarkup!!.inlineKeyboard
+            assertThat(keyboard).hasSize(9) // 8 items + 1 nav row
+            val navRow = keyboard.last()
+            assertThat(navRow.last().callbackData).isEqualTo("inst:list:page=1")
+
+            // Page 1 via callback
+            val page1Update = callbackPrivateUpdate(
+                updateId = 302,
+                callbackId = "cb_page1",
+                data = "inst:list:page=1",
+                userId = 300,
+                messageId = 5001,
+            )
+            assertThat(postTelegram(page1Update).status).isEqualTo(HttpStatusCode.OK)
+            val page1Msg = sentMessages().last()
+            assertThat(page1Msg.messageId).isEqualTo("5001")
+            assertThat(page1Msg.replyMarkup).isNotNull()
+            val page1Keyboard = page1Msg.replyMarkup!!.inlineKeyboard
+            assertThat(page1Keyboard).hasSize(3) // 2 items + 1 nav row
+        }
+
+    @Test
+    fun dmCallbackQueryMenuAndActionNavigationUpdatesMessageInPlace() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(310)
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 310)
+            }
+
+            // Open menu in place
+            val menuUpdate = callbackPrivateUpdate(
+                updateId = 311,
+                callbackId = "cb_menu",
+                data = "inst:menu:${installation.id}",
+                userId = 310,
+                messageId = 6001,
+            )
+            assertThat(postTelegram(menuUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val menuMsg = sentMessages().last()
+            assertThat(menuMsg.messageId).isEqualTo("6001")
+            assertThat(menuMsg.text).contains("Installation:")
+            assertThat(menuMsg.text).contains(installation.id.toString())
+            assertThat(menuMsg.text).contains("Active")
+
+            // Mute in place
+            val muteUpdate = callbackPrivateUpdate(
+                updateId = 312,
+                callbackId = "cb_mute",
+                data = "inst:mute:${installation.id}",
+                userId = 310,
+                messageId = 6001,
+            )
+            assertThat(postTelegram(muteUpdate).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(installationMuted(installation.id)).isTrue()
+            val mutedMsg = sentMessages().last()
+            assertThat(mutedMsg.messageId).isEqualTo("6001")
+            assertThat(mutedMsg.text).contains("Muted")
+            val muteButton = mutedMsg.replyMarkup!!.inlineKeyboard[1][0]
+            assertThat(muteButton.text).isEqualTo("Unmute")
+            assertThat(muteButton.callbackData).isEqualTo("inst:unmute:${installation.id}")
+        }
+
+    @Test
+    fun dmCallbackQueryRotationRequiresConfirmationBeforeExecuting() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(320)
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 320)
+            }
+            val initialRotateCount = auditActionCount("telegram_rotate")
+
+            // Step 1: Confirmation prompt
+            val confirmUpdate = callbackPrivateUpdate(
+                updateId = 321,
+                callbackId = "cb_confirm",
+                data = "inst:rotate:confirm:${installation.id}",
+                userId = 320,
+                messageId = 7001,
+            )
+            assertThat(postTelegram(confirmUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val confirmMsg = sentMessages().last()
+            assertThat(confirmMsg.messageId).isEqualTo("7001")
+            assertThat(confirmMsg.text).contains("Are you sure you want to rotate")
+            val executeButton = confirmMsg.replyMarkup!!.inlineKeyboard.first().first()
+            assertThat(executeButton.callbackData).isEqualTo("inst:rotate:execute:${installation.id}")
+            assertThat(auditActionCount("telegram_rotate")).isEqualTo(initialRotateCount)
+
+            // Step 2: Execute rotation
+            val executeUpdate = callbackPrivateUpdate(
+                updateId = 322,
+                callbackId = "cb_execute",
+                data = "inst:rotate:execute:${installation.id}",
+                userId = 320,
+                messageId = 7001,
+            )
+            assertThat(postTelegram(executeUpdate).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(auditActionCount("telegram_rotate")).isEqualTo(initialRotateCount + 1)
+            val executeMsg = sentMessages().last()
+            assertThat(executeMsg.messageId).isEqualTo("7001")
+            assertThat(executeMsg.text).contains("Rotated installation:")
+            assertThat(executeMsg.text).contains("GitLab secret token:")
+        }
+
+    @Test
+    fun dmCallbackQueryRejectsUnauthorizedInstallationId() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(330)
+            // User 330 is NOT an admin of installation
+
+            val menuUpdate = callbackPrivateUpdate(
+                updateId = 331,
+                callbackId = "cb_unauth_menu",
+                data = "inst:menu:${installation.id}",
+                userId = 330,
+            )
+            assertThat(postTelegram(menuUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val answered = mockTelegramService().answeredCallbacks().last()
+            assertThat(answered.callbackQueryId).isEqualTo("cb_unauth_menu")
+            assertThat(answered.text).isEqualTo("Installation not found.")
+            assertThat(answered.showAlert).isTrue()
+        }
+
+    @Test
+    fun dmBareManageHandlesEmptyInstallationsAndOutOfBoundsPage() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(340)
+
+            // Bare /manage with no installations
+            assertThat(postTelegram(privateUpdate(341, "/manage", userId = 340)).status).isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("No installations found for your account.")
+
+            // Grant admin on installation
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 340)
+            }
+
+            // Callback page 999 clamps to valid page 0
+            val page999Update = callbackPrivateUpdate(
+                updateId = 342,
+                callbackId = "cb_page999",
+                data = "inst:list:page=999",
+                userId = 340,
+            )
+            assertThat(postTelegram(page999Update).status).isEqualTo(HttpStatusCode.OK)
+            val pageMsg = sentMessages().last()
+            assertThat(pageMsg.text).contains("Select an installation to manage:")
+        }
+
+    @Test
+    fun dmTypedManageSupportsShortIdFallback() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(350)
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 350)
+            }
+
+            val shortId = installation.id.toString().take(8)
+            assertThat(
+                postTelegram(privateUpdate(351, "/manage $shortId", userId = 350)).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                sentMessages().any { it.text.contains("Management for ${installation.id}") },
+            ).isTrue()
+        }
+
     private fun bootstrapPrivateUser(userId: Long) {
         runBlocking {
             installationRepository.upsertTelegramPrivateChat(userId, userId)
@@ -535,6 +730,29 @@ private fun callbackGroupUpdate(
                     chat = TelegramUpdate.Chat(id = chatId, type = "group"),
                     from = TelegramUpdate.User(userId),
                     messageThreadId = messageThreadId,
+                ),
+                data = data,
+            ),
+        ),
+    )
+
+private fun callbackPrivateUpdate(
+    updateId: Long,
+    callbackId: String,
+    data: String?,
+    userId: Long,
+    messageId: Long = 1001,
+): String =
+    Json.encodeToString(
+        TelegramUpdate(
+            updateId = updateId,
+            callbackQuery = TelegramUpdate.CallbackQuery(
+                id = callbackId,
+                from = TelegramUpdate.User(userId),
+                message = TelegramUpdate.Message(
+                    messageId = messageId,
+                    chat = TelegramUpdate.Chat(id = userId, type = "private"),
+                    from = TelegramUpdate.User(userId),
                 ),
                 data = data,
             ),
