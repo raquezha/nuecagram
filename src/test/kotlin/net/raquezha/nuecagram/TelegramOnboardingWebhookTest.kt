@@ -10,8 +10,14 @@ import io.ktor.http.contentType
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.telegram.Message
+import net.raquezha.nuecagram.telegram.TelegramChat
+import net.raquezha.nuecagram.telegram.TelegramMessage
+import net.raquezha.nuecagram.telegram.TelegramUpdate
+import net.raquezha.nuecagram.telegram.TelegramUser
 import org.junit.Test
 
 @Suppress("TooManyFunctions")
@@ -316,12 +322,18 @@ private fun groupUpdate(
     chatId: Long,
     userId: Long = updateId,
     messageThreadId: Long? = null,
-): String {
-    val thread = messageThreadId?.let { ",\"message_thread_id\":$it" }.orEmpty()
-    return """
-    {"update_id":$updateId,"message":{"text":"$text","chat":{"id":$chatId,"type":"group"},"from":{"id":$userId}$thread}}
-    """.trimIndent()
-}
+): String =
+    Json.encodeToString(
+        TelegramUpdate(
+            updateId = updateId,
+            message = TelegramMessage(
+                text = text,
+                chat = TelegramChat(id = chatId, type = "group"),
+                from = TelegramUser(userId),
+                messageThreadId = messageThreadId,
+            ),
+        ),
+    )
 
 private suspend fun ApplicationTestBuilder.postTelegram(
     body: String,
