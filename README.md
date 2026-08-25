@@ -9,7 +9,7 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted i
 ## What it does
 
 - Sends GitLab push, tag, merge request, issue, note, wiki, deployment, release, pipeline, and job notifications to Telegram.
-- Provides a native **Telegram Web App-first** management experience with guided setup wizard, one-time secret display, and mute/test controls inside Telegram.
+- Provides a native **Telegram DM-first** management experience with group setup, private command flows, one-time secret display, and mute/test controls inside Telegram.
 - Consolidates pipeline and job activity into an updating Telegram message per installation and pipeline.
 - Stores installation state in PostgreSQL; webhook secrets and management links are stored only as hashes.
 - Maintains full text slash command fallback (`/setup`, `/manage`, `/status`, `/rotate`, `/mute`, `/unmute`, `/test`, `/digest`) for recovery and power users.
@@ -38,9 +38,9 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted i
 
 4. Add your Telegram bot to the target group, make it an administrator, then send the bot a private `/start`.
 
-5. In the destination Telegram group, tap the **Open Nuecagram** Web App inline button or run `/setup https://gitlab.com <project-id>`.
+5. In the destination Telegram group, run `/setup https://gitlab.com <project-id>`.
 
-   For topic-enabled supergroups, run the command inside the topic that should receive notifications. Nuecagram replies in the group without secrets and provides a Web App launcher or sends the webhook URL, GitLab native secret token, and management link to the admin's private chat.
+   For topic-enabled supergroups, run the command inside the topic that should receive notifications. Nuecagram replies in the group without secrets and sends the webhook URL, GitLab native secret token, and management link to the admin's private chat.
 
 6. In GitLab, create a project webhook using the URL and secret token from the private message. GitLab sends the token as `X-Gitlab-Token`; do not add custom Nuecagram headers.
 
