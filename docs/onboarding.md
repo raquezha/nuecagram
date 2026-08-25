@@ -1,27 +1,26 @@
 # Onboarding
 
-Nuecagram features a **Telegram Web App-first** management experience. Group administrators can launch the interactive Web App directly inside Telegram to set up, monitor, mute, test, and manage GitLab notification webhooks visually without manually typing slash commands. Text-based slash commands remain fully supported as text fallbacks and recovery tools.
+Nuecagram features a **DM-first** management experience. Group administrators run `/setup` in the destination group or topic, then use private DM commands and inline callback menus to manage GitLab notification webhooks. Text-based slash commands remain fully supported as fallbacks and recovery tools.
 
 ## Telegram setup
 
 1. Create a bot with BotFather and set `TELEGRAM_BOT_TOKEN` privately in `.env`.
-2. Enable Web App in BotFather (`/mybots` -> Bot Settings -> Configure Mini App -> URL: `${NUECAGRAM_PUBLIC_URL}/webapp`).
+2. Configure the bot's Telegram shortcuts and DM entry points as needed for your deployment.
 3. Configure Telegram to deliver updates to `${NUECAGRAM_PUBLIC_URL}/telegram` with `TELEGRAM_WEBHOOK_SECRET` as `X-Telegram-Bot-Api-Secret-Token`.
 4. Add the bot to the destination Telegram group and make it an administrator.
 5. The human administrator sends `/start` to the bot in a private chat to bootstrap DM delivery.
 
-## Primary Path: Web App Setup Wizard
+## Primary Path: Group Setup, then DM Management
 
-1. In your destination Telegram group chat or forum topic, tap the **Open Nuecagram** inline button on any bot reply or open `/webapp`.
-2. The Web App automatically resolves your current Telegram context (Group Chat vs. Forum Topic #id).
-3. Tap **+ Add** in the dashboard header to launch the Setup Wizard (visible when group context is active).
-4. Enter your **GitLab Base URL** (e.g. `https://gitlab.com`) and numeric **Project ID**.
-5. Tap **Create Installation**. The Web App generates a unique webhook endpoint URL and single-view `X-Gitlab-Token` secret.
-6. Copy the secret token immediately and configure your GitLab webhook. For security, raw secrets are displayed **only once** in the UI.
+1. In your destination Telegram group chat or forum topic, run `/setup https://gitlab.com <project-id>`.
+2. The bot stores the group or topic as the notification destination and sends credentials to the administrator's private chat.
+3. Use DM commands such as `/manage`, `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest` to manage the installation.
+4. Use the inline menu in DM when you want callback navigation instead of typing commands.
+5. Copy the secret token immediately and configure your GitLab webhook. For security, raw secrets are displayed **only once** in the private DM.
 
 ## Fallback Path: Command-First Onboarding
 
-If the Telegram Web App is unavailable in your client, run:
+If you prefer the command-only path, run:
 
 ```text
 /setup https://gitlab.com <project-id>
