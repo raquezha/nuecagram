@@ -146,19 +146,18 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 72, "administrator")
             val initialLinkAuditCount = auditActionCount("telegram_management_link")
 
-            val command =
-                groupUpdate(72, "/manage ${installation.id}", installation.telegramChatId, userId = 72)
+            val command = privateUpdate(72, "/manage ${installation.id}", userId = 72)
             assertThat(postTelegram(command).status).isEqualTo(HttpStatusCode.OK)
             assertThat(postTelegram(command).status).isEqualTo(HttpStatusCode.OK)
 
-            val privateMessage = messagesForChat(72).single()
-            val groupMessage = messagesForChat(installation.telegramChatId).single()
-            assertThat(privateMessage.text).contains("Management for ${installation.id}")
-            assertThat(privateMessage.text).contains("/nuecagram/manage/")
-            assertThat(groupMessage.text).isEqualTo("Private setup details sent.")
-            assertThat(groupMessage.text).doesNotContain("/nuecagram/manage/")
+            val privateMessages = messagesForChat(72)
+            assertThat(privateMessages).hasSize(2)
+            val detailsMessage = privateMessages.first()
+            val launcherMessage = privateMessages.last()
+            assertThat(detailsMessage.text).contains("Management for ${installation.id}")
+            assertThat(detailsMessage.text).contains("/nuecagram/manage/")
+            assertThat(launcherMessage.text).contains("Private setup details sent.")
             assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
-            assertThat(sentMessages()).hasSize(2)
         }
 
     @Test
@@ -172,19 +171,17 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             val initialLinkAuditCount = auditActionCount("telegram_management_link")
 
             assertThat(
-                postTelegram(
-                    groupUpdate(73, "/rotate ${installation.id}", installation.telegramChatId, userId = 73),
-                ).status,
+                postTelegram(privateUpdate(73, "/rotate ${installation.id}", userId = 73)).status,
             ).isEqualTo(HttpStatusCode.OK)
 
-            val privateMessage = messagesForChat(73).single()
-            val groupMessage = messagesForChat(installation.telegramChatId).single()
+            val privateMessages = messagesForChat(73)
+            assertThat(privateMessages).hasSize(2)
+            val privateMessage = privateMessages.first()
+            val launcherMessage = privateMessages.last()
             val rotatedCredential = privateMessage.text.substringAfter("GitLab secret token: ").substringBefore('\n')
             assertThat(rotatedCredential).isNotEqualTo(oldCredential)
             assertThat(privateMessage.text).contains("Management URL:")
-            assertThat(groupMessage.text).isEqualTo("Private setup details sent.")
-            assertThat(groupMessage.text).doesNotContain(oldCredential)
-            assertThat(groupMessage.text).doesNotContain(rotatedCredential)
+            assertThat(launcherMessage.text).contains("Private setup details sent.")
             assertThat(runBlocking { installationRepository.verifyWebhookSecret(oldCredential) }).isNull()
             assertThat(runBlocking { installationRepository.verifyWebhookSecret(rotatedCredential) }).isNotNull()
             assertThat(auditActionCount("telegram_rotate")).isEqualTo(initialRotateAuditCount + 1)
@@ -240,11 +237,11 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             bootstrapPrivateUser(76)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 76, "administrator")
 
-            val command = groupUpdate(76, "/status ${installation.id}", installation.telegramChatId, userId = 76)
+            val command = privateUpdate(76, "/status ${installation.id}", userId = 76)
             assertThat(postTelegram(command).status).isEqualTo(HttpStatusCode.OK)
 
             val lastMessage = sentMessages().last()
-            assertThat(lastMessage.chatId).isEqualTo(installation.telegramChatId.toString())
+            assertThat(lastMessage.chatId).isEqualTo("76")
             assertThat(lastMessage.text).contains("Installation:")
             assertThat(lastMessage.replyMarkup).isNotNull()
             val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
@@ -328,6 +325,18 @@ private fun groupUpdate(
                 chat = TelegramUpdate.Chat(id = chatId, type = "group"),
                 from = TelegramUpdate.User(userId),
                 messageThreadId = messageThreadId,
+            ),
+        ),
+    )
+
+private fun privateUpdate(updateId: Long, text: String, userId: Long): String =
+    Json.encodeToString(
+        TelegramUpdate(
+            updateId = updateId,
+            message = TelegramUpdate.Message(
+                text = text,
+                chat = TelegramUpdate.Chat(id = userId, type = "private"),
+                from = TelegramUpdate.User(userId),
             ),
         ),
     )

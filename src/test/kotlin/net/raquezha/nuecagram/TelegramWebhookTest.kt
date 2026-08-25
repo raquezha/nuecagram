@@ -40,29 +40,42 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun statusRequiresValidInstallationIdAndChecksTelegramAdminBeforePrivateBootstrap() =
+    fun groupManagementCommandsRedirectToPrivateDmWithoutUsageHints() =
         testApplication {
             configureTestApplication()
             val initialAuditCount = auditEventCount()
 
-            assertThat(
-                postTelegram(groupUpdate(50, "/status", installation.telegramChatId)).status,
-            ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).isEqualTo("Usage: <code>/status &lt;installation-id&gt;</code>")
-
-            assertThat(
-                postTelegram(
-                    groupUpdate(51, "/status ${installation.id}", installation.telegramChatId, userId = 51),
-                ).status,
-            ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Only Telegram group administrators can use this command.")
+            listOf(
+                "/status",
+                "/test",
+                "/manage",
+                "/rotate",
+                "/mute",
+                "/unmute",
+                "/digest",
+            ).forEachIndexed { index, command ->
+                assertThat(
+                    postTelegram(
+                        groupUpdate(
+                            10_050 + index.toLong(),
+                            "$command ${installation.id}",
+                            installation.telegramChatId,
+                        ),
+                    ).status,
+                ).isEqualTo(HttpStatusCode.OK)
+                val message = sentMessages().last()
+                assertThat(message.text).isEqualTo(
+                    "Continue in a private chat with the bot to manage this installation.",
+                )
+                assertThat(message.replyMarkup!!.inlineKeyboard.first().first().url).isEqualTo(
+                    "https://t.me/NuecagramBot",
+                )
+            }
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
     @Test
-    fun statusSupportsShort8CharInstallationIdPrefix() =
+    fun statusSupportsShort8CharInstallationIdPrefixInDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(88)
@@ -70,9 +83,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
 
             val shortId = installation.id.toString().take(8)
             assertThat(
-                postTelegram(
-                    groupUpdate(88, "/status $shortId", installation.telegramChatId, userId = 88),
-                ).status,
+                postTelegram(privateUpdate(88, "/status $shortId", userId = 88)).status,
             ).isEqualTo(HttpStatusCode.OK)
 
             val response = sentMessages().last().text
@@ -81,37 +92,24 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun statusRequiresTelegramAdministratorAndChatOwnership() =
+    fun statusRequiresTelegramAdministratorAndValidInstallationIdInDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(52)
             val initialAuditCount = auditEventCount()
 
             assertThat(
-                postTelegram(
-                    groupUpdate(52, "/status ${installation.id}", installation.telegramChatId, userId = 52),
-                ).status,
+                postTelegram(privateUpdate(52, "/status ${installation.id}", userId = 52)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(sentMessages().last().text).isEqualTo(
+                "Only Telegram group administrators can use this command.",
+            )
 
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 52, "administrator")
-            val other =
-                runBlocking {
-                    installationRepository.createInstallation(
-                        gitlabBaseUrl = INSTANCE,
-                        gitlabProjectId = 999,
-                        telegramChatId = installation.telegramChatId + 1,
-                        telegramTopicId = null,
-                    )
-                }
             assertThat(
-                postTelegram(
-                    groupUpdate(53, "/status ${other.id}", installation.telegramChatId, userId = 52),
-                ).status,
+                postTelegram(privateUpdate(53, "/status nope", userId = 52)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).isEqualTo("Installation not found in this chat.")
+            assertThat(sentMessages().last().text).isEqualTo("Installation not found.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
@@ -124,27 +122,23 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             val initialAuditCount = auditEventCount()
 
             assertThat(
-                postTelegram(
-                    groupUpdate(55, "/status ${installation.id}", installation.telegramChatId, userId = 55),
-                ).status,
+                postTelegram(privateUpdate(55, "/status ${installation.id}", userId = 55)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(sentMessages().last().text).isEqualTo(
+                "Only Telegram group administrators can use this command.",
+            )
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
         }
 
     @Test
-    fun statusAllowsTelegramAdministratorsForOwnedInstallation() =
+    fun statusAllowsTelegramAdministratorsForOwnedInstallationInDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(54)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 54, "creator")
 
             assertThat(
-                postTelegram(
-                    groupUpdate(54, "/status ${installation.id}", installation.telegramChatId, userId = 54),
-                ).status,
+                postTelegram(privateUpdate(54, "/status ${installation.id}", userId = 54)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).contains(installation.id.toString())
             assertThat(sentMessages().last().text).contains("Muted: no")
@@ -152,20 +146,16 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun recordsInstallationAdminMembershipOnSuccessfulGroupCommand() =
+    fun recordsInstallationAdminMembershipOnSuccessfulDmCommand() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(970)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 970, "administrator")
 
-            assertThat(
-                runBlocking { installationRepository.installationsForAdmin(970) },
-            ).isEmpty()
+            assertThat(runBlocking { installationRepository.installationsForAdmin(970) }).isEmpty()
 
             assertThat(
-                postTelegram(
-                    groupUpdate(970, "/status ${installation.id}", installation.telegramChatId, userId = 970),
-                ).status,
+                postTelegram(privateUpdate(970, "/status ${installation.id}", userId = 970)).status,
             ).isEqualTo(HttpStatusCode.OK)
 
             val adminInstalls = runBlocking { installationRepository.installationsForAdmin(970) }
@@ -174,58 +164,44 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun liveReVerificationBlocksDemotedAdminsWithStaleRecord() =
+    fun liveReVerificationBlocksDemotedAdminsWithStaleRecordInDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(971)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 971, "administrator")
 
-            // First execution records membership
             assertThat(
-                postTelegram(
-                    groupUpdate(971, "/status ${installation.id}", installation.telegramChatId, userId = 971),
-                ).status,
+                postTelegram(privateUpdate(971, "/status ${installation.id}", userId = 971)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                runBlocking { installationRepository.installationsForAdmin(971) },
-            ).hasSize(1)
+            assertThat(runBlocking { installationRepository.installationsForAdmin(971) }).hasSize(1)
 
-            // Admin is demoted to member
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 971, "member")
 
-            // Destructive command execution live re-verification blocks demoted admin
             assertThat(
-                postTelegram(
-                    groupUpdate(972, "/rotate ${installation.id}", installation.telegramChatId, userId = 971),
-                ).status,
+                postTelegram(privateUpdate(972, "/rotate ${installation.id}", userId = 971)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(sentMessages().last().text).isEqualTo(
+                "Only Telegram group administrators can use this command.",
+            )
 
-            // Mute is also blocked
             assertThat(
-                postTelegram(
-                    groupUpdate(973, "/mute ${installation.id}", installation.telegramChatId, userId = 971),
-                ).status,
+                postTelegram(privateUpdate(973, "/mute ${installation.id}", userId = 971)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(sentMessages().last().text).isEqualTo(
+                "Only Telegram group administrators can use this command.",
+            )
             assertThat(installationMuted(installation.id)).isFalse()
         }
 
     @Test
-    fun digestReturnsSafeInstallationSummary() =
+    fun digestReturnsSafeInstallationSummaryInDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(60)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 60, "administrator")
 
             assertThat(
-                postTelegram(
-                    groupUpdate(60, "/digest ${installation.id}", installation.telegramChatId, userId = 60),
-                ).status,
+                postTelegram(privateUpdate(60, "/digest ${installation.id}", userId = 60)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).contains("Digest for ${installation.id}")
             assertThat(sentMessages().last().text).contains(installation.gitlabBaseUrl)
@@ -233,34 +209,32 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun testSendsDeliveryMessageToStoredDestinationAndAuditsOnce() =
+    fun testSendsDeliveryMessageToStoredDestinationAndAuditsOnceFromDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(61)
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 61, "administrator")
 
+            val initialTestCount = auditActionCount("telegram_delivery_test")
+
             assertThat(
-                postTelegram(
-                    groupUpdate(61, "/test ${installation.id}", installation.telegramChatId, userId = 61),
-                ).status,
+                postTelegram(privateUpdate(61, "/test ${installation.id}", userId = 61)).status,
             ).isEqualTo(HttpStatusCode.OK)
             val delivered = sentMessages().last()
             assertThat(delivered.chatId).isEqualTo(installation.telegramChatId.toString())
             assertThat(delivered.threadId).isEqualTo(installation.telegramTopicId)
             assertThat(delivered.text).contains(installation.id.toString())
-            assertThat(auditActionCount("telegram_delivery_test")).isEqualTo(1)
+            assertThat(auditActionCount("telegram_delivery_test")).isEqualTo(initialTestCount + 1)
 
             assertThat(
-                postTelegram(
-                    groupUpdate(61, "/test ${installation.id}", installation.telegramChatId, userId = 61),
-                ).status,
+                postTelegram(privateUpdate(61, "/test ${installation.id}", userId = 61)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages()).hasSize(1)
-            assertThat(auditActionCount("telegram_delivery_test")).isEqualTo(1)
+            assertThat(auditActionCount("telegram_delivery_test")).isEqualTo(initialTestCount + 1)
         }
 
     @Test
-    fun muteAndUnmutePersistAndAuditSuccessfulCommands() =
+    fun muteAndUnmutePersistAndAuditSuccessfulCommandsFromDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(62)
@@ -269,18 +243,14 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             val initialUnmuteCount = auditActionCount("telegram_unmute")
 
             assertThat(
-                postTelegram(
-                    groupUpdate(62, "/mute ${installation.id}", installation.telegramChatId, userId = 62),
-                ).status,
+                postTelegram(privateUpdate(62, "/mute ${installation.id}", userId = 62)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Installation muted.")
             assertThat(installationMuted(installation.id)).isTrue()
             assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount + 1)
 
             assertThat(
-                postTelegram(
-                    groupUpdate(63, "/unmute ${installation.id}", installation.telegramChatId, userId = 62),
-                ).status,
+                postTelegram(privateUpdate(63, "/unmute ${installation.id}", userId = 62)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("Installation unmuted.")
             assertThat(installationMuted(installation.id)).isFalse()
@@ -288,20 +258,19 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun unauthorizedMuteIsNoOpAndWritesNoAudit() =
+    fun unauthorizedMuteIsNoOpAndWritesNoAuditInDm() =
         testApplication {
             configureTestApplication()
+            bootstrapPrivateUser(64)
             val initialAuditCount = auditEventCount()
             val initialMuteCount = auditActionCount("telegram_mute")
 
             assertThat(
-                postTelegram(
-                    groupUpdate(64, "/mute ${installation.id}", installation.telegramChatId, userId = 64),
-                ).status,
+                postTelegram(privateUpdate(64, "/mute ${installation.id}", userId = 64)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(sentMessages().last().text).isEqualTo(
+                "Only Telegram group administrators can use this command.",
+            )
             assertThat(installationMuted(installation.id)).isFalse()
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
@@ -636,6 +605,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             runBlocking {
                 installationRepository.recordInstallationAdmin(installation.id, 350)
             }
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 350, "administrator")
 
             val shortId = installation.id.toString().take(8)
             assertThat(
@@ -643,7 +613,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(
                 sentMessages().any {
-                    it.text.contains("Management link for installation <code>${installation.id}</code>")
+                    it.text.contains("Management for ${installation.id}")
                 },
             ).isTrue()
         }

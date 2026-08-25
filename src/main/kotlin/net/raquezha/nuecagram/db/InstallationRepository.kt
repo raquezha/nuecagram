@@ -296,7 +296,7 @@ class InstallationRepository(
 
     suspend fun findInstallationByQuery(
         rawQuery: String,
-        chatId: Long,
+        chatId: Long? = null,
         topicId: Long? = null,
     ): InstallationAdminContext? = databaseFactory.dbTransaction {
         val queryStr = rawQuery.trim().lowercase()
@@ -304,14 +304,18 @@ class InstallationRepository(
         val uuid = runCatching { UUID.fromString(queryStr) }.getOrNull()
         if (uuid != null) {
             val query = installationWithMuteQuery(uuid)
-                .andWhere { Installations.telegramChatId eq chatId }
+            if (chatId != null) {
+                query.andWhere { Installations.telegramChatId eq chatId }
+            }
             if (topicId != null) {
                 query.andWhere { Installations.telegramTopicId eq topicId }
             }
             return@dbTransaction query.firstOrNull()?.toAdminContext()
         }
         val query = installationWithMuteQuery()
-            .andWhere { Installations.telegramChatId eq chatId }
+        if (chatId != null) {
+            query.andWhere { Installations.telegramChatId eq chatId }
+        }
         if (topicId != null) {
             query.andWhere { Installations.telegramTopicId eq topicId }
         }

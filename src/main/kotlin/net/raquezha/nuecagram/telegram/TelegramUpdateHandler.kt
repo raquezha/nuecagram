@@ -41,6 +41,9 @@ private const val ROTATE_USAGE_MESSAGE =
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
 private const val PRIVATE_COMMAND_MESSAGE = "Run this command in the installation group."
 private const val PRIVATE_DELIVERY_MESSAGE = "Private setup details sent."
+private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
+    "Continue in a private chat with the bot to manage this installation."
+private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
 private const val MANAGEMENT_LINK_TTL_MINUTES = 30L
 private const val ROTATION_GRACE_MINUTES = 0L
 private const val SETUP_ARG_COUNT_MIN = 3
@@ -351,7 +354,7 @@ class TelegramUpdateHandler(
         val userId = message.from?.id
         val query = parseInstallationQuery(message.text)
 
-        if (message.chat.type == "private" && userId != null) {
+        if (message.chat.type == "private" && userId != null && query == null) {
             menuHandler.handlePrivateManage(message, userId, query)
             return
         }
@@ -486,44 +489,54 @@ class TelegramUpdateHandler(
         usageMessage: String,
     ): AuthorizedInstallationCommand? {
         val query = parseInstallationQuery(message.text)
-        val groupAdmin =
-            if (query != null && message.chat.type != "private") {
-                authorizeGroupAdmin(message, usageMessage)
-            } else {
-                null
-            }
-        val installation =
-            if (groupAdmin != null && query != null) {
-                installationRepository.findInstallationByQuery(query, message.chat.id, message.messageThreadId)
-            } else {
-                null
-            }
-
-        val result = when {
-            message.chat.type == "private" -> {
-                send(message.chat.id, PRIVATE_COMMAND_MESSAGE, message.messageThreadId)
+        return when {
+            message.chat.type != "private" -> {
+                sendManagementDmRedirect(message)
                 null
             }
             query == null -> {
                 send(message.chat.id, usageMessage, message.messageThreadId)
                 null
             }
-            groupAdmin == null -> null
+            else -> authorizePrivateInstallationCommand(message, query)
+        }
+    }
+
+    private suspend fun authorizePrivateInstallationCommand(
+        message: TelegramUpdate.Message,
+        query: String,
+    ): AuthorizedInstallationCommand? {
+        val userId = message.from?.id ?: return null
+        val installation = installationRepository.findInstallationByQuery(query)
+        val status = installation?.let {
+            runCatching { telegramService.chatMemberStatus(it.telegramChatId, userId) }.getOrNull()
+        }
+
+        return when {
             installation == null -> {
-                send(message.chat.id, WRONG_CHAT_MESSAGE, message.messageThreadId)
+                send(message.chat.id, "Installation not found.", message.messageThreadId)
+                null
+            }
+            !isTelegramAdmin(status) -> {
+                send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
                 null
             }
             else -> {
-                installationRepository.recordInstallationAdmin(installation.id, groupAdmin.actorId)
+                installationRepository.recordInstallationAdmin(installation.id, userId)
                 AuthorizedInstallationCommand(
                     installation = installation,
-                    actorId = groupAdmin.actorId,
-                    privateChatId = groupAdmin.privateChatId,
+                    actorId = userId,
+                    privateChatId = message.chat.id,
                 )
             }
         }
+    }
 
-        return result
+    private suspend fun sendManagementDmRedirect(message: TelegramUpdate.Message) {
+        val markup = InlineKeyboardMarkup(
+            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = "Open bot DM", url = MANAGEMENT_DM_URL))),
+        )
+        send(message.chat.id, MANAGEMENT_DM_REDIRECT_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
 
     private fun parseInstallationQuery(text: String?): String? =
