@@ -3,12 +3,12 @@ package net.raquezha.nuecagram.telegram
 import java.net.URL
 
 interface TelegramService {
-    fun getURLSendMessage(botToken: String): URL = URL("https://api.telegram.org/bot$botToken/sendMessage")
+    fun getURLSendMessage(botToken: String): URL = TelegramApiUrls.sendMessageUrl(botToken)
 
-    fun getURLEditMessage(botToken: String): URL = URL("https://api.telegram.org/bot$botToken/editMessageText")
+    fun getURLEditMessage(botToken: String): URL = TelegramApiUrls.editMessageUrl(botToken)
 
     fun getURLAnswerCallbackQuery(botToken: String): URL =
-        URL("https://api.telegram.org/bot$botToken/answerCallbackQuery")
+        TelegramApiUrls.answerCallbackQueryUrl(botToken)
 
     suspend fun sendMessage(message: Message): String
 

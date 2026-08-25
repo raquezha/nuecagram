@@ -13,9 +13,7 @@ import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
 
-private val ADMIN_STATUSES = setOf("creator", "administrator")
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
-private const val ADMIN_ONLY_MESSAGE = "Only Telegram group administrators can use this command."
 private const val HELP_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
         "1. First-time setup:\n" +
@@ -106,10 +104,10 @@ class TelegramUpdateHandler(
             telegramService.chatMemberStatus(message.chat.id, userId)
         }.getOrNull()
 
-        if (message.chat.type == "private" || status !in ADMIN_STATUSES) {
+        if (message.chat.type == "private" || !isTelegramAdmin(status)) {
             telegramService.answerCallbackQuery(
                 callbackQueryId = callbackQuery.id,
-                text = ADMIN_ONLY_MESSAGE,
+                text = TELEGRAM_ADMIN_ONLY_MESSAGE,
                 showAlert = true,
             )
             return
@@ -376,8 +374,8 @@ class TelegramUpdateHandler(
             return
         }
         val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        if (status !in ADMIN_STATUSES) {
-            send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
+        if (!isTelegramAdmin(status)) {
+            send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
             return
         }
         installationRepository.writeAuditEvent(
@@ -451,8 +449,8 @@ class TelegramUpdateHandler(
                 send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
                 null
             }
-            status !in ADMIN_STATUSES -> {
-                send(message.chat.id, ADMIN_ONLY_MESSAGE, message.messageThreadId)
+            !isTelegramAdmin(status) -> {
+                send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
                 null
             }
             requireArguments && text.substringAfter(' ', "").isBlank() -> {

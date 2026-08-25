@@ -24,6 +24,7 @@ import net.raquezha.nuecagram.db.WebAppSessionContext
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramWebAppAuth
+import net.raquezha.nuecagram.telegram.isTelegramAdmin
 import net.raquezha.nuecagram.configuredPublicUrl
 import org.koin.ktor.ext.inject
 
@@ -33,7 +34,6 @@ private const val CSRF_HEADER_NAME = "X-CSRF-Token"
 private const val SESSION_TTL_HOURS = 8L
 private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
 private const val CONTAINER_MAX_WIDTH_PX = 480
-private val ADMIN_STATUSES = setOf("creator", "administrator")
 
 @Serializable
 private data class AuthRequestPayload(
@@ -276,7 +276,7 @@ private suspend fun ApplicationCall.handleGetInstallations(
                 val status = runCatching {
                     telegramService.chatMemberStatus(inst.telegramChatId, session.telegramUserId)
                 }.getOrNull()
-                status in ADMIN_STATUSES
+                isTelegramAdmin(status)
             }
         }
     }
@@ -444,7 +444,7 @@ private suspend fun isTargetAdmin(
     if (session.telegramChatId != null && session.telegramChatId < 0) return true
     if (targetChatId == null || targetChatId >= 0) return true
     val status = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
-    return status in ADMIN_STATUSES
+    return isTelegramAdmin(status)
 }
 
 private suspend fun ApplicationCall.processCreateInstallation(
@@ -597,7 +597,7 @@ private suspend fun canAccess(
     val status = runCatching {
         telegramService.chatMemberStatus(item.telegramChatId, session.telegramUserId)
     }.getOrNull()
-    return status in ADMIN_STATUSES
+    return isTelegramAdmin(status)
 }
 
 private suspend fun ApplicationCall.verifyAdminStatus(
@@ -607,7 +607,7 @@ private suspend fun ApplicationCall.verifyAdminStatus(
     val chatId = session.telegramChatId ?: return true
     if (chatId > 0) return true
     val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
-    if (status !in ADMIN_STATUSES) {
+    if (!isTelegramAdmin(status)) {
         respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
         return false
     }

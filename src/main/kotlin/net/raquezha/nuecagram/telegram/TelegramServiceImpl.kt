@@ -20,9 +20,7 @@ class TelegramServiceImpl(
         userId: Long,
     ): String? {
         val response =
-            client.get(
-                "https://api.telegram.org/bot${config.botApi}/getChatMember?chat_id=$chatId&user_id=$userId",
-            )
+            client.get(TelegramApiUrls.getChatMemberUrl(config.botApi, chatId, userId))
         if (response.status != HttpStatusCode.OK) {
             throw HttpException("Failed to get chat member: ${response.status}")
         }
