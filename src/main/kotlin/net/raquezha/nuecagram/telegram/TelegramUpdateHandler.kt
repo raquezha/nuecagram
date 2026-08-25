@@ -85,7 +85,7 @@ class TelegramUpdateHandler(
         dispatch(command, message)
     }
 
-    private suspend fun handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
+    private suspend fun handleCallbackQuery(callbackQuery: TelegramUpdate.CallbackQuery) {
         val message = callbackQuery.message ?: run {
             answerCallbackError(callbackQuery.id, "Invalid or expired callback action.")
             return
@@ -187,7 +187,7 @@ class TelegramUpdateHandler(
     }
 
     @Suppress("CyclomaticComplexMethod")
-    private suspend fun dispatch(command: String, message: TelegramMessage) {
+    private suspend fun dispatch(command: String, message: TelegramUpdate.Message) {
         when (command) {
             "/start" -> handleStart(message)
             "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.", message.messageThreadId)
@@ -234,7 +234,7 @@ class TelegramUpdateHandler(
         }
     }
 
-    private suspend fun handleStart(message: TelegramMessage) {
+    private suspend fun handleStart(message: TelegramUpdate.Message) {
         val userId = message.from?.id
         if (message.chat.type == "private" && userId != null) {
             installationRepository.upsertTelegramPrivateChat(userId, message.chat.id)
@@ -251,12 +251,12 @@ class TelegramUpdateHandler(
         }
     }
 
-    private suspend fun handleDigest(message: TelegramMessage) {
+    private suspend fun handleDigest(message: TelegramUpdate.Message) {
         val authorized = authorizeInstallationCommand(message, DIGEST_USAGE_MESSAGE) ?: return
         send(message.chat.id, authorized.installation.digestText(), message.messageThreadId)
     }
 
-    private suspend fun handleDeliveryTest(message: TelegramMessage) {
+    private suspend fun handleDeliveryTest(message: TelegramUpdate.Message) {
         val authorized = authorizeInstallationCommand(message, TEST_USAGE_MESSAGE) ?: return
         telegramService.sendMessage(authorized.installation.deliveryTestMessage())
         installationRepository.writeAuditEvent(
@@ -267,7 +267,7 @@ class TelegramUpdateHandler(
         )
     }
 
-    private suspend fun handleMute(message: TelegramMessage) {
+    private suspend fun handleMute(message: TelegramUpdate.Message) {
         val authorized = authorizeInstallationCommand(message, MUTE_USAGE_MESSAGE) ?: return
         installationRepository.setMuted(authorized.installation.id, true)
         installationRepository.writeAuditEvent(
@@ -279,7 +279,7 @@ class TelegramUpdateHandler(
         send(message.chat.id, "Installation muted.", message.messageThreadId)
     }
 
-    private suspend fun handleUnmute(message: TelegramMessage) {
+    private suspend fun handleUnmute(message: TelegramUpdate.Message) {
         val authorized = authorizeInstallationCommand(message, UNMUTE_USAGE_MESSAGE) ?: return
         installationRepository.setMuted(authorized.installation.id, false)
         installationRepository.writeAuditEvent(
@@ -291,7 +291,7 @@ class TelegramUpdateHandler(
         send(message.chat.id, "Installation unmuted.", message.messageThreadId)
     }
 
-    private suspend fun handleSetup(message: TelegramMessage) {
+    private suspend fun handleSetup(message: TelegramUpdate.Message) {
         val authorized = authorizeGroupAdmin(message, SETUP_USAGE_MESSAGE) ?: return
         val setup = parseSetupArgumentsValue(message.text) ?: run {
             send(message.chat.id, SETUP_USAGE_MESSAGE, message.messageThreadId)
@@ -332,7 +332,7 @@ class TelegramUpdateHandler(
         )
     }
 
-    private suspend fun handleManage(message: TelegramMessage) {
+    private suspend fun handleManage(message: TelegramUpdate.Message) {
         val authorized = authorizeInstallationCommand(message, MANAGE_USAGE_MESSAGE) ?: return
         val managementLink =
             installationRepository.issueManagementLink(
@@ -358,7 +358,7 @@ class TelegramUpdateHandler(
         )
     }
 
-    private suspend fun handleWebApp(message: TelegramMessage) {
+    private suspend fun handleWebApp(message: TelegramUpdate.Message) {
         val userId = message.from?.id ?: return
         if (message.chat.type == "private") {
             send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
@@ -384,7 +384,7 @@ class TelegramUpdateHandler(
         )
     }
 
-    private suspend fun handleRotate(message: TelegramMessage) {
+    private suspend fun handleRotate(message: TelegramUpdate.Message) {
         val authorized = authorizeInstallationCommand(message, ROTATE_USAGE_MESSAGE) ?: return
         val credential =
             installationRepository.rotateWebhookSecret(
@@ -422,7 +422,7 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun authorizeGroupAdmin(
-        message: TelegramMessage,
+        message: TelegramUpdate.Message,
         usageMessage: String,
         requireArguments: Boolean = true,
     ): AuthorizedGroupAdmin? {
@@ -459,7 +459,7 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun authorizeInstallationCommand(
-        message: TelegramMessage,
+        message: TelegramUpdate.Message,
         usageMessage: String,
     ): AuthorizedInstallationCommand? {
         val query = parseInstallationQuery(message.text)

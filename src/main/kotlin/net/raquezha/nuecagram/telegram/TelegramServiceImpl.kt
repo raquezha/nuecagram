@@ -1,5 +1,6 @@
 package net.raquezha.nuecagram.telegram
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -8,19 +9,18 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import net.raquezha.nuecagram.ConfigWithSecrets
 import org.apache.http.HttpException
-import com.fasterxml.jackson.databind.ObjectMapper
 
 class TelegramServiceImpl(
     private val client: HttpClient,
     private val config: ConfigWithSecrets,
 ) : TelegramService {
     private val mapper = ObjectMapper()
+
     override suspend fun chatMemberStatus(
         chatId: Long,
         userId: Long,
     ): String? {
-        val response =
-            client.get(TelegramApiUrls.getChatMemberUrl(config.botApi, chatId, userId))
+        val response = client.get(config.telegramUrl("getChatMember?chat_id=$chatId&user_id=$userId"))
         if (response.status != HttpStatusCode.OK) {
             throw HttpException("Failed to get chat member: ${response.status}")
         }
@@ -33,21 +33,11 @@ class TelegramServiceImpl(
 
     override suspend fun sendMessage(message: Message): String {
         val jsonMessage = mapper.writeValueAsString(message)
-        val response =
-            when {
-                message.messageId.isNullOrBlank() -> {
-                    client.post(getURLSendMessage(config.botApi)) {
-                        contentType(ContentType.Application.Json)
-                        setBody(jsonMessage)
-                    }
-                }
-                else -> {
-                    client.post(getURLEditMessage(config.botApi)) {
-                        contentType(ContentType.Application.Json)
-                        setBody(jsonMessage)
-                    }
-                }
-            }
+        val endpoint = if (message.messageId.isNullOrBlank()) "sendMessage" else "editMessageText"
+        val response = client.post(config.telegramUrl(endpoint)) {
+            contentType(ContentType.Application.Json)
+            setBody(jsonMessage)
+        }
 
         if (response.status != HttpStatusCode.OK) {
             throw HttpException("Failed to send message: ${response.status}")
@@ -80,11 +70,10 @@ class TelegramServiceImpl(
             payload["text"] = text
         }
         val jsonPayload = mapper.writeValueAsString(payload)
-        val response =
-            client.post(getURLAnswerCallbackQuery(config.botApi)) {
-                contentType(ContentType.Application.Json)
-                setBody(jsonPayload)
-            }
+        val response = client.post(config.telegramUrl("answerCallbackQuery")) {
+            contentType(ContentType.Application.Json)
+            setBody(jsonPayload)
+        }
 
         if (response.status != HttpStatusCode.OK) {
             throw HttpException("Failed to answer callback query: ${response.status}")
@@ -93,3 +82,6 @@ class TelegramServiceImpl(
         return true
     }
 }
+
+private fun ConfigWithSecrets.telegramUrl(method: String): String =
+    "https://api.telegram.org/bot$botApi/$method"

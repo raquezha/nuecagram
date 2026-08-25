@@ -7,35 +7,35 @@ import kotlinx.serialization.Serializable
 data class TelegramUpdate(
     @SerialName("update_id")
     val updateId: Long,
-    val message: TelegramMessage? = null,
+    val message: Message? = null,
     @SerialName("callback_query")
-    val callbackQuery: TelegramCallbackQuery? = null,
-)
+    val callbackQuery: CallbackQuery? = null,
+) {
+    @Serializable
+    data class CallbackQuery(
+        val id: String,
+        val from: User,
+        val message: Message? = null,
+        val data: String? = null,
+    )
 
-@Serializable
-data class TelegramCallbackQuery(
-    val id: String,
-    val from: TelegramUser,
-    val message: TelegramMessage? = null,
-    val data: String? = null,
-)
+    @Serializable
+    data class Message(
+        val text: String? = null,
+        val chat: Chat,
+        val from: User? = null,
+        @SerialName("message_thread_id")
+        val messageThreadId: Long? = null,
+    )
 
-@Serializable
-data class TelegramMessage(
-    val text: String? = null,
-    val chat: TelegramChat,
-    val from: TelegramUser? = null,
-    @SerialName("message_thread_id")
-    val messageThreadId: Long? = null,
-)
+    @Serializable
+    data class Chat(
+        val id: Long,
+        val type: String,
+    )
 
-@Serializable
-data class TelegramChat(
-    val id: Long,
-    val type: String,
-)
-
-@Serializable
-data class TelegramUser(
-    val id: Long,
-)
+    @Serializable
+    data class User(
+        val id: Long,
+    )
+}

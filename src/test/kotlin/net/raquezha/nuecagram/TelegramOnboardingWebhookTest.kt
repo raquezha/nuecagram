@@ -14,10 +14,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.telegram.Message
-import net.raquezha.nuecagram.telegram.TelegramChat
-import net.raquezha.nuecagram.telegram.TelegramMessage
 import net.raquezha.nuecagram.telegram.TelegramUpdate
-import net.raquezha.nuecagram.telegram.TelegramUser
 import org.junit.Test
 
 @Suppress("TooManyFunctions")
@@ -326,10 +323,10 @@ private fun groupUpdate(
     Json.encodeToString(
         TelegramUpdate(
             updateId = updateId,
-            message = TelegramMessage(
+            message = TelegramUpdate.Message(
                 text = text,
-                chat = TelegramChat(id = chatId, type = "group"),
-                from = TelegramUser(userId),
+                chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                from = TelegramUpdate.User(userId),
                 messageThreadId = messageThreadId,
             ),
         ),

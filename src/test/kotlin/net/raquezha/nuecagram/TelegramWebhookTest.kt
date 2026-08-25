@@ -13,11 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.db.DatabaseFactory
-import net.raquezha.nuecagram.telegram.TelegramChat
-import net.raquezha.nuecagram.telegram.TelegramCallbackQuery
-import net.raquezha.nuecagram.telegram.TelegramMessage
 import net.raquezha.nuecagram.telegram.TelegramUpdate
-import net.raquezha.nuecagram.telegram.TelegramUser
 import org.junit.Test
 
 @Suppress("TooManyFunctions")
@@ -462,10 +458,10 @@ private fun privateUpdate(updateId: Long, text: String, userId: Long): String =
     Json.encodeToString(
         TelegramUpdate(
             updateId = updateId,
-            message = TelegramMessage(
+            message = TelegramUpdate.Message(
                 text = text,
-                chat = TelegramChat(id = userId, type = "private"),
-                from = TelegramUser(userId),
+                chat = TelegramUpdate.Chat(id = userId, type = "private"),
+                from = TelegramUpdate.User(userId),
             ),
         ),
     )
@@ -479,10 +475,10 @@ private fun groupUpdate(
     Json.encodeToString(
         TelegramUpdate(
             updateId = updateId,
-            message = TelegramMessage(
+            message = TelegramUpdate.Message(
                 text = text,
-                chat = TelegramChat(id = chatId, type = "group"),
-                from = TelegramUser(userId),
+                chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                from = TelegramUpdate.User(userId),
             ),
         ),
     )
@@ -498,12 +494,12 @@ private fun callbackGroupUpdate(
     Json.encodeToString(
         TelegramUpdate(
             updateId = updateId,
-            callbackQuery = TelegramCallbackQuery(
+            callbackQuery = TelegramUpdate.CallbackQuery(
                 id = callbackId,
-                from = TelegramUser(userId),
-                message = TelegramMessage(
-                    chat = TelegramChat(id = chatId, type = "group"),
-                    from = TelegramUser(userId),
+                from = TelegramUpdate.User(userId),
+                message = TelegramUpdate.Message(
+                    chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                    from = TelegramUpdate.User(userId),
                     messageThreadId = messageThreadId,
                 ),
                 data = data,
