@@ -642,7 +642,9 @@ class TelegramWebhookTest : BaseEventTestHelper() {
                 postTelegram(privateUpdate(351, "/manage $shortId", userId = 350)).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(
-                sentMessages().any { it.text.contains("Management for ${installation.id}") },
+                sentMessages().any {
+                    it.text.contains("Management link for installation <code>${installation.id}</code>")
+                },
             ).isTrue()
         }
 
