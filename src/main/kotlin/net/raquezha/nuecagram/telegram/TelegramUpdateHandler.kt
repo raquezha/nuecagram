@@ -71,6 +71,7 @@ class TelegramUpdateHandler(
     private val telegramService: TelegramService,
     private val config: ConfigWithSecrets,
 ) {
+    private val menuHandler = TelegramMenuHandler(telegramService, installationRepository, config)
     suspend fun handle(update: TelegramUpdate) {
         if (!installationRepository.recordTelegramUpdate(update.updateId)) return
 
@@ -86,18 +87,29 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleCallbackQuery(callbackQuery: TelegramUpdate.CallbackQuery) {
-        val message = callbackQuery.message ?: run {
+        val message = callbackQuery.message
+        val payload = callbackQuery.data?.let { TelegramCallbackData.parse(it) }
+        if (message == null || payload == null) {
             answerCallbackError(callbackQuery.id, "Invalid or expired callback action.")
             return
         }
-        val payload = TelegramCallbackData.parse(callbackQuery.data) ?: run {
-            answerCallbackError(callbackQuery.id, "Invalid or expired callback action.")
-            return
-        }
-        val userId = callbackQuery.from.id
 
+        val userId = callbackQuery.from.id
+        if (message.chat.type == "private") {
+            menuHandler.handlePrivateCallbackQuery(callbackQuery, message, payload, userId)
+        } else {
+            handleGroupCallbackQuery(callbackQuery, message, payload, userId)
+        }
+    }
+
+    private suspend fun handleGroupCallbackQuery(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+        payload: TelegramCallbackPayload,
+        userId: Long,
+    ) {
         val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        if (message.chat.type == "private" || !isTelegramAdmin(status)) {
+        if (!isTelegramAdmin(status)) {
             telegramService.answerCallbackQuery(
                 callbackQueryId = callbackQuery.id,
                 text = TELEGRAM_ADMIN_ONLY_MESSAGE,
@@ -110,7 +122,10 @@ class TelegramUpdateHandler(
             payload.targetId,
             message.chat.id,
             message.messageThreadId,
-        ) ?: return answerCallbackError(callbackQuery.id, WRONG_CHAT_MESSAGE, showAlert = true)
+        ) ?: run {
+            answerCallbackError(callbackQuery.id, WRONG_CHAT_MESSAGE, showAlert = true)
+            return
+        }
 
         installationRepository.recordInstallationAdmin(installation.id, userId)
         executeCallbackAction(callbackQuery.id, userId, installation, payload.action)
@@ -333,6 +348,14 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleManage(message: TelegramUpdate.Message) {
+        val userId = message.from?.id
+        val query = parseInstallationQuery(message.text)
+
+        if (message.chat.type == "private" && userId != null) {
+            menuHandler.handlePrivateManage(message, userId, query)
+            return
+        }
+
         val authorized = authorizeInstallationCommand(message, MANAGE_USAGE_MESSAGE) ?: return
         val managementLink =
             installationRepository.issueManagementLink(
@@ -551,16 +574,31 @@ class TelegramUpdateHandler(
         text: String,
         threadId: Long?,
         replyMarkup: InlineKeyboardMarkup?,
+        messageId: String? = null,
     ): List<Message> {
         val cid = chatId.toString()
         val withMarkup = listOfNotNull(
-            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = replyMarkup),
-            Message(chatId = cid, text = text, threadId = threadId, parseMode = "", replyMarkup = replyMarkup),
+            Message(chatId = cid, messageId = messageId, text = text, threadId = threadId, replyMarkup = replyMarkup),
+            Message(
+                chatId = cid,
+                messageId = messageId,
+                text = text,
+                threadId = threadId,
+                parseMode = "",
+                replyMarkup = replyMarkup,
+            ),
             threadId?.let {
-                Message(chatId = cid, text = text, threadId = null, parseMode = "", replyMarkup = replyMarkup)
+                Message(
+                    chatId = cid,
+                    messageId = messageId,
+                    text = text,
+                    threadId = null,
+                    parseMode = "",
+                    replyMarkup = replyMarkup,
+                )
             },
         )
-        val fallbackWithoutMarkup = if (replyMarkup != null) {
+        val fallbackWithoutMarkup = if (replyMarkup != null && messageId == null) {
             listOfNotNull(
                 Message(chatId = cid, text = text, threadId = threadId),
                 threadId?.let { Message(chatId = cid, text = text, threadId = null) },
@@ -577,8 +615,9 @@ class TelegramUpdateHandler(
         text: String,
         threadId: Long? = null,
         replyMarkup: InlineKeyboardMarkup? = null,
+        messageId: String? = null,
     ) {
-        buildSendAttempts(chatId, text, threadId, replyMarkup).firstNotNullOfOrNull { msg ->
+        buildSendAttempts(chatId, text, threadId, replyMarkup, messageId).firstNotNullOfOrNull { msg ->
             runCatching { telegramService.sendMessage(msg) }.getOrNull()
         }
     }

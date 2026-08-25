@@ -21,6 +21,8 @@ data class TelegramUpdate(
 
     @Serializable
     data class Message(
+        @SerialName("message_id")
+        val messageId: Long? = null,
         val text: String? = null,
         val chat: Chat,
         val from: User? = null,
