@@ -90,7 +90,111 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
-        telegramService.answerCallbackQuery(callbackQuery.id)
+        val message = callbackQuery.message
+        val userId = callbackQuery.from.id
+        val payload = TelegramCallbackData.parse(callbackQuery.data)
+
+        if (message == null || payload == null) {
+            telegramService.answerCallbackQuery(
+                callbackQueryId = callbackQuery.id,
+                text = "Invalid or expired callback action.",
+            )
+            return
+        }
+
+        val status = runCatching {
+            telegramService.chatMemberStatus(message.chat.id, userId)
+        }.getOrNull()
+
+        if (message.chat.type == "private" || status !in ADMIN_STATUSES) {
+            telegramService.answerCallbackQuery(
+                callbackQueryId = callbackQuery.id,
+                text = ADMIN_ONLY_MESSAGE,
+                showAlert = true,
+            )
+            return
+        }
+
+        val installation = installationRepository.findInstallationByQuery(
+            payload.targetId,
+            message.chat.id,
+            message.messageThreadId,
+        )
+
+        if (installation == null) {
+            telegramService.answerCallbackQuery(
+                callbackQueryId = callbackQuery.id,
+                text = WRONG_CHAT_MESSAGE,
+                showAlert = true,
+            )
+            return
+        }
+
+        installationRepository.recordInstallationAdmin(installation.id, userId)
+        dispatchCallbackAction(callbackQuery.id, userId, installation, payload.action)
+    }
+
+    @Suppress("CyclomaticComplexMethod")
+    private suspend fun dispatchCallbackAction(
+        callbackId: String,
+        userId: Long,
+        installation: InstallationAdminContext,
+        action: String,
+    ) {
+        when (action) {
+            "mute" -> {
+                installationRepository.setMuted(installation.id, true)
+                installationRepository.writeAuditEvent(
+                    installationId = installation.id,
+                    actorType = "telegram",
+                    actorId = userId.toString(),
+                    action = "telegram_mute",
+                )
+                telegramService.answerCallbackQuery(
+                    callbackQueryId = callbackId,
+                    text = "Installation muted.",
+                )
+            }
+            "unmute" -> {
+                installationRepository.setMuted(installation.id, false)
+                installationRepository.writeAuditEvent(
+                    installationId = installation.id,
+                    actorType = "telegram",
+                    actorId = userId.toString(),
+                    action = "telegram_unmute",
+                )
+                telegramService.answerCallbackQuery(
+                    callbackQueryId = callbackId,
+                    text = "Installation unmuted.",
+                )
+            }
+            "test" -> {
+                telegramService.sendMessage(installation.deliveryTestMessage())
+                installationRepository.writeAuditEvent(
+                    installationId = installation.id,
+                    actorType = "telegram",
+                    actorId = userId.toString(),
+                    action = "telegram_delivery_test",
+                )
+                telegramService.answerCallbackQuery(
+                    callbackQueryId = callbackId,
+                    text = "Test notification sent.",
+                )
+            }
+            "status" -> {
+                telegramService.answerCallbackQuery(
+                    callbackQueryId = callbackId,
+                    text = installation.statusText(),
+                    showAlert = true,
+                )
+            }
+            else -> {
+                telegramService.answerCallbackQuery(
+                    callbackQueryId = callbackId,
+                    text = "Unknown callback action.",
+                )
+            }
+        }
     }
 
     @Suppress("CyclomaticComplexMethod")
@@ -604,6 +708,30 @@ data class TelegramCallbackQuery(
     val message: TelegramMessage? = null,
     val data: String? = null,
 )
+
+data class TelegramCallbackPayload(
+    val action: String,
+    val targetId: String,
+)
+
+object TelegramCallbackData {
+    private const val PREFIX_CB = "cb"
+    private const val PREFIX_INST = "inst"
+    private const val CALLBACK_PART_COUNT = 3
+
+    fun format(action: String, targetId: String): String = "$PREFIX_CB:$action:$targetId"
+
+    fun parse(data: String?): TelegramCallbackPayload? {
+        if (data.isNullOrBlank()) return null
+        val parts = data.split(':')
+        if (parts.size != CALLBACK_PART_COUNT) return null
+        val prefix = parts[0]
+        if ((prefix != PREFIX_CB && prefix != PREFIX_INST) || parts[1].isBlank() || parts[2].isBlank()) {
+            return null
+        }
+        return TelegramCallbackPayload(action = parts[1], targetId = parts[2])
+    }
+}
 
 @Serializable
 data class TelegramMessage(
