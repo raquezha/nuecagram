@@ -3,12 +3,19 @@ package net.raquezha.nuecagram.telegram
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import net.raquezha.nuecagram.ConfigWithSecrets
 import org.apache.http.HttpException
+
+private const val TELEGRAM_API_BASE_URL = "https://api.telegram.org/bot"
+private const val METHOD_GET_CHAT_MEMBER = "getChatMember"
+private const val METHOD_SEND_MESSAGE = "sendMessage"
+private const val METHOD_EDIT_MESSAGE_TEXT = "editMessageText"
+private const val METHOD_ANSWER_CALLBACK_QUERY = "answerCallbackQuery"
 
 class TelegramServiceImpl(
     private val client: HttpClient,
@@ -20,7 +27,10 @@ class TelegramServiceImpl(
         chatId: Long,
         userId: Long,
     ): String? {
-        val response = client.get(config.telegramUrl("getChatMember?chat_id=$chatId&user_id=$userId"))
+        val response = client.get(telegramEndpoint(METHOD_GET_CHAT_MEMBER)) {
+            parameter("chat_id", chatId)
+            parameter("user_id", userId)
+        }
         if (response.status != HttpStatusCode.OK) {
             throw HttpException("Failed to get chat member: ${response.status}")
         }
@@ -33,8 +43,8 @@ class TelegramServiceImpl(
 
     override suspend fun sendMessage(message: Message): String {
         val jsonMessage = mapper.writeValueAsString(message)
-        val endpoint = if (message.messageId.isNullOrBlank()) "sendMessage" else "editMessageText"
-        val response = client.post(config.telegramUrl(endpoint)) {
+        val endpoint = if (message.messageId.isNullOrBlank()) METHOD_SEND_MESSAGE else METHOD_EDIT_MESSAGE_TEXT
+        val response = client.post(telegramEndpoint(endpoint)) {
             contentType(ContentType.Application.Json)
             setBody(jsonMessage)
         }
@@ -70,7 +80,7 @@ class TelegramServiceImpl(
             payload["text"] = text
         }
         val jsonPayload = mapper.writeValueAsString(payload)
-        val response = client.post(config.telegramUrl("answerCallbackQuery")) {
+        val response = client.post(telegramEndpoint(METHOD_ANSWER_CALLBACK_QUERY)) {
             contentType(ContentType.Application.Json)
             setBody(jsonPayload)
         }
@@ -81,7 +91,7 @@ class TelegramServiceImpl(
 
         return true
     }
-}
 
-private fun ConfigWithSecrets.telegramUrl(method: String): String =
-    "https://api.telegram.org/bot$botApi/$method"
+    private fun telegramEndpoint(method: String): String =
+        "$TELEGRAM_API_BASE_URL${config.botApi}/$method"
+}
