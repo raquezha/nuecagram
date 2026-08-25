@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.telegram.TelegramCallbackData
 import net.raquezha.nuecagram.telegram.TelegramUpdate
 import org.junit.Test
 
@@ -305,6 +306,39 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
         }
+
+    @Test
+    fun telegramCallbackDataRegexParserEdgeCases() {
+        // Null and blank
+        assertThat(TelegramCallbackData.parse(null)).isNull()
+        assertThat(TelegramCallbackData.parse("")).isNull()
+        assertThat(TelegramCallbackData.parse("   ")).isNull()
+
+        // Invalid prefixes
+        assertThat(TelegramCallbackData.parse("invalid:mute:123")).isNull()
+        assertThat(TelegramCallbackData.parse(":mute:123")).isNull()
+
+        // Malformed segment counts
+        assertThat(TelegramCallbackData.parse("cb:mute")).isNull()
+        assertThat(TelegramCallbackData.parse("cb:mute:123:extra")).isNull()
+        assertThat(TelegramCallbackData.parse("cb::123")).isNull()
+        assertThat(TelegramCallbackData.parse("cb:mute:")).isNull()
+
+        // Malformed characters
+        assertThat(TelegramCallbackData.parse("cb:mu te:123")).isNull()
+        assertThat(TelegramCallbackData.parse("cb:mute:123<script>")).isNull()
+
+        // Valid formats
+        val parsedCb = TelegramCallbackData.parse("cb:mute:a1b2c3d4")
+        assertThat(parsedCb).isNotNull()
+        assertThat(parsedCb!!.action).isEqualTo("mute")
+        assertThat(parsedCb.targetId).isEqualTo("a1b2c3d4")
+
+        val parsedInst = TelegramCallbackData.parse("  inst:unmute:550e8400-e29b-41d4-a716-446655440000  ")
+        assertThat(parsedInst).isNotNull()
+        assertThat(parsedInst!!.action).isEqualTo("unmute")
+        assertThat(parsedInst.targetId).isEqualTo("550e8400-e29b-41d4-a716-446655440000")
+    }
 
     @Test
     fun parsesAndAnswersCallbackQuery() =

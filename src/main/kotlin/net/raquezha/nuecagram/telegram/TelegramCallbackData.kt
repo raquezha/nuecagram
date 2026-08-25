@@ -6,20 +6,15 @@ data class TelegramCallbackPayload(
 )
 
 object TelegramCallbackData {
-    private const val PREFIX_CB = "cb"
-    private const val PREFIX_INST = "inst"
-    private const val CALLBACK_PART_COUNT = 3
+    private const val PREFIX = "cb"
+    private val CALLBACK_PATTERN = Regex("^(?:cb|inst):([a-z0-9_-]+):([a-zA-Z0-9_-]+)$")
 
-    fun format(action: String, targetId: String): String = "$PREFIX_CB:$action:$targetId"
+    fun format(action: String, targetId: String): String = "$PREFIX:$action:$targetId"
 
     fun parse(data: String?): TelegramCallbackPayload? {
-        if (data.isNullOrBlank()) return null
-        val parts = data.split(':')
-        if (parts.size != CALLBACK_PART_COUNT) return null
-        val prefix = parts[0]
-        if ((prefix != PREFIX_CB && prefix != PREFIX_INST) || parts[1].isBlank() || parts[2].isBlank()) {
-            return null
-        }
-        return TelegramCallbackPayload(action = parts[1], targetId = parts[2])
+        if (data == null) return null
+        val match = CALLBACK_PATTERN.matchEntire(data.trim()) ?: return null
+        val (action, targetId) = match.destructured
+        return TelegramCallbackPayload(action = action, targetId = targetId)
     }
 }
