@@ -303,6 +303,20 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
         }
 
+    @Test
+    fun parsesAndAnswersCallbackQuery() =
+        testApplication {
+            configureTestApplication()
+            val update = """
+            {"update_id":124,"callback_query":{"id":"cb_124","from":{"id":99},"data":"test_data"}}
+            """.trimIndent()
+
+            assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
+            val answered = mockTelegramService().answeredCallbacks()
+            assertThat(answered).hasSize(1)
+            assertThat(answered.first().callbackQueryId).isEqualTo("cb_124")
+        }
+
     private fun bootstrapPrivateUser(userId: Long) {
         runBlocking {
             installationRepository.upsertTelegramPrivateChat(userId, userId)

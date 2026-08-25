@@ -78,9 +78,19 @@ class TelegramUpdateHandler(
     suspend fun handle(update: TelegramUpdate) {
         if (!installationRepository.recordTelegramUpdate(update.updateId)) return
 
+        val callbackQuery = update.callbackQuery
+        if (callbackQuery != null) {
+            handleCallbackQuery(callbackQuery)
+            return
+        }
+
         val message = update.message ?: return
         val command = message.text?.substringBefore(' ')?.substringBefore('@') ?: return
         dispatch(command, message)
+    }
+
+    private suspend fun handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
+        telegramService.answerCallbackQuery(callbackQuery.id)
     }
 
     @Suppress("CyclomaticComplexMethod")
@@ -583,6 +593,16 @@ data class TelegramUpdate(
     @SerialName("update_id")
     val updateId: Long,
     val message: TelegramMessage? = null,
+    @SerialName("callback_query")
+    val callbackQuery: TelegramCallbackQuery? = null,
+)
+
+@Serializable
+data class TelegramCallbackQuery(
+    val id: String,
+    val from: TelegramUser,
+    val message: TelegramMessage? = null,
+    val data: String? = null,
 )
 
 @Serializable

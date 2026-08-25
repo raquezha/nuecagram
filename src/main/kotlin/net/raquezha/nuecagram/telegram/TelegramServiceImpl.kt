@@ -68,4 +68,30 @@ class TelegramServiceImpl(
 
         return messageIdNode.asInt().toString()
     }
+
+    override suspend fun answerCallbackQuery(
+        callbackQueryId: String,
+        text: String?,
+        showAlert: Boolean,
+    ): Boolean {
+        val payload = mutableMapOf<String, Any>(
+            "callback_query_id" to callbackQueryId,
+            "show_alert" to showAlert,
+        )
+        if (text != null) {
+            payload["text"] = text
+        }
+        val jsonPayload = mapper.writeValueAsString(payload)
+        val response =
+            client.post(getURLAnswerCallbackQuery(config.botApi)) {
+                contentType(ContentType.Application.Json)
+                setBody(jsonPayload)
+            }
+
+        if (response.status != HttpStatusCode.OK) {
+            throw HttpException("Failed to answer callback query: ${response.status}")
+        }
+
+        return true
+    }
 }
