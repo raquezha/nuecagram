@@ -10,7 +10,11 @@ import io.ktor.http.contentType
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.telegram.TelegramCallbackData
+import net.raquezha.nuecagram.telegram.TelegramUpdate
 import org.junit.Test
 
 @Suppress("TooManyFunctions")
@@ -303,6 +307,150 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
         }
 
+    @Test
+    fun telegramCallbackDataRegexParserEdgeCases() {
+        // Null and blank
+        assertThat(TelegramCallbackData.parse(null)).isNull()
+        assertThat(TelegramCallbackData.parse("")).isNull()
+        assertThat(TelegramCallbackData.parse("   ")).isNull()
+
+        // Invalid prefixes
+        assertThat(TelegramCallbackData.parse("invalid:mute:123")).isNull()
+        assertThat(TelegramCallbackData.parse(":mute:123")).isNull()
+
+        // Malformed segment counts
+        assertThat(TelegramCallbackData.parse("cb:mute")).isNull()
+        assertThat(TelegramCallbackData.parse("cb:mute:123:extra")).isNull()
+        assertThat(TelegramCallbackData.parse("cb::123")).isNull()
+        assertThat(TelegramCallbackData.parse("cb:mute:")).isNull()
+
+        // Malformed characters
+        assertThat(TelegramCallbackData.parse("cb:mu te:123")).isNull()
+        assertThat(TelegramCallbackData.parse("cb:mute:123<script>")).isNull()
+
+        // Valid formats
+        val parsedCb = TelegramCallbackData.parse("cb:mute:a1b2c3d4")
+        assertThat(parsedCb).isNotNull()
+        assertThat(parsedCb!!.action).isEqualTo("mute")
+        assertThat(parsedCb.targetId).isEqualTo("a1b2c3d4")
+
+        val parsedInst = TelegramCallbackData.parse("  inst:unmute:550e8400-e29b-41d4-a716-446655440000  ")
+        assertThat(parsedInst).isNotNull()
+        assertThat(parsedInst!!.action).isEqualTo("unmute")
+        assertThat(parsedInst.targetId).isEqualTo("550e8400-e29b-41d4-a716-446655440000")
+    }
+
+    @Test
+    fun parsesAndAnswersCallbackQuery() =
+        testApplication {
+            configureTestApplication()
+            val update = """
+            {"update_id":124,"callback_query":{"id":"cb_124","from":{"id":99},"data":"test_data"}}
+            """.trimIndent()
+
+            assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
+            val answered = mockTelegramService().answeredCallbacks()
+            assertThat(answered).hasSize(1)
+            assertThat(answered.first().callbackQueryId).isEqualTo("cb_124")
+            assertThat(answered.first().text).isEqualTo("Invalid or expired callback action.")
+        }
+
+    @Test
+    fun callbackQueryMuteAndUnmuteRequiresAdminAndAudits() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(200)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 200, "administrator")
+            val initialMuteCount = auditActionCount("telegram_mute")
+            val initialUnmuteCount = auditActionCount("telegram_unmute")
+
+            // Mute via callback
+            val muteUpdate = callbackGroupUpdate(
+                updateId = 201,
+                callbackId = "cb_mute",
+                data = "cb:mute:${installation.id}",
+                chatId = installation.telegramChatId,
+                userId = 200,
+            )
+            assertThat(postTelegram(muteUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val answeredMute = mockTelegramService().answeredCallbacks().last()
+            assertThat(answeredMute.callbackQueryId).isEqualTo("cb_mute")
+            assertThat(answeredMute.text).isEqualTo("Installation muted.")
+            assertThat(installationMuted(installation.id)).isTrue()
+            assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount + 1)
+
+            // Unmute via callback
+            val unmuteUpdate = callbackGroupUpdate(
+                updateId = 202,
+                callbackId = "cb_unmute",
+                data = "inst:unmute:${installation.id}",
+                chatId = installation.telegramChatId,
+                userId = 200,
+            )
+            assertThat(postTelegram(unmuteUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val answeredUnmute = mockTelegramService().answeredCallbacks().last()
+            assertThat(answeredUnmute.callbackQueryId).isEqualTo("cb_unmute")
+            assertThat(answeredUnmute.text).isEqualTo("Installation unmuted.")
+            assertThat(installationMuted(installation.id)).isFalse()
+            assertThat(auditActionCount("telegram_unmute")).isEqualTo(initialUnmuteCount + 1)
+        }
+
+    @Test
+    fun callbackQueryRejectsUnauthorizedNonAdminUser() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(203)
+            // User 203 is not an admin
+            val initialMuteCount = auditActionCount("telegram_mute")
+
+            val muteUpdate = callbackGroupUpdate(
+                updateId = 204,
+                callbackId = "cb_unauth",
+                data = "cb:mute:${installation.id}",
+                chatId = installation.telegramChatId,
+                userId = 203,
+            )
+            assertThat(postTelegram(muteUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val answered = mockTelegramService().answeredCallbacks().last()
+            assertThat(answered.callbackQueryId).isEqualTo("cb_unauth")
+            assertThat(answered.text).isEqualTo("Only Telegram group administrators can use this command.")
+            assertThat(answered.showAlert).isTrue()
+            assertThat(installationMuted(installation.id)).isFalse()
+            assertThat(auditActionCount("telegram_mute")).isEqualTo(initialMuteCount)
+        }
+
+    @Test
+    fun callbackQueryTestAndStatusActionsWorkForAdmin() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(205)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 205, "creator")
+
+            val testUpdate = callbackGroupUpdate(
+                updateId = 206,
+                callbackId = "cb_test",
+                data = "cb:test:${installation.id}",
+                chatId = installation.telegramChatId,
+                userId = 205,
+            )
+            assertThat(postTelegram(testUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val answeredTest = mockTelegramService().answeredCallbacks().last()
+            assertThat(answeredTest.text).isEqualTo("Test notification sent.")
+            assertThat(sentMessages().last().text).contains(installation.id.toString())
+
+            val statusUpdate = callbackGroupUpdate(
+                updateId = 207,
+                callbackId = "cb_status",
+                data = "cb:status:${installation.id}",
+                chatId = installation.telegramChatId,
+                userId = 205,
+            )
+            assertThat(postTelegram(statusUpdate).status).isEqualTo(HttpStatusCode.OK)
+            val answeredStatus = mockTelegramService().answeredCallbacks().last()
+            assertThat(answeredStatus.text).contains("Installation: ${installation.id}")
+            assertThat(answeredStatus.showAlert).isTrue()
+        }
+
     private fun bootstrapPrivateUser(userId: Long) {
         runBlocking {
             installationRepository.upsertTelegramPrivateChat(userId, userId)
@@ -340,20 +488,58 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 }
 
-private fun privateUpdate(updateId: Long, text: String, userId: Long) =
-    """
-    {"update_id":$updateId,"message":{"text":"$text","chat":{"id":$userId,"type":"private"},"from":{"id":$userId}}}
-    """.trimIndent()
+private fun privateUpdate(updateId: Long, text: String, userId: Long): String =
+    Json.encodeToString(
+        TelegramUpdate(
+            updateId = updateId,
+            message = TelegramUpdate.Message(
+                text = text,
+                chat = TelegramUpdate.Chat(id = userId, type = "private"),
+                from = TelegramUpdate.User(userId),
+            ),
+        ),
+    )
 
 private fun groupUpdate(
     updateId: Long,
     text: String,
     chatId: Long,
     userId: Long = updateId,
-) =
-    """
-    {"update_id":$updateId,"message":{"text":"$text","chat":{"id":$chatId,"type":"group"},"from":{"id":$userId}}}
-    """.trimIndent()
+): String =
+    Json.encodeToString(
+        TelegramUpdate(
+            updateId = updateId,
+            message = TelegramUpdate.Message(
+                text = text,
+                chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                from = TelegramUpdate.User(userId),
+            ),
+        ),
+    )
+
+private fun callbackGroupUpdate(
+    updateId: Long,
+    callbackId: String,
+    data: String?,
+    chatId: Long,
+    userId: Long,
+    messageThreadId: Long? = null,
+): String =
+    Json.encodeToString(
+        TelegramUpdate(
+            updateId = updateId,
+            callbackQuery = TelegramUpdate.CallbackQuery(
+                id = callbackId,
+                from = TelegramUpdate.User(userId),
+                message = TelegramUpdate.Message(
+                    chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                    from = TelegramUpdate.User(userId),
+                    messageThreadId = messageThreadId,
+                ),
+                data = data,
+            ),
+        ),
+    )
 
 private suspend fun ApplicationTestBuilder.postTelegram(
     body: String,
