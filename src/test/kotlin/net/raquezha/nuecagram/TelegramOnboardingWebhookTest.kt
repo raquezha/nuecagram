@@ -110,6 +110,8 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                             installation.telegramChatId,
                             userId = 71,
                             messageThreadId = 777,
+                            username = "alice71",
+                            firstName = "Alice",
                         ),
                     ).status,
                 ).isEqualTo(HttpStatusCode.OK)
@@ -129,6 +131,10 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 assertThat(installationRepoName("https://gitlab.example.com", 321L)).isEqualTo("Project #321")
                 assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount + 1)
                 assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
+
+                val setupMetadata = setupAuditMetadata(71)
+                assertThat(setupMetadata).contains("alice71")
+                assertThat(setupMetadata).contains("Alice")
             }
         } finally {
             if (previous == null) {
@@ -284,6 +290,19 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             }
         }
 
+    private fun setupAuditMetadata(userId: Long): String =
+        runBlocking {
+            DatabaseFactory.dbQuery { connection ->
+                val sql = "SELECT metadata FROM audit_events WHERE action = 'telegram_setup' AND actor_id = ?"
+                connection.prepareStatement(sql).use { statement ->
+                    statement.setString(1, userId.toString())
+                    statement.executeQuery().use { result ->
+                        if (result.next()) result.getString(1) else ""
+                    }
+                }
+            }
+        }
+
     private fun installationCount(gitlabBaseUrl: String, projectId: Long): Long =
         installationValue(gitlabBaseUrl, projectId, "COUNT(*)") as Long
 
@@ -320,6 +339,8 @@ private fun groupUpdate(
     chatId: Long,
     userId: Long = updateId,
     messageThreadId: Long? = null,
+    username: String? = null,
+    firstName: String? = null,
 ): String =
     Json.encodeToString(
         TelegramUpdate(
@@ -327,7 +348,7 @@ private fun groupUpdate(
             message = TelegramUpdate.Message(
                 text = text,
                 chat = TelegramUpdate.Chat(id = chatId, type = "group"),
-                from = TelegramUpdate.User(userId),
+                from = TelegramUpdate.User(id = userId, username = username, firstName = firstName),
                 messageThreadId = messageThreadId,
             ),
         ),

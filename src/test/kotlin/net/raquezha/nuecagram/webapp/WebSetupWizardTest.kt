@@ -292,11 +292,14 @@ class WebSetupWizardTest : BaseEventTestHelper() {
         val token = authPayload.sessionToken
         assertThat(token).isNotNull()
 
+        val createBody =
+            """{"repoName":"Project #70009","gitlabBaseUrl":"https://gitlab.com",""" +
+                """"gitlabProjectId":70009,"telegramChatId":$targetChatId}"""
         val resp = client.post("/nuecagram/api/webapp/installations") {
             contentType(ContentType.Application.Json)
             header("X-Session-Token", token)
             header("X-CSRF-Token", authPayload.csrf)
-            setBody("""{"repoName":"Project #70009","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70009,"telegramChatId":$targetChatId}""")
+            setBody(createBody)
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())

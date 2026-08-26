@@ -5,6 +5,8 @@ package net.raquezha.nuecagram.telegram
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.db.InstallationAdminContext
@@ -38,14 +40,16 @@ private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
 private const val MANAGEMENT_LINK_TTL_MINUTES = 30L
 private const val ROTATION_GRACE_MINUTES = 0L
 private const val SETUP_ARG_COUNT_MIN = 3
-private const val SETUP_ARG_COUNT_MAX = 3
+private const val SETUP_ARG_COUNT_MAX = 4
 private const val SETUP_URL_INDEX = 1
 private const val SETUP_PROJECT_INDEX = 2
+private const val SETUP_REPO_NAME_INDEX = 3
 private const val LAUNCH_NONCE_TTL_MINUTES = 10L
 
 private data class AuthorizedGroupAdmin(
     val actorId: Long,
     val privateChatId: Long,
+    val user: TelegramUpdate.User? = null,
 )
 
 private data class AuthorizedInstallationCommand(
@@ -324,6 +328,7 @@ class TelegramUpdateHandler(
             actorType = "telegram",
             actorId = authorized.actorId.toString(),
             action = "telegram_setup",
+            metadataJson = authorized.user.toAuditMetadataJson(),
         )
         installationRepository.writeAuditEvent(
             installationId = installation.id,
@@ -472,7 +477,7 @@ class TelegramUpdateHandler(
                 send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
                 null
             }
-            else -> AuthorizedGroupAdmin(userId, privateChatId)
+            else -> AuthorizedGroupAdmin(userId, privateChatId, message.from)
         }
 
         return result
@@ -632,12 +637,22 @@ class TelegramUpdateHandler(
 
 private fun parseSetupArgumentsValue(text: String?): SetupArguments? {
     val parts = text?.trim()?.split(Regex("\\s+")) ?: return null
-    if (parts.size !in 3..4) return null
-    val url = parts[1]
-    val projectId = parts[2].toLongOrNull() ?: return null
-    val repoName = parts.getOrNull(3)?.trim()?.takeIf(String::isNotBlank)
+    if (parts.size !in SETUP_ARG_COUNT_MIN..SETUP_ARG_COUNT_MAX) return null
+    val url = parts[SETUP_URL_INDEX]
+    val projectId = parts[SETUP_PROJECT_INDEX].toLongOrNull() ?: return null
+    val repoName = parts.getOrNull(SETUP_REPO_NAME_INDEX)?.trim()?.takeIf(String::isNotBlank)
     return SetupArguments(url, projectId, repoName)
 }
+
+private fun TelegramUpdate.User?.toAuditMetadataJson(): String =
+    this?.let { u ->
+        val map = buildMap {
+            u.username?.takeIf(String::isNotBlank)?.let { put("username", it) }
+            u.firstName?.takeIf(String::isNotBlank)?.let { put("first_name", it) }
+            u.lastName?.takeIf(String::isNotBlank)?.let { put("last_name", it) }
+        }
+        if (map.isNotEmpty()) Json.encodeToString(map) else "{}"
+    } ?: "{}"
 
 private fun InstallationAdminContext.statusText(): String =
     buildString {
