@@ -5,13 +5,15 @@ import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
-private const val PLATFORM_ADMIN_SEARCH_FIELDS = 3
+private const val PLATFORM_ADMIN_SEARCH_FIELDS = 5
 private val PLATFORM_ADMIN_SEARCH_SQL =
     """
     (
         LOWER(CAST(i.id AS text)) LIKE ? OR
         LOWER(i.gitlab_base_url) LIKE ? OR
-        LOWER(CAST(i.gitlab_project_id AS text)) LIKE ?
+        LOWER(CAST(i.gitlab_project_id AS text)) LIKE ? OR
+        LOWER(i.repo_name) LIKE ? OR
+        LOWER(COALESCE(i.nickname, '')) LIKE ?
     )
     """.trimIndent()
 
@@ -187,7 +189,7 @@ class PlatformAdminReadRepository(
     ): List<InstallationAdminContext> =
         connection.prepareStatement(
             """
-            SELECT i.id, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id,
+            SELECT i.id, i.repo_name, i.nickname, i.gitlab_base_url, i.gitlab_project_id, i.telegram_chat_id,
                 i.telegram_topic_id, COALESCE(m.muted, FALSE) AS muted
             $fromSql
             ORDER BY i.created_at DESC, i.id DESC
@@ -225,6 +227,8 @@ private fun installationWithMuteQuery() =
 
 private fun org.jetbrains.exposed.v1.core.ResultRow.toAdminContext() = InstallationAdminContext(
     id = this[Installations.id],
+    repoName = this[Installations.repoName],
+    nickname = this[Installations.nickname],
     gitlabBaseUrl = this[Installations.gitlabBaseUrl],
     gitlabProjectId = this[Installations.gitlabProjectId],
     telegramChatId = this[Installations.telegramChatId],
@@ -234,6 +238,8 @@ private fun org.jetbrains.exposed.v1.core.ResultRow.toAdminContext() = Installat
 
 private fun java.sql.ResultSet.toInstallationAdminContext() = InstallationAdminContext(
     id = getObject("id", UUID::class.java),
+    repoName = getString("repo_name"),
+    nickname = getString("nickname"),
     gitlabBaseUrl = getString("gitlab_base_url"),
     gitlabProjectId = getObject("gitlab_project_id") as Long?,
     telegramChatId = getLong("telegram_chat_id"),

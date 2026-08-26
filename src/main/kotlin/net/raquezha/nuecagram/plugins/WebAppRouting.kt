@@ -655,6 +655,8 @@ private fun InstallationAdminContext.toResponsePayload() = InstallationResponseP
 private fun net.raquezha.nuecagram.db.InstallationRecord.toAdminContext(muted: Boolean) =
     InstallationAdminContext(
         id = id,
+        repoName = repoName,
+        nickname = nickname,
         gitlabBaseUrl = gitlabBaseUrl,
         gitlabProjectId = gitlabProjectId,
         telegramChatId = telegramChatId,

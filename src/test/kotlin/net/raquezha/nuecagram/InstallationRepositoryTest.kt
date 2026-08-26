@@ -92,6 +92,64 @@ val InstallationRepositoryTests by testSuite {
         }
     }
 
+    postgresTest("persists repo identity fields and trims nickname") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val installation =
+                repository.createInstallation(
+                    repoName = "backend/platform",
+                    nickname = "  prod alerts  ",
+                    gitlabBaseUrl = "https://gitlab.example.com/group/project",
+                    gitlabProjectId = 44,
+                    telegramChatId = 100,
+                    telegramTopicId = 7,
+                )
+
+            assertThat(installation.repoName).isEqualTo("backend/platform")
+            assertThat(installation.nickname).isEqualTo("prod alerts")
+
+            val adminContext = repository.installationAdminContext(installation.id)
+            assertThat(adminContext).isNotNull()
+            assertThat(adminContext!!.repoName).isEqualTo("backend/platform")
+            assertThat(adminContext.nickname).isEqualTo("prod alerts")
+            assertThat(adminContext.displayName).isEqualTo("prod alerts")
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
+
+    postgresTest("rejects invalid repo names for new installations") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+
+            val blankError = runCatching {
+                repository.createInstallation(
+                    repoName = "   ",
+                    gitlabBaseUrl = "https://gitlab.example.com/group/project",
+                    gitlabProjectId = 45,
+                    telegramChatId = 100,
+                    telegramTopicId = null,
+                )
+            }.exceptionOrNull()
+            assertThat(blankError).isInstanceOf(IllegalArgumentException::class.java)
+
+            val fallbackError = runCatching {
+                repository.createInstallation(
+                    repoName = "Unknown Repository",
+                    gitlabBaseUrl = "https://gitlab.example.com/group/project",
+                    gitlabProjectId = 46,
+                    telegramChatId = 100,
+                    telegramTopicId = null,
+                )
+            }.exceptionOrNull()
+            assertThat(fallbackError).isInstanceOf(IllegalArgumentException::class.java)
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
+
     postgresTest("persists only digests and hashes for issued credentials") { config ->
         try {
             DatabaseFactory.initialize(config)
@@ -271,9 +329,37 @@ val InstallationRepositoryTests by testSuite {
             assertThat(searchByProject.totalCount).isEqualTo(1)
             assertThat(searchByProject.items.map { it.id }).containsExactly(beta.id)
 
+            val searchByRepoName = readRepository.installationsPage(search = "project #9303", limit = 20)
+            assertThat(searchByRepoName.totalCount).isEqualTo(1)
+            assertThat(searchByRepoName.items.map { it.id }).containsExactly(gamma.id)
+
             val searchById = readRepository.installationsPage(search = alpha.id.toString().take(8), limit = 20)
             assertThat(searchById.totalCount).isEqualTo(1)
             assertThat(searchById.items.map { it.id }).containsExactly(alpha.id)
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
+
+    postgresTest("finds installations by repo identity without breaking existing queries") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val installation =
+                repository.createInstallation(
+                    repoName = "group/backend",
+                    nickname = "ops room",
+                    gitlabBaseUrl = "https://gitlab.example.com/group/backend",
+                    gitlabProjectId = 6001,
+                    telegramChatId = -1001,
+                    telegramTopicId = null,
+                )
+
+            assertThat(repository.findInstallationByQuery("group/back", -1001, null)?.id).isEqualTo(installation.id)
+            assertThat(repository.findInstallationByQuery("ops room", -1001, null)?.id).isEqualTo(installation.id)
+            assertThat(repository.findInstallationByQuery("6001", -1001, null)?.id).isEqualTo(installation.id)
+            assertThat(repository.findInstallationByQuery(installation.id.toString().take(8), -1001, null)?.id)
+                .isEqualTo(installation.id)
         } finally {
             // Pool cleaned up automatically on re-initialization
         }

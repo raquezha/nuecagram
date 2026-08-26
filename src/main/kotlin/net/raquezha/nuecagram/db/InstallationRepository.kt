@@ -28,6 +28,8 @@ import org.jetbrains.exposed.v1.jdbc.upsert
 
 data class InstallationRecord(
     val id: UUID,
+    val repoName: String,
+    val nickname: String?,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long?,
     val telegramChatId: Long,
@@ -106,12 +108,17 @@ data class InstallationContext(
 
 data class InstallationAdminContext(
     val id: UUID,
+    val repoName: String,
+    val nickname: String?,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long?,
     val telegramChatId: Long,
     val telegramTopicId: Long?,
     val muted: Boolean,
-)
+) {
+    val displayName: String
+        get() = nickname?.takeIf(String::isNotBlank) ?: repoName
+}
 
 private data class StoredCandidate(
     val id: UUID,
@@ -125,21 +132,31 @@ class InstallationRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
 ) {
     suspend fun createInstallation(
+        repoName: String,
+        nickname: String? = null,
         gitlabBaseUrl: String,
         gitlabProjectId: Long?,
         telegramChatId: Long,
         telegramTopicId: Long?,
     ): InstallationRecord {
+        val normalizedRepoName = repoName.trim()
+        require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
+            "repoName must be non-blank and not use the legacy fallback value"
+        }
         val installation = InstallationRecord(
-            UUID.randomUUID(),
-            gitlabBaseUrl,
-            gitlabProjectId,
-            telegramChatId,
-            telegramTopicId,
+            id = UUID.randomUUID(),
+            repoName = normalizedRepoName,
+            nickname = nickname?.trim()?.takeIf(String::isNotBlank),
+            gitlabBaseUrl = gitlabBaseUrl,
+            gitlabProjectId = gitlabProjectId,
+            telegramChatId = telegramChatId,
+            telegramTopicId = telegramTopicId,
         )
         databaseFactory.dbTransaction {
             Installations.insert {
                 it[id] = installation.id
+                it[Installations.repoName] = installation.repoName
+                it[Installations.nickname] = installation.nickname
                 it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
                 it[Installations.gitlabProjectId] = installation.gitlabProjectId
                 it[Installations.telegramChatId] = installation.telegramChatId
@@ -148,6 +165,20 @@ class InstallationRepository(
         }
         return installation
     }
+
+    suspend fun createInstallation(
+        gitlabBaseUrl: String,
+        gitlabProjectId: Long?,
+        telegramChatId: Long,
+        telegramTopicId: Long?,
+    ): InstallationRecord =
+        createInstallation(
+            repoName = deriveRepositoryName(gitlabBaseUrl, gitlabProjectId),
+            gitlabBaseUrl = gitlabBaseUrl,
+            gitlabProjectId = gitlabProjectId,
+            telegramChatId = telegramChatId,
+            telegramTopicId = telegramTopicId,
+        )
 
     suspend fun issueWebhookSecret(
         installationId: UUID,
@@ -323,7 +354,9 @@ class InstallationRepository(
             .firstOrNull { inst ->
                 inst.id.toString().lowercase().startsWith(queryStr) ||
                     inst.gitlabProjectId?.toString() == queryStr ||
-                    inst.gitlabBaseUrl.lowercase().contains(queryStr)
+                    inst.gitlabBaseUrl.lowercase().contains(queryStr) ||
+                    inst.repoName.lowercase().contains(queryStr) ||
+                    inst.nickname?.lowercase()?.contains(queryStr) == true
             }
     }
 
@@ -659,12 +692,28 @@ class InstallationRepository(
 
     private fun ResultRow.toAdminContext() = InstallationAdminContext(
         id = this[Installations.id],
+        repoName = this[Installations.repoName],
+        nickname = this[Installations.nickname],
         gitlabBaseUrl = this[Installations.gitlabBaseUrl],
         gitlabProjectId = this[Installations.gitlabProjectId],
         telegramChatId = this[Installations.telegramChatId],
         telegramTopicId = this[Installations.telegramTopicId],
         muted = getOrNull(MuteStates.muted) ?: false,
     )
+
+    private fun deriveRepositoryName(gitlabBaseUrl: String, gitlabProjectId: Long?): String =
+        gitlabProjectId?.let { "Project #$it" }
+            ?: gitlabBaseUrl.trim()
+                .substringAfter("://", gitlabBaseUrl.trim())
+                .substringAfter('/', "")
+                .trim('/')
+                .takeIf(String::isNotBlank)
+            ?: gitlabBaseUrl.trim().trim('/').takeIf(String::isNotBlank)
+            ?: UNKNOWN_REPOSITORY_NAME
+
+    private companion object {
+        const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
+    }
 
     suspend fun upsertMrParticipants(
         installationId: UUID,
