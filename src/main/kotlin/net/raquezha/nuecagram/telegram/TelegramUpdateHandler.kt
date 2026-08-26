@@ -57,6 +57,7 @@ private data class AuthorizedInstallationCommand(
 private data class SetupArguments(
     val gitlabBaseUrl: String,
     val projectId: Long,
+    val repoName: String?,
 )
 
 @Suppress("TooManyFunctions")
@@ -308,7 +309,7 @@ class TelegramUpdateHandler(
         }
         val installation =
             installationRepository.createInstallation(
-                repoName = "Project #${setup.projectId}",
+                repoName = setup.repoName ?: "Project #${setup.projectId}",
                 chatName = message.chat.title,
                 gitlabBaseUrl = setup.gitlabBaseUrl,
                 gitlabProjectId = setup.projectId,
@@ -631,9 +632,11 @@ class TelegramUpdateHandler(
 
 private fun parseSetupArgumentsValue(text: String?): SetupArguments? {
     val parts = text?.trim()?.split(Regex("\\s+")) ?: return null
-    if (parts.size !in SETUP_ARG_COUNT_MIN..SETUP_ARG_COUNT_MAX) return null
-    val projectId = parts[SETUP_PROJECT_INDEX].toLongOrNull() ?: return null
-    return SetupArguments(parts[SETUP_URL_INDEX], projectId)
+    if (parts.size !in 3..4) return null
+    val url = parts[1]
+    val projectId = parts[2].toLongOrNull() ?: return null
+    val repoName = parts.getOrNull(3)?.trim()?.takeIf(String::isNotBlank)
+    return SetupArguments(url, projectId, repoName)
 }
 
 private fun InstallationAdminContext.statusText(): String =
