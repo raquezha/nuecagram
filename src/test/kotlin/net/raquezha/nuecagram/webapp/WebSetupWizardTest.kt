@@ -115,10 +115,34 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70001}""")
+            setBody("""{"repoName":"Project #70001","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70001}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
         assertThat(resp.bodyAsText()).contains("DM bootstrap")
+    }
+
+    @Test
+    fun createInstallationEndpointRejectsMissingOrBlankRepoName() = testApplication {
+        configureTestApplication()
+        val (sess, csrf) = sessionFor(client, 7010L)
+
+        val missingRepoName = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sess")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":7010}""")
+        }
+        assertThat(missingRepoName.status).isEqualTo(HttpStatusCode.BadRequest)
+        assertThat(missingRepoName.bodyAsText()).contains("Missing or invalid payload")
+
+        val blankRepoName = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sess")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"repoName":"   ","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":7010}""")
+        }
+        assertThat(blankRepoName.status).isEqualTo(HttpStatusCode.BadRequest)
+        assertThat(blankRepoName.bodyAsText()).contains("repoName")
     }
 
     @Test
@@ -130,7 +154,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"http://not-https.com","gitlabProjectId":70002}""")
+            setBody("""{"repoName":"Project #70002","gitlabBaseUrl":"http://not-https.com","gitlabProjectId":70002}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.BadRequest)
         assertThat(resp.bodyAsText()).contains("https://")
@@ -145,7 +169,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70003}""")
+            setBody("""{"repoName":"Project #70003","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70003}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
@@ -166,7 +190,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             header("X-CSRF-Token", csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70004}""")
+            setBody("""{"repoName":"Project #70004","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70004}""")
         }
         // audit event written — verified via no exception (repository writes async, no public read API needed)
     }
@@ -245,7 +269,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("Cookie", "nuecagram_webapp_session=$sess")
             // no CSRF header
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70008}""")
+            setBody("""{"repoName":"Project #70008","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70008}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
     }
@@ -272,7 +296,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
             contentType(ContentType.Application.Json)
             header("X-Session-Token", token)
             header("X-CSRF-Token", authPayload.csrf)
-            setBody("""{"gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70009,"telegramChatId":$targetChatId}""")
+            setBody("""{"repoName":"Project #70009","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70009,"telegramChatId":$targetChatId}""")
         }
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())

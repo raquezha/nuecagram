@@ -126,6 +126,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 assertThat(groupMessage.text).doesNotContain("Management URL:")
                 assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(1)
                 assertThat(installationTopicId("https://gitlab.example.com", 321L)).isEqualTo(777)
+                assertThat(installationRepoName("https://gitlab.example.com", 321L)).isEqualTo("Project #321")
                 assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount + 1)
                 assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
             }
@@ -288,6 +289,9 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
 
     private fun installationTopicId(gitlabBaseUrl: String, projectId: Long): Long? =
         installationValue(gitlabBaseUrl, projectId, "telegram_topic_id") as Long?
+
+    private fun installationRepoName(gitlabBaseUrl: String, projectId: Long): String =
+        installationValue(gitlabBaseUrl, projectId, "repo_name") as String
 
     private fun installationValue(
         gitlabBaseUrl: String,

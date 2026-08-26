@@ -308,6 +308,7 @@ class TelegramUpdateHandler(
         }
         val installation =
             installationRepository.createInstallation(
+                repoName = "Project #${setup.projectId}",
                 gitlabBaseUrl = setup.gitlabBaseUrl,
                 gitlabProjectId = setup.projectId,
                 telegramChatId = message.chat.id,

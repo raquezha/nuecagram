@@ -92,6 +92,8 @@ private data class ErrorResponsePayload(
 
 @Serializable
 private data class CreateInstallationRequestPayload(
+    val repoName: String,
+    val nickname: String? = null,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long,
     val telegramChatId: Long? = null,
@@ -474,6 +476,8 @@ private suspend fun ApplicationCall.processCreateInstallation(
             )
         parsed == null || parsed.gitlabBaseUrl.isBlank() ->
             respondError(HttpStatusCode.BadRequest, "Missing or invalid payload")
+        parsed.repoName.isBlank() || parsed.repoName.trim() == "Unknown Repository" ->
+            respondError(HttpStatusCode.BadRequest, "repoName must be non-blank and not use the legacy fallback value")
         !parsed.gitlabBaseUrl.startsWith("https://") ->
             respondError(HttpStatusCode.BadRequest, "gitlabBaseUrl must start with https://")
         else -> createAndRespond(
@@ -498,6 +502,8 @@ private suspend fun createAndRespond(
     telegramUserId: Long,
 ): WebAppResponseSpec {
     val installation = installationRepository.createInstallation(
+        repoName = parsed.repoName,
+        nickname = parsed.nickname,
         gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
         gitlabProjectId = parsed.gitlabProjectId,
         telegramChatId = targetChatId,
@@ -963,7 +969,7 @@ async function createInstallation() {
   document.getElementById('btnCreate').disabled = true;
   document.getElementById('btnCreate').innerText = 'Creating...';
   try {
-    const payload = { gitlabBaseUrl: url, gitlabProjectId: pid };
+    const payload = { repoName: 'Project #' + pid, gitlabBaseUrl: url, gitlabProjectId: pid };
     if (currentContext.chatId != null && currentContext.chatId < 0) {
       payload.telegramChatId = currentContext.chatId;
       if (currentContext.topicId != null) {
