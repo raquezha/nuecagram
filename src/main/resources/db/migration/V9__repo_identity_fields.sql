@@ -26,4 +26,4 @@ ALTER TABLE installations
     ALTER COLUMN repo_name SET DEFAULT 'Unknown Repository';
 
 ALTER TABLE installations
-    ADD COLUMN nickname TEXT;
+    ADD COLUMN chat_name TEXT;

@@ -93,7 +93,7 @@ private data class ErrorResponsePayload(
 @Serializable
 private data class CreateInstallationRequestPayload(
     val repoName: String,
-    val nickname: String? = null,
+    val chatName: String? = null,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long,
     val telegramChatId: Long? = null,
@@ -503,7 +503,7 @@ private suspend fun createAndRespond(
 ): WebAppResponseSpec {
     val installation = installationRepository.createInstallation(
         repoName = parsed.repoName,
-        nickname = parsed.nickname,
+        chatName = parsed.chatName,
         gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
         gitlabProjectId = parsed.gitlabProjectId,
         telegramChatId = targetChatId,
@@ -662,7 +662,7 @@ private fun net.raquezha.nuecagram.db.InstallationRecord.toAdminContext(muted: B
     InstallationAdminContext(
         id = id,
         repoName = repoName,
-        nickname = nickname,
+        chatName = chatName,
         gitlabBaseUrl = gitlabBaseUrl,
         gitlabProjectId = gitlabProjectId,
         telegramChatId = telegramChatId,

@@ -29,7 +29,7 @@ import org.jetbrains.exposed.v1.jdbc.upsert
 data class InstallationRecord(
     val id: UUID,
     val repoName: String,
-    val nickname: String?,
+    val chatName: String?,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long?,
     val telegramChatId: Long,
@@ -109,15 +109,22 @@ data class InstallationContext(
 data class InstallationAdminContext(
     val id: UUID,
     val repoName: String,
-    val nickname: String?,
+    val chatName: String?,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long?,
     val telegramChatId: Long,
     val telegramTopicId: Long?,
     val muted: Boolean,
 ) {
+    fun destinationDisplayName(topicName: String? = null): String =
+        when {
+            chatName.isNullOrBlank() -> repoName
+            topicName.isNullOrBlank() -> chatName
+            else -> "$chatName ($topicName)"
+        }
+
     val displayName: String
-        get() = nickname?.takeIf(String::isNotBlank) ?: repoName
+        get() = destinationDisplayName()
 }
 
 private data class StoredCandidate(
@@ -133,7 +140,7 @@ class InstallationRepository(
 ) {
     suspend fun createInstallation(
         repoName: String,
-        nickname: String? = null,
+        chatName: String? = null,
         gitlabBaseUrl: String,
         gitlabProjectId: Long?,
         telegramChatId: Long,
@@ -146,7 +153,7 @@ class InstallationRepository(
         val installation = InstallationRecord(
             id = UUID.randomUUID(),
             repoName = normalizedRepoName,
-            nickname = nickname?.trim()?.takeIf(String::isNotBlank),
+            chatName = chatName?.trim()?.takeIf(String::isNotBlank),
             gitlabBaseUrl = gitlabBaseUrl,
             gitlabProjectId = gitlabProjectId,
             telegramChatId = telegramChatId,
@@ -156,7 +163,7 @@ class InstallationRepository(
             Installations.insert {
                 it[id] = installation.id
                 it[Installations.repoName] = installation.repoName
-                it[Installations.nickname] = installation.nickname
+                it[Installations.chatName] = installation.chatName
                 it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
                 it[Installations.gitlabProjectId] = installation.gitlabProjectId
                 it[Installations.telegramChatId] = installation.telegramChatId
@@ -356,7 +363,7 @@ class InstallationRepository(
                     inst.gitlabProjectId?.toString() == queryStr ||
                     inst.gitlabBaseUrl.lowercase().contains(queryStr) ||
                     inst.repoName.lowercase().contains(queryStr) ||
-                    inst.nickname?.lowercase()?.contains(queryStr) == true
+                    inst.chatName?.lowercase()?.contains(queryStr) == true
             }
     }
 
@@ -693,7 +700,7 @@ class InstallationRepository(
     private fun ResultRow.toAdminContext() = InstallationAdminContext(
         id = this[Installations.id],
         repoName = this[Installations.repoName],
-        nickname = this[Installations.nickname],
+        chatName = this[Installations.chatName],
         gitlabBaseUrl = this[Installations.gitlabBaseUrl],
         gitlabProjectId = this[Installations.gitlabProjectId],
         telegramChatId = this[Installations.telegramChatId],

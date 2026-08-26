@@ -34,6 +34,7 @@ data class TelegramUpdate(
     data class Chat(
         val id: Long,
         val type: String,
+        val title: String? = null,
     )
 
     @Serializable

@@ -56,7 +56,7 @@ val InstallationRepositoryTests by testSuite {
             DriverManager.getConnection(config.url, config.username, config.password).use { connection ->
                 connection.prepareStatement(
                     """
-                    SELECT id, repo_name, nickname,
+                    SELECT id, repo_name, chat_name,
                            is_nullable, column_default
                     FROM installations
                     JOIN information_schema.columns
@@ -75,7 +75,7 @@ val InstallationRepositoryTests by testSuite {
                         var defaultValue: String? = null
                         while (result.next()) {
                             repoNames[result.getObject("id", UUID::class.java)] = result.getString("repo_name")
-                            assertThat(result.getString("nickname")).isNull()
+                            assertThat(result.getString("chat_name")).isNull()
                             isNullable = result.getString("is_nullable")
                             defaultValue = result.getString("column_default")
                         }
@@ -92,14 +92,14 @@ val InstallationRepositoryTests by testSuite {
         }
     }
 
-    postgresTest("persists repo identity fields and trims nickname") { config ->
+    postgresTest("persists repo identity fields and trims chatName") { config ->
         try {
             DatabaseFactory.initialize(config)
             val repository = repository()
             val installation =
                 repository.createInstallation(
                     repoName = "backend/platform",
-                    nickname = "  prod alerts  ",
+                    chatName = "  prod alerts  ",
                     gitlabBaseUrl = "https://gitlab.example.com/group/project",
                     gitlabProjectId = 44,
                     telegramChatId = 100,
@@ -107,13 +107,14 @@ val InstallationRepositoryTests by testSuite {
                 )
 
             assertThat(installation.repoName).isEqualTo("backend/platform")
-            assertThat(installation.nickname).isEqualTo("prod alerts")
+            assertThat(installation.chatName).isEqualTo("prod alerts")
 
             val adminContext = repository.installationAdminContext(installation.id)
             assertThat(adminContext).isNotNull()
             assertThat(adminContext!!.repoName).isEqualTo("backend/platform")
-            assertThat(adminContext.nickname).isEqualTo("prod alerts")
+            assertThat(adminContext.chatName).isEqualTo("prod alerts")
             assertThat(adminContext.displayName).isEqualTo("prod alerts")
+            assertThat(adminContext.destinationDisplayName("Deployments")).isEqualTo("prod alerts (Deployments)")
         } finally {
             // Pool cleaned up automatically on re-initialization
         }
@@ -348,7 +349,7 @@ val InstallationRepositoryTests by testSuite {
             val installation =
                 repository.createInstallation(
                     repoName = "group/backend",
-                    nickname = "ops room",
+                    chatName = "ops room",
                     gitlabBaseUrl = "https://gitlab.example.com/group/backend",
                     gitlabProjectId = 6001,
                     telegramChatId = -1001,
