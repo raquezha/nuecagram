@@ -5,6 +5,8 @@ import de.infix.testBalloon.framework.core.testSuite
 import java.sql.DriverManager
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import java.util.UUID
+import org.flywaydb.core.Flyway
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -14,6 +16,82 @@ import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.testing.postgresTest
 
 val InstallationRepositoryTests by testSuite {
+    postgresTest("backfills repository identity safely during V9 migration") { config ->
+        try {
+            DatabaseFactory.close()
+            migrateToVersion(config, "8")
+
+            val projectInstallationId = UUID.randomUUID()
+            val pathInstallationId = UUID.randomUUID()
+            val fallbackInstallationId = UUID.randomUUID()
+
+            DriverManager.getConnection(config.url, config.username, config.password).use { connection ->
+                connection.prepareStatement(
+                    """
+                    INSERT INTO installations (id, gitlab_base_url, gitlab_project_id, telegram_chat_id, telegram_topic_id)
+                    VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setObject(1, projectInstallationId)
+                    statement.setString(2, "https://gitlab.example.com/group/project")
+                    statement.setObject(3, 1234L)
+                    statement.setLong(4, 100L)
+                    statement.setObject(5, null)
+                    statement.setObject(6, pathInstallationId)
+                    statement.setString(7, "https://gitlab.example.com/group/subgroup/project")
+                    statement.setObject(8, null)
+                    statement.setLong(9, 101L)
+                    statement.setObject(10, null)
+                    statement.setObject(11, fallbackInstallationId)
+                    statement.setString(12, "   ")
+                    statement.setObject(13, null)
+                    statement.setLong(14, 102L)
+                    statement.setObject(15, null)
+                    statement.executeUpdate()
+                }
+            }
+
+            migrateToLatest(config)
+
+            DriverManager.getConnection(config.url, config.username, config.password).use { connection ->
+                connection.prepareStatement(
+                    """
+                    SELECT id, repo_name, nickname,
+                           is_nullable, column_default
+                    FROM installations
+                    JOIN information_schema.columns
+                      ON table_name = 'installations'
+                     AND column_name = 'repo_name'
+                    WHERE id IN (?, ?, ?)
+                    ORDER BY id
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setObject(1, fallbackInstallationId)
+                    statement.setObject(2, pathInstallationId)
+                    statement.setObject(3, projectInstallationId)
+                    statement.executeQuery().use { result ->
+                        val repoNames = mutableMapOf<UUID, String>()
+                        var isNullable: String? = null
+                        var defaultValue: String? = null
+                        while (result.next()) {
+                            repoNames[result.getObject("id", UUID::class.java)] = result.getString("repo_name")
+                            assertThat(result.getString("nickname")).isNull()
+                            isNullable = result.getString("is_nullable")
+                            defaultValue = result.getString("column_default")
+                        }
+                        assertThat(repoNames[projectInstallationId]).isEqualTo("Project #1234")
+                        assertThat(repoNames[pathInstallationId]).isEqualTo("group/subgroup/project")
+                        assertThat(repoNames[fallbackInstallationId]).isEqualTo("Unknown Repository")
+                        assertThat(isNullable).isEqualTo("NO")
+                        assertThat(defaultValue).contains("Unknown Repository")
+                    }
+                }
+            }
+        } finally {
+            DatabaseFactory.close()
+        }
+    }
+
     postgresTest("persists only digests and hashes for issued credentials") { config ->
         try {
             DatabaseFactory.initialize(config)
@@ -265,3 +343,22 @@ val InstallationRepositoryTests by testSuite {
 private fun repository(): InstallationRepository = InstallationRepository(DatabaseFactory)
 
 private fun platformAdminReadRepository(): PlatformAdminReadRepository = PlatformAdminReadRepository(DatabaseFactory)
+
+private fun migrateToVersion(config: net.raquezha.nuecagram.db.DatabaseConfig, version: String) {
+    Flyway.configure()
+        .dataSource(config.url, config.username, config.password)
+        .target(version)
+        .cleanDisabled(false)
+        .load()
+        .run {
+            clean()
+            migrate()
+        }
+}
+
+private fun migrateToLatest(config: net.raquezha.nuecagram.db.DatabaseConfig) {
+    Flyway.configure()
+        .dataSource(config.url, config.username, config.password)
+        .load()
+        .migrate()
+}
