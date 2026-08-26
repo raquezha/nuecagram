@@ -75,7 +75,7 @@ val InstallationRepositoryTests by testSuite {
                         var defaultValue: String? = null
                         while (result.next()) {
                             repoNames[result.getObject("id", UUID::class.java)] = result.getString("repo_name")
-                            assertThat(result.getString("chat_name")).isNull()
+                            assertThat(result.getString("chat_name")).isEqualTo(result.getString("repo_name"))
                             isNullable = result.getString("is_nullable")
                             defaultValue = result.getString("column_default")
                         }

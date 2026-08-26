@@ -27,3 +27,7 @@ ALTER TABLE installations
 
 ALTER TABLE installations
     ADD COLUMN chat_name TEXT;
+
+UPDATE installations
+SET chat_name = repo_name
+WHERE chat_name IS NULL;
