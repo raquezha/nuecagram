@@ -29,13 +29,24 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun recordsPrivateStartOnlyOnce() =
+    fun privateStartRecordsChatAndReturnsWelcomeWithoutInlineButton() =
         testApplication {
             configureTestApplication()
             val update = privateUpdate(42, "/start", userId = 42)
+            val nextUpdate = privateUpdate(43, "/start", userId = 42)
+
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages()).hasSize(1)
+            assertThat(postTelegram(nextUpdate).status).isEqualTo(HttpStatusCode.OK)
+
+            assertThat(sentMessages()).hasSize(2)
+            val welcome = sentMessages().first()
+            assertThat(welcome.text).contains("Nuecagram GitLab Notification Gateway")
+            assertThat(welcome.text).contains("/manage")
+            assertThat(welcome.text).doesNotContain("/myinstallations")
+            assertThat(welcome.text).contains("OPEN")
+            assertThat(welcome.replyMarkup).isNull()
+            assertThat(sentMessages().last().text).isEqualTo(welcome.text)
             assertThat(runBlocking { installationRepository.telegramPrivateChatId(42) }).isEqualTo(42)
         }
 

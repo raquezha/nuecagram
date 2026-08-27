@@ -14,6 +14,21 @@ private const val GROUP_HELP_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
         "Run <code>/setup</code> in this group or topic to open the GitLab setup wizard.\n" +
         "For status, management, and configuration options, open a private chat with the bot."
+private const val PRIVATE_START_MESSAGE =
+    "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
+        "I can help you deliver GitLab notifications directly to your Telegram groups and topics.\n\n" +
+        "You can control me by sending these commands:\n\n" +
+        "<b>Manage Installations</b>\n" +
+        "• /manage - View and manage your connected repositories\n" +
+        "• /rotate - Rotate webhook secret token for a project\n" +
+        "• /mute - Pause notifications for a project\n" +
+        "• /unmute - Resume notifications for a project\n" +
+        "• /digest - View summary text for a project\n" +
+        "• /test - Send a test notification to a group\n\n" +
+        "<b>Setup & Help</b>\n" +
+        "• /setup - How to bind a new GitLab repository\n" +
+        "• /help - View command reference and instructions\n\n" +
+        "💡 <i>Tap the <b>OPEN</b> menu button beside the chat box anytime to launch the WebApp Dashboard.</i>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
 private const val PRIVATE_COMMAND_MESSAGE = "Run this command in the installation group."
 private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
@@ -217,13 +232,7 @@ class TelegramUpdateHandler(
         val userId = message.from?.id
         if (message.chat.type == "private" && userId != null) {
             installationRepository.upsertTelegramPrivateChat(userId, message.chat.id)
-            sendLauncherMessage(
-                message.chat.id,
-                null,
-                userId,
-                "Private onboarding is ready. Return to your group to continue.",
-                "Open Management Dashboard",
-            )
+            send(message.chat.id, PRIVATE_START_MESSAGE)
             return
         } else {
             send(message.chat.id, "Start a private chat with the bot first.", message.messageThreadId)
