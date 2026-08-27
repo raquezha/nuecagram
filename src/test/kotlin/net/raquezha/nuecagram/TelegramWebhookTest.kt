@@ -481,8 +481,8 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             )
             assertThat(postTelegram(statusUpdate).status).isEqualTo(HttpStatusCode.OK)
             val answeredStatus = mockTelegramService().answeredCallbacks().last()
-            assertThat(answeredStatus.text).contains("Installation Status")
-            assertThat(answeredStatus.text).contains(installation.repoName)
+            assertThat(answeredStatus.text).contains("Installation: ${installation.id}")
+            assertThat(answeredStatus.text).contains(installation.gitlabBaseUrl)
             assertThat(answeredStatus.showAlert).isTrue()
         }
 
@@ -634,7 +634,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(menuUpdate).status).isEqualTo(HttpStatusCode.OK)
             val answered = mockTelegramService().answeredCallbacks().last()
             assertThat(answered.callbackQueryId).isEqualTo("cb_unauth_menu")
-            assertThat(answered.text).isEqualTo("Installation not found.")
+            assertThat(answered.text).isEqualTo("Only Telegram group administrators can use this command.")
             assertThat(answered.showAlert).isTrue()
         }
 
