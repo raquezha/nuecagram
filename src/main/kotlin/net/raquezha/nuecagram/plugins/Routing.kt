@@ -16,6 +16,8 @@ import kotlinx.coroutines.launch
 import net.raquezha.nuecagram.configuredRoute
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.telegram.BotCommand
+import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestException
@@ -25,6 +27,17 @@ import org.koin.ktor.ext.inject
 
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
+private val BOT_COMMANDS = listOf(
+    BotCommand("manage", "View and manage connected repositories"),
+    BotCommand("status", "View repository notification status"),
+    BotCommand("test", "Send a test notification"),
+    BotCommand("rotate", "Rotate webhook secret token"),
+    BotCommand("mute", "Pause notifications"),
+    BotCommand("unmute", "Resume notifications"),
+    BotCommand("digest", "View summary text"),
+    BotCommand("setup", "How to bind a new GitLab repository"),
+    BotCommand("help", "View command reference and instructions"),
+)
 
 private fun Application.healthPath() = configuredRoute("/health")
 
@@ -66,8 +79,14 @@ fun Application.configureRouting() {
     val databaseFactory by inject<DatabaseFactory>()
     val webhookService by inject<WebHookService>()
     val installationRepository by inject<InstallationRepository>()
+    val telegramService by inject<TelegramService>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
+
+    launch {
+        runCatching { telegramService.setMyCommands(BOT_COMMANDS) }
+            .onFailure { logger.warn(it) { "Failed to configure Telegram bot commands" } }
+    }
 
     routing {
         healthRouting(this@configureRouting.healthPath(), databaseFactory)

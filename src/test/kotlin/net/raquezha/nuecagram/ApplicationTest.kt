@@ -12,6 +12,8 @@ import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_TOKEN
 import net.raquezha.nuecagram.plugins.configureRouting
 import net.raquezha.nuecagram.di.testAppModule
+import net.raquezha.nuecagram.telegram.MockTelegramService
+import net.raquezha.nuecagram.telegram.TelegramService
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
@@ -20,8 +22,12 @@ import org.junit.Test
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.stopKoin
 import org.koin.core.context.startKoin
+import org.koin.java.KoinJavaComponent.inject
+import org.koin.test.KoinTest
 
-class ApplicationTest {
+class ApplicationTest : KoinTest {
+    private val telegramService: TelegramService by inject(TelegramService::class.java)
+
     @Test
     fun testRoot() =
         testApplication {
@@ -31,6 +37,20 @@ class ApplicationTest {
             val response = client.get("/")
             assertEquals(HttpStatusCode.OK, response.status)
             assertEquals("This application is made to receive webhooks request and send telegram notification", response.bodyAsText())
+        }
+
+    @Test
+    fun botCommandMenuExcludesStart() =
+        testApplication {
+            application {
+                configureRouting()
+            }
+            client.get("/")
+
+            val commands = (telegramService as MockTelegramService).botCommands().map { it.command }
+            org.junit.Assert.assertFalse(commands.contains("start"))
+            org.junit.Assert.assertTrue(commands.contains("manage"))
+            org.junit.Assert.assertTrue(commands.contains("help"))
         }
 
     @Test

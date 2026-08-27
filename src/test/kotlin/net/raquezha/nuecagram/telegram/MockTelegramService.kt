@@ -15,8 +15,15 @@ class MockTelegramService : TelegramService {
     private val sentMessages = CopyOnWriteArrayList<Message>()
     private val memberStatuses = ConcurrentHashMap<Pair<Long, Long>, String>()
     private val answeredCallbacks = CopyOnWriteArrayList<AnsweredCallback>()
+    private val botCommands = CopyOnWriteArrayList<BotCommand>()
     @Volatile
     private var failChatMemberLookup = false
+
+    override suspend fun setMyCommands(commands: List<BotCommand>): Boolean {
+        botCommands.clear()
+        botCommands.addAll(commands)
+        return true
+    }
 
     override suspend fun sendMessage(message: Message): String {
         sentMessages += message
@@ -56,10 +63,13 @@ class MockTelegramService : TelegramService {
 
     fun answeredCallbacks(): List<AnsweredCallback> = answeredCallbacks.toList()
 
+    fun botCommands(): List<BotCommand> = botCommands.toList()
+
     fun reset() {
         sentMessages.clear()
         memberStatuses.clear()
         answeredCallbacks.clear()
+        botCommands.clear()
         failChatMemberLookup = false
         messageCounter.set(0)
     }
