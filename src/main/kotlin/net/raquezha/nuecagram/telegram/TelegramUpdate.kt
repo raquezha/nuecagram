@@ -34,10 +34,16 @@ data class TelegramUpdate(
     data class Chat(
         val id: Long,
         val type: String,
+        val title: String? = null,
     )
 
     @Serializable
     data class User(
         val id: Long,
+        val username: String? = null,
+        @SerialName("first_name")
+        val firstName: String? = null,
+        @SerialName("last_name")
+        val lastName: String? = null,
     )
 }

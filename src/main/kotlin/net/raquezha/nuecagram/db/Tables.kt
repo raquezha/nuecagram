@@ -9,6 +9,8 @@ object Installations : Table("installations") {
     val id = javaUUID("id")
     val gitlabBaseUrl = text("gitlab_base_url")
     val gitlabProjectId = long("gitlab_project_id").nullable()
+    val repoName = text("repo_name")
+    val chatName = text("chat_name").nullable()
     val telegramChatId = long("telegram_chat_id")
     val telegramTopicId = long("telegram_topic_id").nullable()
     val createdAt = timestampWithTimeZone("created_at").databaseGenerated()
