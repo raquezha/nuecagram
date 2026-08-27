@@ -208,7 +208,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun startCommandInPrivateChatAttachesInlineButton() =
+    fun startCommandInPrivateChatReturnsWelcomeWithoutInlineButton() =
         testApplication {
             configureTestApplication()
             val privateUpdate = """
@@ -220,11 +220,9 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
 
             val lastMessage = sentMessages().last()
             assertThat(lastMessage.chatId).isEqualTo("75")
-            assertThat(lastMessage.text).contains("Private onboarding is ready.")
-            assertThat(lastMessage.replyMarkup).isNotNull()
-            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
-            assertThat(button.webApp).isNotNull()
-            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+            assertThat(lastMessage.text).contains("Nuecagram GitLab Notification Gateway")
+            assertThat(lastMessage.text).contains("OPEN")
+            assertThat(lastMessage.replyMarkup).isNull()
         }
 
     @Test

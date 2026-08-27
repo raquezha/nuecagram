@@ -619,12 +619,21 @@ class TelegramMenuHandler(
         }
 
         val authorized = getAuthorizedInstallations(userId)
-        sendInstallationPicker(
-            message = message,
-            userId = userId,
-            actionPrefix = "inst:status",
-            headerText = "<b>Repository Status Summary</b>\nSelect a repository to view details:",
-        )
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> {
+                send(message.chat.id, TelegramMenuMessages.statusDetails(authorized.first()), message.messageThreadId)
+            }
+            else -> {
+                sendInstallationPicker(
+                    message = message,
+                    userId = userId,
+                    actionPrefix = "inst:status",
+                    headerText = "<b>Repository Status Summary</b>\nSelect a repository to view details:",
+                )
+            }
+        }
     }
 
     suspend fun handlePrivateRotate(
@@ -641,12 +650,25 @@ class TelegramMenuHandler(
             return
         }
 
-        sendInstallationPicker(
-            message = message,
-            userId = userId,
-            actionPrefix = "inst:rotate:confirm",
-            headerText = "Select a repository to rotate its webhook secret:",
-        )
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> {
+                val inst = authorized.first()
+                val text = TelegramMenuMessages.rotateConfirmation(inst)
+                val markup = buildRotateConfirmationMarkup(inst.id)
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+            else -> {
+                sendInstallationPicker(
+                    message = message,
+                    userId = userId,
+                    actionPrefix = "inst:rotate:confirm",
+                    headerText = "Select a repository to rotate its webhook secret:",
+                )
+            }
+        }
     }
 
     suspend fun handlePrivateMuteCommand(
@@ -661,12 +683,20 @@ class TelegramMenuHandler(
             return
         }
 
-        sendInstallationPicker(
-            message = message,
-            userId = userId,
-            actionPrefix = "inst:mute",
-            headerText = "Select a repository to pause notifications:",
-        )
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> executePrivateMute(message, userId, authorized.first(), muted = true)
+            else -> {
+                sendInstallationPicker(
+                    message = message,
+                    userId = userId,
+                    actionPrefix = "inst:mute",
+                    headerText = "Select a repository to pause notifications:",
+                )
+            }
+        }
     }
 
     suspend fun handlePrivateUnmuteCommand(
@@ -681,12 +711,20 @@ class TelegramMenuHandler(
             return
         }
 
-        sendInstallationPicker(
-            message = message,
-            userId = userId,
-            actionPrefix = "inst:unmute",
-            headerText = "Select a repository to resume notifications:",
-        )
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> executePrivateMute(message, userId, authorized.first(), muted = false)
+            else -> {
+                sendInstallationPicker(
+                    message = message,
+                    userId = userId,
+                    actionPrefix = "inst:unmute",
+                    headerText = "Select a repository to resume notifications:",
+                )
+            }
+        }
     }
 
     suspend fun handlePrivateTestCommand(
@@ -701,12 +739,20 @@ class TelegramMenuHandler(
             return
         }
 
-        sendInstallationPicker(
-            message = message,
-            userId = userId,
-            actionPrefix = "inst:test",
-            headerText = "Select a repository to send a test notification:",
-        )
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> executePrivateTest(message, userId, authorized.first())
+            else -> {
+                sendInstallationPicker(
+                    message = message,
+                    userId = userId,
+                    actionPrefix = "inst:test",
+                    headerText = "Select a repository to send a test notification:",
+                )
+            }
+        }
     }
 
     suspend fun handlePrivateDigestCommand(
@@ -722,12 +768,24 @@ class TelegramMenuHandler(
             return
         }
 
-        sendInstallationPicker(
-            message = message,
-            userId = userId,
-            actionPrefix = "inst:digest",
-            headerText = "Select a repository to view digest summary:",
-        )
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> {
+                val inst = authorized.first()
+                val digestText = TelegramMenuMessages.digestSummary(inst)
+                send(message.chat.id, digestText, message.messageThreadId)
+            }
+            else -> {
+                sendInstallationPicker(
+                    message = message,
+                    userId = userId,
+                    actionPrefix = "inst:digest",
+                    headerText = "Select a repository to view digest summary:",
+                )
+            }
+        }
     }
 
     private suspend fun sendInstallationPicker(
