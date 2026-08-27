@@ -357,6 +357,7 @@ class WebDashboardTest : BaseEventTestHelper() {
             setBody(
                 """
                 {
+                    "repoName": "Project #456",
                     "gitlabBaseUrl": "https://gitlab.example.com",
                     "gitlabProjectId": 456,
                     "telegramChatId": $targetChatId
