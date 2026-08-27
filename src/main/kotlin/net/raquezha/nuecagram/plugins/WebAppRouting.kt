@@ -369,7 +369,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
     telegramService.sendMessage(
         Message(
             chatId = item.telegramChatId.toString(),
-            text = "Nuecagram delivery test for installation ${item.id}.",
+            text = "Nuecagram notification test for ${item.repositoryButtonLabel()}.",
             threadId = item.telegramTopicId,
         ),
     )

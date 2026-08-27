@@ -18,11 +18,13 @@ sealed interface PrivateCallbackAction {
     data class RotateConfirm(val targetId: String) : PrivateCallbackAction
     data class RotateExecute(val targetId: String) : PrivateCallbackAction
     data class Back(val page: Int) : PrivateCallbackAction
+    data object HelpMenu : PrivateCallbackAction
     data object HelpSetup : PrivateCallbackAction
     data object HelpCommands : PrivateCallbackAction
     data object Unknown : PrivateCallbackAction
 
     companion object {
+        @Suppress("CyclomaticComplexMethod")
         fun from(payload: TelegramCallbackPayload): PrivateCallbackAction =
             when (payload.action) {
                 "list" -> ListPage(parsePageIndex(payload.targetId))
@@ -35,6 +37,7 @@ sealed interface PrivateCallbackAction {
                 "rotate:confirm" -> RotateConfirm(payload.targetId)
                 "rotate:execute" -> RotateExecute(payload.targetId)
                 "back" -> Back(parsePageIndex(payload.targetId))
+                "help_menu" -> HelpMenu
                 "help_setup" -> HelpSetup
                 "help_commands" -> HelpCommands
                 else -> Unknown
@@ -46,18 +49,18 @@ sealed interface PrivateCallbackAction {
 }
 
 object TelegramMenuMessages {
-    fun rotateConfirmation(installationId: UUID): String =
+    fun rotateConfirmation(inst: InstallationAdminContext): String =
         "⚠️ <b>Rotate Webhook Secret</b>\n\n" +
-            "Are you sure you want to rotate the webhook secret for installation <code>$installationId</code>?\n\n" +
+            "Are you sure you want to rotate the webhook secret for <b>${inst.repositoryButtonLabel()}</b>?\n\n" +
             "The existing secret will stop working immediately."
 
-    fun rotateSuccess(installationId: UUID, secret: String): String =
-        "🔑 <b>Rotated installation:</b> <code>$installationId</code>\n" +
+    fun rotateSuccess(inst: InstallationAdminContext, secret: String): String =
+        "✅ <b>Rotated secret for:</b> <b>${inst.repositoryButtonLabel()}</b>\n" +
             "<b>GitLab secret token:</b> <code>$secret</code>"
 
     fun statusDetails(inst: InstallationAdminContext): String = buildString {
         append("⚙️ <b>Installation Status</b>\n\n")
-        append("<b>ID:</b> <code>${inst.id}</code>\n")
+        append("<b>Repository:</b> <b>${inst.repositoryButtonLabel()}</b>\n")
         append("<b>GitLab:</b> <code>${inst.gitlabBaseUrl}</code>\n")
         inst.gitlabProjectId?.let { append("<b>Project ID:</b> <code>$it</code>\n") }
         append("<b>Telegram Chat:</b> <code>${inst.telegramChatId}</code>\n")
@@ -65,23 +68,23 @@ object TelegramMenuMessages {
         append("<b>Muted:</b> ${if (inst.muted) "Yes 🔇" else "No 🔔"}")
     }
 
-    fun testNotification(installationId: UUID): String =
-        "🧪 <b>Test Message</b>\nNuecagram integration test for installation <code>$installationId</code>."
+    fun testNotification(inst: InstallationAdminContext): String =
+        "🔔 <b>Test Message</b>\nNuecagram notification test for <b>${inst.repositoryButtonLabel()}</b>."
 
-    fun digestSummary(installationId: UUID, chatId: Long): String =
-        "📊 <b>Weekly Digest</b> for installation <code>$installationId</code>\n\n" +
+    fun digestSummary(inst: InstallationAdminContext): String =
+        "📊 <b>Weekly Digest</b> for <b>${inst.repositoryButtonLabel()}</b>\n\n" +
             "Status: Active\n" +
             "Notifications: Enabled\n" +
-            "Group: <code>$chatId</code>"
+            "Group: <code>${inst.telegramChatId}</code>"
 
-    fun managementLinkText(config: ConfigWithSecrets, installationId: UUID, token: String): String =
-        "Management link for installation <code>$installationId</code>:\n" +
+    fun managementLinkText(config: ConfigWithSecrets, inst: InstallationAdminContext, token: String): String =
+        "Management link for <b>${inst.repositoryButtonLabel()}</b>:\n" +
             "${config.publicBaseUrl()}/manage?token=$token"
 
     fun submenuText(inst: InstallationAdminContext): String = buildString {
-        append("<b>Installation:</b> <code>")
-        append(inst.id)
-        append("</code>\nGitLab: ")
+        append("<b>Repository:</b> <b>")
+        append(inst.repositoryButtonLabel())
+        append("</b>\nGitLab: ")
         append(inst.gitlabBaseUrl)
         inst.gitlabProjectId?.let {
             append("\nProject: ")
@@ -92,9 +95,8 @@ object TelegramMenuMessages {
             append(it)
         }
         append("\nStatus: ")
-        append(if (inst.muted) "<b>Muted</b> 🔕" else "<b>Active</b> 🔔")
+        append(if (inst.muted) "<b>Muted</b> 🔇" else "<b>Active</b> 🔔")
     }
-
     const val LIST_HEADER = "Select an installation to manage:"
 
     const val HELP_SETUP_TEXT =
@@ -105,14 +107,14 @@ object TelegramMenuMessages {
 
     const val HELP_COMMANDS_TEXT =
         "📖 <b>Command Reference</b>\n\n" +
-            "• <code>/setup</code> (Group) : Open setup wizard\n" +
-            "• <code>/status &lt;inst-id&gt;</code> (DM) : View installation status\n" +
-            "• <code>/test &lt;inst-id&gt;</code> (DM) : Send test notification\n" +
-            "• <code>/manage [inst-id]</code> (DM) : Management dashboard / menu\n" +
-            "• <code>/rotate &lt;inst-id&gt;</code> (DM) : Rotate secret token\n" +
-            "• <code>/mute &lt;inst-id&gt;</code> / <code>/unmute &lt;inst-id&gt;</code> (DM) :\n" +
-            "  Pause / resume notifications\n" +
-            "• <code>/digest &lt;inst-id&gt;</code> (DM) : View summary text"
+            "• <code>/repos</code> (or <code>/repositories</code>, <code>/projects</code>) :\n" +
+            "  View connected repositories\n" +
+            "• <code>/status</code> (DM) : View repository status summary\n" +
+            "• <code>/test</code> (DM) : Send test notification\n" +
+            "• <code>/rotate</code> (DM) : Rotate secret token\n" +
+            "• <code>/mute</code> / <code>/unmute</code> (DM) : Pause / resume notifications\n" +
+            "• <code>/digest</code> (DM) : View digest summary\n" +
+            "• <code>/setup</code> (Group) : Open setup wizard"
 }
 
 private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
@@ -130,17 +132,18 @@ class TelegramMenuHandler(
         query: String?,
     ) {
         if (query == null) {
-            val adminInstalls = installationRepository.installationsForAdmin(userId)
-            if (adminInstalls.isEmpty()) {
+            val authorized = getAuthorizedInstallations(userId)
+            if (authorized.isEmpty()) {
                 send(message.chat.id, "No installations found for your account.", message.messageThreadId)
             } else {
-                val (text, markup) = buildInstallationListMarkup(adminInstalls, page = 0)
+                val (text, markup) = buildInstallationListMarkup(authorized, page = 0)
                 send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
             }
         } else {
-            val inst = findAdminInstallation(userId, query)
+            val inst = findAuthorizedInstallation(userId, query)
             if (inst == null) {
-                send(message.chat.id, "Installation not found.", message.messageThreadId)
+                val text = if (userIsDemoted(userId, query)) TELEGRAM_ADMIN_ONLY_MESSAGE else "Installation not found."
+                send(message.chat.id, text, message.messageThreadId)
             } else {
                 val managementLink = installationRepository.issueManagementLink(inst.id, managementLinkExpiry())
                 installationRepository.writeAuditEvent(
@@ -149,7 +152,7 @@ class TelegramMenuHandler(
                     actorId = userId.toString(),
                     action = "telegram_management_link",
                 )
-                send(message.chat.id, TelegramMenuMessages.managementLinkText(config, inst.id, managementLink.raw))
+                send(message.chat.id, TelegramMenuMessages.managementLinkText(config, inst, managementLink.raw))
                 sendLauncherMessage(
                     message.chat.id,
                     message.messageThreadId,
@@ -180,6 +183,7 @@ class TelegramMenuHandler(
                 handlePrivateRotateConfirmCallback(callbackQuery, message, userId, action.targetId)
             is PrivateCallbackAction.RotateExecute ->
                 handlePrivateRotateExecuteCallback(callbackQuery, message, userId, action.targetId)
+            PrivateCallbackAction.HelpMenu -> handlePrivateHelpMenuCallback(callbackQuery, message)
             PrivateCallbackAction.HelpSetup -> handlePrivateHelpSetupCallback(callbackQuery, message)
             PrivateCallbackAction.HelpCommands -> handlePrivateHelpCommandsCallback(callbackQuery, message)
             PrivateCallbackAction.Unknown -> answerCallbackError(callbackQuery.id, "Unknown callback action.")
@@ -192,12 +196,12 @@ class TelegramMenuHandler(
         userId: Long,
         page: Int,
     ) {
-        val adminInstalls = installationRepository.installationsForAdmin(userId)
-        if (adminInstalls.isEmpty()) {
+        val authorized = getAuthorizedInstallations(userId)
+        if (authorized.isEmpty()) {
             answerCallbackError(callbackQuery.id, "No installations found.", showAlert = true)
             return
         }
-        val (text, markup) = buildInstallationListMarkup(adminInstalls, page)
+        val (text, markup) = buildInstallationListMarkup(authorized, page)
         send(
             chatId = message.chat.id,
             text = text,
@@ -220,10 +224,7 @@ class TelegramMenuHandler(
         userId: Long,
         targetId: String,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
         val (text, markup) = buildSubmenuMarkup(inst)
         send(
             chatId = message.chat.id,
@@ -239,10 +240,7 @@ class TelegramMenuHandler(
         userId: Long,
         targetId: String,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
         answerCallbackError(callbackQuery.id, TelegramMenuMessages.statusDetails(inst), showAlert = true)
     }
 
@@ -251,13 +249,10 @@ class TelegramMenuHandler(
         userId: Long,
         targetId: String,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
         send(
             chatId = inst.telegramChatId,
-            text = TelegramMenuMessages.testNotification(inst.id),
+            text = TelegramMenuMessages.testNotification(inst),
             messageThreadId = inst.telegramTopicId,
         )
         telegramService.answerCallbackQuery(
@@ -272,11 +267,8 @@ class TelegramMenuHandler(
         userId: Long,
         targetId: String,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
-        val digestText = TelegramMenuMessages.digestSummary(inst.id, inst.telegramChatId)
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
+        val digestText = TelegramMenuMessages.digestSummary(inst)
         answerCallbackError(callbackQuery.id, digestText, showAlert = true)
     }
 
@@ -287,10 +279,7 @@ class TelegramMenuHandler(
         targetId: String,
         muted: Boolean,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
         installationRepository.setMuted(inst.id, muted)
         installationRepository.writeAuditEvent(
             installationId = inst.id,
@@ -318,11 +307,8 @@ class TelegramMenuHandler(
         userId: Long,
         targetId: String,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
-        val text = TelegramMenuMessages.rotateConfirmation(inst.id)
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
+        val text = TelegramMenuMessages.rotateConfirmation(inst)
         val markup = buildRotateConfirmationMarkup(inst.id)
         send(
             chatId = message.chat.id,
@@ -339,10 +325,7 @@ class TelegramMenuHandler(
         userId: Long,
         targetId: String,
     ) {
-        val inst = findAdminInstallation(userId, targetId) ?: run {
-            answerCallbackError(callbackQuery.id, "Installation not found.", showAlert = true)
-            return
-        }
+        val inst = findCallbackInstallation(callbackQuery, userId, targetId) ?: return
         val newSecret = installationRepository.rotateWebhookSecret(
             installationId = inst.id,
             graceUntil = Instant.now(),
@@ -353,7 +336,7 @@ class TelegramMenuHandler(
             actorId = userId.toString(),
             action = "telegram_rotate",
         )
-        val text = TelegramMenuMessages.rotateSuccess(inst.id, newSecret.raw)
+        val text = TelegramMenuMessages.rotateSuccess(inst, newSecret.raw)
         val markup = buildRotateSuccessMarkup(inst.id)
         send(
             chatId = message.chat.id,
@@ -378,7 +361,7 @@ class TelegramMenuHandler(
                 ),
                 listOf(
                     InlineKeyboardButton(
-                        text = "🔙 Cancel",
+                        text = "« Cancel",
                         callbackData = "inst:menu:$installationId",
                     ),
                 ),
@@ -390,7 +373,7 @@ class TelegramMenuHandler(
             inlineKeyboard = listOf(
                 listOf(
                     InlineKeyboardButton(
-                        text = "🔙 Back to Menu",
+                        text = "« Back to Menu",
                         callbackData = "inst:menu:$installationId",
                     ),
                 ),
@@ -400,6 +383,8 @@ class TelegramMenuHandler(
     private fun buildInstallationListMarkup(
         installations: List<InstallationAdminContext>,
         page: Int,
+        actionPrefix: String = "inst:menu",
+        headerText: String = TelegramMenuMessages.LIST_HEADER,
     ): Pair<String, InlineKeyboardMarkup> {
         val totalPages = (installations.size + PAGE_SIZE - 1) / PAGE_SIZE
         val validPage = page.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
@@ -407,20 +392,10 @@ class TelegramMenuHandler(
 
         val rows = mutableListOf<List<InlineKeyboardButton>>()
         for (inst in pageItems) {
-            val label = buildString {
-                inst.gitlabProjectId?.let { append("Project $it ") }
-                    ?: append(
-                        inst.gitlabBaseUrl
-                            .removePrefix("https://")
-                            .removePrefix("http://")
-                            .take(DISPLAY_URL_MAX_LENGTH) + " ",
-                    )
-                append("(${inst.id.toString().take(SHORT_ID_LENGTH)})")
-            }
             rows += listOf(
                 InlineKeyboardButton(
-                    text = label,
-                    callbackData = "inst:menu:${inst.id}",
+                    text = inst.repositoryButtonLabel(),
+                    callbackData = "$actionPrefix:${inst.id}",
                 ),
             )
         }
@@ -440,7 +415,7 @@ class TelegramMenuHandler(
             rows += navRow
         }
 
-        return TelegramMenuMessages.LIST_HEADER to InlineKeyboardMarkup(inlineKeyboard = rows)
+        return headerText to InlineKeyboardMarkup(inlineKeyboard = rows)
     }
 
     private fun buildSubmenuMarkup(
@@ -466,14 +441,17 @@ class TelegramMenuHandler(
                     InlineKeyboardButton(text = "Open Web App", webApp = WebAppInfo(url = webAppUrl)),
                 ),
                 listOf(
-                    InlineKeyboardButton(text = "⬅️ Back", callbackData = "inst:back:page=0"),
+                    InlineKeyboardButton(text = "« Back", callbackData = "inst:help_menu:all"),
                 ),
             ),
         )
         return text to markup
     }
 
-    suspend fun sendPrivateHelpMenu(message: TelegramUpdate.Message) {
+    suspend fun sendPrivateHelpMenu(
+        message: TelegramUpdate.Message,
+        messageId: String? = null,
+    ) {
         val text =
             "<b>Nuecagram Assistant</b>\n\n" +
                 "Select an option below to manage notification installations or view command instructions:"
@@ -484,7 +462,21 @@ class TelegramMenuHandler(
                 listOf(InlineKeyboardButton(text = "📖 Command List", callbackData = "inst:help_commands:all")),
             ),
         )
-        send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+        send(
+            chatId = message.chat.id,
+            text = text,
+            messageThreadId = message.messageThreadId,
+            replyMarkup = markup,
+            messageId = messageId,
+        )
+    }
+
+    private suspend fun handlePrivateHelpMenuCallback(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        message: TelegramUpdate.Message,
+    ) {
+        sendPrivateHelpMenu(message, messageId = message.messageId?.toString())
+        telegramService.answerCallbackQuery(callbackQuery.id)
     }
 
     private suspend fun handlePrivateHelpSetupCallback(
@@ -493,7 +485,7 @@ class TelegramMenuHandler(
     ) {
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(
-                listOf(InlineKeyboardButton(text = "⬅️ Back", callbackData = "inst:back:page=0")),
+                listOf(InlineKeyboardButton(text = "« Back", callbackData = "inst:help_menu:all")),
             ),
         )
         send(
@@ -511,7 +503,7 @@ class TelegramMenuHandler(
     ) {
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(
-                listOf(InlineKeyboardButton(text = "⬅️ Back", callbackData = "inst:back:page=0")),
+                listOf(InlineKeyboardButton(text = "« Back", callbackData = "inst:help_menu:all")),
             ),
         )
         send(
@@ -523,21 +515,315 @@ class TelegramMenuHandler(
         telegramService.answerCallbackQuery(callbackQuery.id)
     }
 
-    private suspend fun findAdminInstallation(
+    suspend fun handlePrivateRepos(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                val (text, markup) = buildSubmenuMarkup(inst)
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        if (authorized.isEmpty()) {
+            send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+        } else {
+            val (text, markup) = buildInstallationListMarkup(
+                authorized,
+                page = 0,
+                actionPrefix = "inst:menu",
+                headerText = TelegramMenuMessages.LIST_HEADER,
+            )
+            send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+        }
+    }
+
+    suspend fun handlePrivateStatus(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                send(message.chat.id, TelegramMenuMessages.statusDetails(inst), message.messageThreadId)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> {
+                send(message.chat.id, TelegramMenuMessages.statusDetails(authorized.first()), message.messageThreadId)
+            }
+            else -> {
+                val (text, markup) = buildInstallationListMarkup(
+                    authorized,
+                    page = 0,
+                    actionPrefix = "inst:status",
+                    headerText = "<b>Repository Status Summary</b>\nSelect a repository to view details:",
+                )
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        }
+    }
+
+    suspend fun handlePrivateRotate(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                val text = TelegramMenuMessages.rotateConfirmation(inst)
+                val markup = buildRotateConfirmationMarkup(inst.id)
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> {
+                val inst = authorized.first()
+                val text = TelegramMenuMessages.rotateConfirmation(inst)
+                val markup = buildRotateConfirmationMarkup(inst.id)
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+            else -> {
+                val (text, markup) = buildInstallationListMarkup(
+                    authorized,
+                    page = 0,
+                    actionPrefix = "inst:rotate:confirm",
+                    headerText = "Select a repository to rotate its webhook secret:",
+                )
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        }
+    }
+
+    suspend fun handlePrivateMuteCommand(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                executePrivateMute(message, userId, inst, muted = true)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> executePrivateMute(message, userId, authorized.first(), muted = true)
+            else -> {
+                val (text, markup) = buildInstallationListMarkup(
+                    authorized,
+                    page = 0,
+                    actionPrefix = "inst:mute",
+                    headerText = "Select a repository to pause notifications:",
+                )
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        }
+    }
+
+    suspend fun handlePrivateUnmuteCommand(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                executePrivateMute(message, userId, inst, muted = false)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> executePrivateMute(message, userId, authorized.first(), muted = false)
+            else -> {
+                val (text, markup) = buildInstallationListMarkup(
+                    authorized,
+                    page = 0,
+                    actionPrefix = "inst:unmute",
+                    headerText = "Select a repository to resume notifications:",
+                )
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        }
+    }
+
+    suspend fun handlePrivateTestCommand(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                executePrivateTest(message, userId, inst)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> executePrivateTest(message, userId, authorized.first())
+            else -> {
+                val (text, markup) = buildInstallationListMarkup(
+                    authorized,
+                    page = 0,
+                    actionPrefix = "inst:test",
+                    headerText = "Select a repository to send a test notification:",
+                )
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        }
+    }
+
+    suspend fun handlePrivateDigestCommand(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String? = null,
+    ) {
+        if (query != null) {
+            handlePrivateTargetAction(message, userId, query) { inst ->
+                val digestText = TelegramMenuMessages.digestSummary(inst)
+                send(message.chat.id, digestText, message.messageThreadId)
+            }
+            return
+        }
+
+        val authorized = getAuthorizedInstallations(userId)
+        when {
+            authorized.isEmpty() ->
+                send(message.chat.id, "No installations found for your account.", message.messageThreadId)
+            authorized.size == 1 -> {
+                val inst = authorized.first()
+                val digestText = TelegramMenuMessages.digestSummary(inst)
+                send(message.chat.id, digestText, message.messageThreadId)
+            }
+            else -> {
+                val (text, markup) = buildInstallationListMarkup(
+                    authorized,
+                    page = 0,
+                    actionPrefix = "inst:digest",
+                    headerText = "Select a repository to view digest summary:",
+                )
+                send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
+            }
+        }
+    }
+
+    private suspend fun executePrivateMute(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        inst: InstallationAdminContext,
+        muted: Boolean,
+    ) {
+        installationRepository.setMuted(inst.id, muted)
+        installationRepository.writeAuditEvent(
+            installationId = inst.id,
+            actorType = "telegram",
+            actorId = userId.toString(),
+            action = if (muted) "telegram_mute" else "telegram_unmute",
+        )
+        val text = if (muted) "Installation muted." else "Installation unmuted."
+        send(message.chat.id, text, message.messageThreadId)
+    }
+
+    private suspend fun executePrivateTest(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        inst: InstallationAdminContext,
+    ) {
+        send(
+            chatId = inst.telegramChatId,
+            text = TelegramMenuMessages.testNotification(inst),
+            messageThreadId = inst.telegramTopicId,
+        )
+        installationRepository.writeAuditEvent(
+            installationId = inst.id,
+            actorType = "telegram",
+            actorId = userId.toString(),
+            action = "telegram_delivery_test",
+        )
+        send(message.chat.id, "Test notification sent to chat ${inst.telegramChatId}.", message.messageThreadId)
+    }
+
+    private suspend fun handlePrivateTargetAction(
+        message: TelegramUpdate.Message,
+        userId: Long,
+        query: String,
+        action: suspend (InstallationAdminContext) -> Unit,
+    ) {
+        val inst = findAuthorizedInstallation(userId, query)
+        when {
+            inst != null -> action(inst)
+            userIsDemoted(userId, query) ->
+                send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
+            else -> send(message.chat.id, "Installation not found.", message.messageThreadId)
+        }
+    }
+
+    private suspend fun findCallbackInstallation(
+        callbackQuery: TelegramUpdate.CallbackQuery,
+        userId: Long,
+        targetId: String,
+    ): InstallationAdminContext? {
+        val inst = findAuthorizedInstallation(userId, targetId)
+        if (inst == null) {
+            val text = if (userIsDemoted(userId, targetId)) TELEGRAM_ADMIN_ONLY_MESSAGE else "Installation not found."
+            answerCallbackError(callbackQuery.id, text, showAlert = true)
+            return null
+        }
+        return inst
+    }
+
+    private suspend fun findAuthorizedInstallation(
         userId: Long,
         query: String,
     ): InstallationAdminContext? {
-        val adminInstalls = installationRepository.installationsForAdmin(userId)
-        if (adminInstalls.isEmpty()) return null
-        val cleanQuery = query.trim().lowercase()
-        val uuid = runCatching { UUID.fromString(cleanQuery) }.getOrNull()
-        if (uuid != null) {
-            return adminInstalls.firstOrNull { it.id == uuid }
+        val inst = installationRepository.findInstallationByQuery(query)
+            ?: installationRepository.installationsForAdmin(userId).firstOrNull {
+                it.id.toString().take(SHORT_ID_LENGTH).equals(query.take(SHORT_ID_LENGTH), ignoreCase = true)
+            }
+            ?: return null
+        val status = runCatching { telegramService.chatMemberStatus(inst.telegramChatId, userId) }.getOrNull()
+        return if (isTelegramAdmin(status)) {
+            installationRepository.recordInstallationAdmin(inst.id, userId)
+            inst
+        } else {
+            null
         }
-        return adminInstalls.firstOrNull { inst ->
-            inst.id.toString().lowercase().startsWith(cleanQuery) ||
-                inst.gitlabProjectId?.toString() == cleanQuery ||
-                inst.gitlabBaseUrl.lowercase().contains(cleanQuery)
+    }
+
+    private suspend fun userIsDemoted(userId: Long, query: String): Boolean {
+        val inst = installationRepository.findInstallationByQuery(query) ?: return false
+        val status = runCatching { telegramService.chatMemberStatus(inst.telegramChatId, userId) }.getOrNull()
+        return !isTelegramAdmin(status)
+    }
+
+    private suspend fun getAuthorizedInstallations(userId: Long): List<InstallationAdminContext> {
+        val candidates = installationRepository.installationsForAdmin(userId)
+        return candidates.filter { inst ->
+            val status = runCatching { telegramService.chatMemberStatus(inst.telegramChatId, userId) }.getOrNull()
+            isTelegramAdmin(status)
         }
     }
 

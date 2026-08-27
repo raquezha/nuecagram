@@ -4,7 +4,6 @@ package net.raquezha.nuecagram.telegram
 
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.UUID
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.db.InstallationAdminContext
@@ -15,24 +14,11 @@ private const val GROUP_HELP_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
         "Run <code>/setup</code> in this group or topic to open the GitLab setup wizard.\n" +
         "For status, management, and configuration options, open a private chat with the bot."
-private const val STATUS_USAGE_MESSAGE = "Usage: <code>/status &lt;installation-id&gt;</code>"
-private const val DIGEST_USAGE_MESSAGE = "Usage: <code>/digest &lt;installation-id&gt;</code>"
-private const val TEST_USAGE_MESSAGE =
-    "Usage: <code>/test &lt;installation-id&gt;</code>\nExample: <code>/test a1b2c3d4</code>"
-private const val MUTE_USAGE_MESSAGE = "Usage: <code>/mute &lt;installation-id&gt;</code>"
-private const val UNMUTE_USAGE_MESSAGE = "Usage: <code>/unmute &lt;installation-id&gt;</code>"
-private const val MANAGE_USAGE_MESSAGE =
-    "Usage: <code>/manage &lt;installation-id&gt;</code>\nExample: <code>/manage a1b2c3d4</code>"
-private const val ROTATE_USAGE_MESSAGE =
-    "Usage: <code>/rotate &lt;installation-id&gt;</code>\nExample: <code>/rotate a1b2c3d4</code>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
 private const val PRIVATE_COMMAND_MESSAGE = "Run this command in the installation group."
-private const val PRIVATE_DELIVERY_MESSAGE = "Private setup details sent."
 private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
     "Continue in a private chat with the bot to manage this installation."
 private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
-private const val MANAGEMENT_LINK_TTL_MINUTES = 30L
-private const val ROTATION_GRACE_MINUTES = 0L
 private const val LAUNCH_NONCE_TTL_MINUTES = 10L
 
 private data class AuthorizedGroupAdmin(
@@ -171,7 +157,13 @@ class TelegramUpdateHandler(
         userId: Long,
         installation: InstallationAdminContext,
     ): Boolean {
-        telegramService.sendMessage(installation.deliveryTestMessage())
+        telegramService.sendMessage(
+            Message(
+                chatId = installation.telegramChatId.toString(),
+                text = "Nuecagram notification test for ${installation.repositoryButtonLabel()}.",
+                threadId = installation.telegramTopicId,
+            ),
+        )
         installationRepository.writeAuditEvent(
             installationId = installation.id,
             actorType = "telegram",
@@ -187,16 +179,8 @@ class TelegramUpdateHandler(
             "/start" -> handleStart(message)
             "/hello" -> send(message.chat.id, "Hello. Use /help for available commands.", message.messageThreadId)
             "/help" -> handleHelp(message)
-            "/status" -> {
-                val authorized = authorizeInstallationCommand(message, STATUS_USAGE_MESSAGE) ?: return
-                sendLauncherMessage(
-                    message.chat.id,
-                    message.messageThreadId,
-                    authorized.actorId,
-                    authorized.installation.statusText(),
-                    "Open Web App",
-                )
-            }
+            "/repos", "/repositories", "/projects" -> handleRepos(message)
+            "/status" -> handleStatus(message)
             "/digest" -> handleDigest(message)
             "/test" -> handleDeliveryTest(message)
             "/mute" -> handleMute(message)
@@ -246,45 +230,91 @@ class TelegramUpdateHandler(
         }
     }
 
+    private suspend fun handleRepos(message: TelegramUpdate.Message) {
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateRepos(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
+    }
+
+    private suspend fun handleStatus(message: TelegramUpdate.Message) {
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateStatus(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
+    }
+
     private suspend fun handleDigest(message: TelegramUpdate.Message) {
-        val authorized = authorizeInstallationCommand(message, DIGEST_USAGE_MESSAGE) ?: return
-        send(message.chat.id, authorized.installation.digestText(), message.messageThreadId)
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateDigestCommand(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
     }
 
     private suspend fun handleDeliveryTest(message: TelegramUpdate.Message) {
-        val authorized = authorizeInstallationCommand(message, TEST_USAGE_MESSAGE) ?: return
-        telegramService.sendMessage(authorized.installation.deliveryTestMessage())
-        installationRepository.writeAuditEvent(
-            installationId = authorized.installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_delivery_test",
-        )
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateTestCommand(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
     }
 
     private suspend fun handleMute(message: TelegramUpdate.Message) {
-        val authorized = authorizeInstallationCommand(message, MUTE_USAGE_MESSAGE) ?: return
-        installationRepository.setMuted(authorized.installation.id, true)
-        installationRepository.writeAuditEvent(
-            installationId = authorized.installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_mute",
-        )
-        send(message.chat.id, "Installation muted.", message.messageThreadId)
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateMuteCommand(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
     }
 
     private suspend fun handleUnmute(message: TelegramUpdate.Message) {
-        val authorized = authorizeInstallationCommand(message, UNMUTE_USAGE_MESSAGE) ?: return
-        installationRepository.setMuted(authorized.installation.id, false)
-        installationRepository.writeAuditEvent(
-            installationId = authorized.installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_unmute",
-        )
-        send(message.chat.id, "Installation unmuted.", message.messageThreadId)
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateUnmuteCommand(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
     }
+
+    private suspend fun handleManage(message: TelegramUpdate.Message) {
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateRepos(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
+    }
+
+    private suspend fun handleRotate(message: TelegramUpdate.Message) {
+        val userId = message.from?.id ?: return
+        if (message.chat.type == "private") {
+            val query = parseInstallationQuery(message.text)
+            menuHandler.handlePrivateRotate(message, userId, query)
+        } else {
+            sendManagementDmRedirect(message)
+        }
+    }
+
+    private fun parseInstallationQuery(text: String?): String? =
+        text
+            ?.substringAfter(' ', "")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
 
     private suspend fun handleSetup(message: TelegramUpdate.Message) {
         val authorized = authorizeGroupAdmin(message, requireArguments = false) ?: return
@@ -303,39 +333,7 @@ class TelegramUpdateHandler(
         )
     }
 
-    private suspend fun handleManage(message: TelegramUpdate.Message) {
-        val userId = message.from?.id
-        val query = parseInstallationQuery(message.text)
 
-        if (message.chat.type == "private" && userId != null && query == null) {
-            menuHandler.handlePrivateManage(message, userId, query)
-            return
-        }
-
-        val authorized = authorizeInstallationCommand(message, MANAGE_USAGE_MESSAGE) ?: return
-        val managementLink =
-            installationRepository.issueManagementLink(
-                authorized.installation.id,
-                managementLinkExpiry(),
-            )
-        installationRepository.writeAuditEvent(
-            installationId = authorized.installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_management_link",
-        )
-        send(
-            authorized.privateChatId,
-            managementLinkText(config, authorized.installation.id, managementLink.raw),
-        )
-        sendLauncherMessage(
-            message.chat.id,
-            message.messageThreadId,
-            authorized.actorId,
-            PRIVATE_DELIVERY_MESSAGE,
-            "Open Dashboard in Web App",
-        )
-    }
 
     private suspend fun handleWebApp(message: TelegramUpdate.Message) {
         val userId = message.from?.id ?: return
@@ -363,42 +361,7 @@ class TelegramUpdateHandler(
         )
     }
 
-    private suspend fun handleRotate(message: TelegramUpdate.Message) {
-        val authorized = authorizeInstallationCommand(message, ROTATE_USAGE_MESSAGE) ?: return
-        val credential =
-            installationRepository.rotateWebhookSecret(
-                installationId = authorized.installation.id,
-                graceUntil = Instant.now().plus(ROTATION_GRACE_MINUTES, ChronoUnit.MINUTES),
-            )
-        val managementLink =
-            installationRepository.issueManagementLink(
-                authorized.installation.id,
-                managementLinkExpiry(),
-            )
-        installationRepository.writeAuditEvent(
-            installationId = authorized.installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_rotate",
-        )
-        installationRepository.writeAuditEvent(
-            installationId = authorized.installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_management_link",
-        )
-        send(
-            authorized.privateChatId,
-            rotationDetailsText(config, authorized.installation, credential.raw, managementLink.raw),
-        )
-        sendLauncherMessage(
-            message.chat.id,
-            message.messageThreadId,
-            authorized.actorId,
-            PRIVATE_DELIVERY_MESSAGE,
-            "Open Dashboard in Web App",
-        )
-    }
+
 
     private suspend fun authorizeGroupAdmin(
         message: TelegramUpdate.Message,
@@ -433,66 +396,12 @@ class TelegramUpdateHandler(
         return result
     }
 
-    private suspend fun authorizeInstallationCommand(
-        message: TelegramUpdate.Message,
-        usageMessage: String,
-    ): AuthorizedInstallationCommand? {
-        val query = parseInstallationQuery(message.text)
-        return when {
-            message.chat.type != "private" -> {
-                sendManagementDmRedirect(message)
-                null
-            }
-            query == null -> {
-                send(message.chat.id, usageMessage, message.messageThreadId)
-                null
-            }
-            else -> authorizePrivateInstallationCommand(message, query)
-        }
-    }
-
-    private suspend fun authorizePrivateInstallationCommand(
-        message: TelegramUpdate.Message,
-        query: String,
-    ): AuthorizedInstallationCommand? {
-        val userId = message.from?.id ?: return null
-        val installation = installationRepository.findInstallationByQuery(query)
-        val status = installation?.let {
-            runCatching { telegramService.chatMemberStatus(it.telegramChatId, userId) }.getOrNull()
-        }
-
-        return when {
-            installation == null -> {
-                send(message.chat.id, "Installation not found.", message.messageThreadId)
-                null
-            }
-            !isTelegramAdmin(status) -> {
-                send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
-                null
-            }
-            else -> {
-                installationRepository.recordInstallationAdmin(installation.id, userId)
-                AuthorizedInstallationCommand(
-                    installation = installation,
-                    actorId = userId,
-                    privateChatId = message.chat.id,
-                )
-            }
-        }
-    }
-
     private suspend fun sendManagementDmRedirect(message: TelegramUpdate.Message) {
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = "Open bot DM", url = MANAGEMENT_DM_URL))),
         )
         send(message.chat.id, MANAGEMENT_DM_REDIRECT_MESSAGE, message.messageThreadId, replyMarkup = markup)
     }
-
-    private fun parseInstallationQuery(text: String?): String? =
-        text
-            ?.substringAfter(' ', "")
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
 
     private suspend fun sendLauncherMessage(
         chatId: Long,
@@ -603,57 +512,4 @@ private fun InstallationAdminContext.statusText(): String =
         append(if (muted) "yes" else "no")
     }
 
-private fun InstallationAdminContext.digestText(): String =
-    buildString {
-        append("Digest for ")
-        append(id)
-        append("\nGitLab: ")
-        append(gitlabBaseUrl)
-        gitlabProjectId?.let {
-            append("\nProject: ")
-            append(it)
-        }
-        append("\nMuted: ")
-        append(if (muted) "yes" else "no")
-    }
-
-private fun InstallationAdminContext.deliveryTestMessage(): Message =
-    Message(
-        chatId = telegramChatId.toString(),
-        text = "Nuecagram delivery test for installation $id.",
-        threadId = telegramTopicId,
-    )
-
-private fun managementLinkExpiry(): Instant =
-    Instant.now().plus(MANAGEMENT_LINK_TTL_MINUTES, ChronoUnit.MINUTES)
-
 private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
-
-private fun ConfigWithSecrets.webhookUrl(): String = "${publicBaseUrl()}/webhook"
-
-private fun ConfigWithSecrets.managementUrl(code: String): String =
-    "${publicBaseUrl()}/manage/$code"
-
-private fun managementLinkText(
-    config: ConfigWithSecrets,
-    installationId: UUID,
-    managementCode: String,
-): String =
-    "Management for $installationId\n${config.managementUrl(managementCode)}"
-
-private fun rotationDetailsText(
-    config: ConfigWithSecrets,
-    installation: InstallationAdminContext,
-    credential: String,
-    managementCode: String,
-): String =
-    buildString {
-        append("Rotated installation: ")
-        append(installation.id)
-        append("\nWebhook URL: ")
-        append(config.webhookUrl())
-        append("\nGitLab secret token: ")
-        append(credential)
-        append("\nManagement URL: ")
-        append(config.managementUrl(managementCode))
-    }

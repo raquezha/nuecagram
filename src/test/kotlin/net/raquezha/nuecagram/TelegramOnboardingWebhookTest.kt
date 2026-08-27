@@ -153,7 +153,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             assertThat(privateMessages).hasSize(2)
             val detailsMessage = privateMessages.first()
             val launcherMessage = privateMessages.last()
-            assertThat(detailsMessage.text).contains("Management for ${installation.id}")
+            assertThat(detailsMessage.text).contains("Management link for")
             assertThat(detailsMessage.text).contains("/nuecagram/manage/")
             assertThat(launcherMessage.text).contains("Private setup details sent.")
             assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
@@ -179,7 +179,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             val launcherMessage = privateMessages.last()
             val rotatedCredential = privateMessage.text.substringAfter("GitLab secret token: ").substringBefore('\n')
             assertThat(rotatedCredential).isNotEqualTo(oldCredential)
-            assertThat(privateMessage.text).contains("Management URL:")
+            assertThat(privateMessage.text).contains("Rotate Webhook Secret")
             assertThat(launcherMessage.text).contains("Private setup details sent.")
             assertThat(runBlocking { installationRepository.verifyWebhookSecret(oldCredential) }).isNull()
             assertThat(runBlocking { installationRepository.verifyWebhookSecret(rotatedCredential) }).isNotNull()
@@ -241,7 +241,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
 
             val lastMessage = sentMessages().last()
             assertThat(lastMessage.chatId).isEqualTo("76")
-            assertThat(lastMessage.text).contains("Installation:")
+            assertThat(lastMessage.text).contains("Installation Status")
             assertThat(lastMessage.replyMarkup).isNotNull()
             val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
             assertThat(button.webApp).isNotNull()
@@ -252,6 +252,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         runBlocking {
             installationRepository.upsertTelegramPrivateChat(userId, userId)
         }
+        mockTelegramService().setChatMemberStatus(installation.telegramChatId, userId, "administrator")
     }
 
     private fun messagesForChat(chatId: Long): List<Message> =
