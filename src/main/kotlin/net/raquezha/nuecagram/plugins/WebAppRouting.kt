@@ -240,8 +240,8 @@ private suspend fun ApplicationCall.resolveLaunchContext(
     installationRepository: InstallationRepository,
 ): Pair<Long?, Long?> {
     val nonceCtx = startParam?.takeIf { it.startsWith("nonce_") }?.let { param ->
-        installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"))
-    }?.takeIf { it.telegramUserId == verifiedUserId }
+        installationRepository.consumeLaunchNonce(param.removePrefix("nonce_"), verifiedUserId)
+    }
 
     val existingSession = extractSessionToken()
         ?.let { installationRepository.verifyWebAppSession(it) }

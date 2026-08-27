@@ -533,12 +533,14 @@ class InstallationRepository(
 
     suspend fun consumeLaunchNonce(
         raw: String,
+        telegramUserId: Long,
         now: Instant = Instant.now(),
     ): LaunchNonceContext? = databaseFactory.dbTransaction {
         val databaseNow = now.databaseTime()
         val row = TelegramLaunchNonces.selectAll().where {
             TelegramLaunchNonces.consumedAt.isNull() and
                 (TelegramLaunchNonces.expiresAt greater databaseNow) and
+                (TelegramLaunchNonces.telegramUserId eq telegramUserId) and
                 (TelegramLaunchNonces.nonceDigest eq CredentialCodec.digest(raw))
         }.firstOrNull() ?: return@dbTransaction null
 

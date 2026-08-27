@@ -89,6 +89,42 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun launchNonceRemainsUsableForOwnerAfterWrongUserAuthAttempt() = testApplication {
+        configureTestApplication()
+        val ownerId = 7011L
+        val wrongUserId = 7012L
+        val chatId = installation.telegramChatId
+        mockTelegram.setChatMemberStatus(chatId, ownerId, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(ownerId, chatId) }
+        val nonce = runBlocking {
+            installationRepository.issueLaunchNonce(
+                telegramChatId = chatId,
+                telegramTopicId = installation.telegramTopicId,
+                telegramUserId = ownerId,
+                expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
+            )
+        }
+
+        val wrongUserInitData = buildTestInitData(testConfig.botApi, userId = wrongUserId)
+        val wrongUserAuth = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$wrongUserInitData","startParam":"nonce_${nonce.raw}"}""")
+        }
+        assertThat(wrongUserAuth.status).isEqualTo(HttpStatusCode.OK)
+        val wrongUserPayload = json.decodeFromString<WizardAuthPayload>(wrongUserAuth.bodyAsText())
+        assertThat(wrongUserPayload.telegramChatId).isNull()
+
+        val ownerInitData = buildTestInitData(testConfig.botApi, userId = ownerId)
+        val ownerAuth = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$ownerInitData","startParam":"nonce_${nonce.raw}"}""")
+        }
+        assertThat(ownerAuth.status).isEqualTo(HttpStatusCode.OK)
+        val ownerPayload = json.decodeFromString<WizardAuthPayload>(ownerAuth.bodyAsText())
+        assertThat(ownerPayload.telegramChatId).isEqualTo(chatId)
+    }
+
+    @Test
     fun createInstallationEndpointRequiresDmBootstrap() = testApplication {
         configureTestApplication()
         // Session with admin status but NO DM bootstrap

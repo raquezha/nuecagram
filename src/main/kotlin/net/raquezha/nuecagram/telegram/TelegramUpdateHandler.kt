@@ -5,8 +5,6 @@ package net.raquezha.nuecagram.telegram
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.db.InstallationAdminContext
@@ -15,7 +13,7 @@ import net.raquezha.nuecagram.db.InstallationRepository
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
 private const val GROUP_HELP_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
-        "Run <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in this group to bind notifications.\n" +
+        "Run <code>/setup</code> in this group or topic to open the GitLab setup wizard.\n" +
         "For status, management, and configuration options, open a private chat with the bot."
 private const val STATUS_USAGE_MESSAGE = "Usage: <code>/status &lt;installation-id&gt;</code>"
 private const val DIGEST_USAGE_MESSAGE = "Usage: <code>/digest &lt;installation-id&gt;</code>"
@@ -586,16 +584,6 @@ class TelegramUpdateHandler(
         }
     }
 }
-
-private fun TelegramUpdate.User?.toAuditMetadataJson(): String =
-    this?.let { u ->
-        val map = buildMap {
-            u.username?.takeIf(String::isNotBlank)?.let { put("username", it) }
-            u.firstName?.takeIf(String::isNotBlank)?.let { put("first_name", it) }
-            u.lastName?.takeIf(String::isNotBlank)?.let { put("last_name", it) }
-        }
-        if (map.isNotEmpty()) Json.encodeToString(map) else "{}"
-    } ?: "{}"
 
 private fun InstallationAdminContext.statusText(): String =
     buildString {
