@@ -429,8 +429,8 @@ private fun onboardingHtml(basePath: String): String =
             }
             p {
                 attributes["style"] = "margin-bottom: 0;"
-                +("Nuecagram opens the Web App wizard for that group or topic, " +
-                    "then reveals your webhook URL and token in-app.")
+                +("Nuecagram replies with an inline button for that group or topic; " +
+                    "tap it to open the Web App wizard and reveal your webhook URL and token in-app.")
             }
         }
 

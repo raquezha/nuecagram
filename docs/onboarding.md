@@ -1,6 +1,6 @@
 # Onboarding
 
-Nuecagram features a **DM-first** management experience. Group administrators run `/setup` in the destination group or topic to open the Web App setup wizard, then use private DM commands and inline callback menus to manage GitLab notification webhooks. Text-based slash commands remain supported for management and recovery tools.
+Nuecagram features a **DM-first** management experience. Group administrators run `/setup` in the destination group or topic to receive an inline button that opens the Web App setup wizard, then use private DM commands and inline callback menus to manage GitLab notification webhooks. Text-based slash commands remain supported for management and recovery tools.
 
 ## Telegram setup
 
@@ -13,11 +13,12 @@ Nuecagram features a **DM-first** management experience. Group administrators ru
 ## Primary Path: Group Setup, then DM Management
 
 1. In your destination Telegram group chat or forum topic, run `/setup`.
-2. The bot opens the existing Web App wizard for that group or topic.
-3. Enter your GitLab base URL and project ID in the wizard.
-4. Copy the webhook URL and secret token from the in-app reveal screen, then configure your GitLab webhook.
-5. Use DM commands such as `/manage`, `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest` to manage the installation.
-6. Use the inline menu in DM when you want callback navigation instead of typing commands.
+2. The bot replies with an inline button for that group or topic.
+3. Tap the button to open the existing Web App wizard.
+4. Enter your GitLab base URL and project ID in the wizard.
+5. Copy the webhook URL and secret token from the in-app reveal screen, then configure your GitLab webhook.
+6. Use DM commands such as `/manage`, `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest` to manage the installation.
+7. Use the inline menu in DM when you want callback navigation instead of typing commands.
 
 ## Setup Flow Notes
 
