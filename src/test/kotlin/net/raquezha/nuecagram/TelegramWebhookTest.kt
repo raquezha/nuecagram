@@ -147,27 +147,38 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun dmRepositoryScopedCommandsAskWhichRepositoryWithoutArguments() =
+    fun dmRepositoryScopedCommandsUseDirectActionsForSingleInstallation() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(580)
             runBlocking { installationRepository.recordInstallationAdmin(installation.id, 580) }
 
-            listOf(
-                "/status" to "inst:status:",
-                "/test" to "inst:test:",
-                "/rotate" to "inst:rotate:confirm:",
-                "/mute" to "inst:mute:",
-                "/unmute" to "inst:unmute:",
-                "/digest" to "inst:digest:",
-            ).forEachIndexed { index, (command, callbackPrefix) ->
-                assertThat(postTelegram(privateUpdate(5800 + index.toLong(), command, userId = 580)).status)
-                    .isEqualTo(HttpStatusCode.OK)
-                val message = sentMessages().last()
-                assertThat(message.text).contains("Select a repository")
-                assertThat(message.replyMarkup!!.inlineKeyboard.first().first().callbackData)
-                    .startsWith(callbackPrefix)
-            }
+            assertThat(postTelegram(privateUpdate(5800, "/status", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains("Installation Status")
+
+            assertThat(postTelegram(privateUpdate(5801, "/rotate", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            val rotateMsg = sentMessages().last()
+            assertThat(rotateMsg.text).contains("Rotate Webhook Secret")
+            assertThat(rotateMsg.replyMarkup!!.inlineKeyboard.first().first().callbackData)
+                .isEqualTo("inst:rotate:execute:${installation.id}")
+
+            assertThat(postTelegram(privateUpdate(5802, "/mute", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Installation muted.")
+
+            assertThat(postTelegram(privateUpdate(5803, "/unmute", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Installation unmuted.")
+
+            assertThat(postTelegram(privateUpdate(5804, "/test", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains("Test notification sent")
+
+            assertThat(postTelegram(privateUpdate(5805, "/digest", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains("Weekly Digest")
 
             assertThat(installationMuted(installation.id)).isFalse()
         }
