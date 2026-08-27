@@ -462,7 +462,7 @@ class TelegramMenuHandler(
             val navRow = mutableListOf<InlineKeyboardButton>()
             if (validPage > 0) {
                 navRow += InlineKeyboardButton(
-                    text = "⬅️ Prev",
+                    text = "<< Prev",
                     callbackData = "$pageActionPrefix:page=${validPage - 1}",
                 )
             }
@@ -472,7 +472,7 @@ class TelegramMenuHandler(
             )
             if (validPage < totalPages - 1) {
                 navRow += InlineKeyboardButton(
-                    text = "Next ➡️",
+                    text = "Next >>",
                     callbackData = "$pageActionPrefix:page=${validPage + 1}",
                 )
             }
