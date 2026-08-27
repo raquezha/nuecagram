@@ -84,7 +84,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
 
             val message = sentMessages().last()
-            assertThat(message.text).contains("bind notifications")
+            assertThat(message.text).contains("open the GitLab setup wizard")
             assertThat(message.text).doesNotContain("Open Web App")
             assertThat(message.replyMarkup).isNotNull()
             val button = message.replyMarkup!!.inlineKeyboard.first().first()
