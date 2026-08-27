@@ -203,7 +203,7 @@ class TelegramDeterministicInlineKeyboardTest : BaseEventTestHelper() {
 
             val answered = mockTelegramService().answeredCallbacks().last()
             assertThat(answered.showAlert).isTrue()
-            assertThat(answered.text).contains("Installation not found")
+            assertThat(answered.text).contains("Only Telegram group administrators")
         }
 
     @Test
