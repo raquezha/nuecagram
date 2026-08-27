@@ -125,6 +125,17 @@ data class InstallationAdminContext(
 
     val displayName: String
         get() = destinationDisplayName()
+
+    fun repositoryButtonLabel(): String {
+        val name = repoName.takeIf { it.isNotBlank() }
+            ?: gitlabProjectId?.let { "Project #$it" }
+            ?: gitlabBaseUrl.removePrefix("https://").removePrefix("http://")
+        return if (!chatName.isNullOrBlank()) {
+            "$name | $chatName"
+        } else {
+            name
+        }
+    }
 }
 
 private data class StoredCandidate(

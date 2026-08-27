@@ -148,8 +148,8 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
 
             val response = sentMessages().last().text
-            assertThat(response).contains("Installation: ${installation.id}")
-            assertThat(response).contains("GitLab: ${installation.gitlabBaseUrl}")
+            assertThat(response).contains("Installation Status")
+            assertThat(response).contains(installation.gitlabBaseUrl)
         }
 
     @Test
@@ -159,6 +159,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             bootstrapPrivateUser(52)
             val initialAuditCount = auditEventCount()
 
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 52, "member")
             assertThat(
                 postTelegram(privateUpdate(52, "/status ${installation.id}", userId = 52)).status,
             ).isEqualTo(HttpStatusCode.OK)
@@ -201,8 +202,8 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(
                 postTelegram(privateUpdate(54, "/status ${installation.id}", userId = 54)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).contains(installation.id.toString())
-            assertThat(sentMessages().last().text).contains("Muted: no")
+            assertThat(sentMessages().last().text).contains(installation.repoName)
+            assertThat(sentMessages().last().text).contains("Muted:</b> No")
             assertThat(sentMessages().last().text).contains(installation.gitlabBaseUrl)
         }
 
@@ -264,9 +265,9 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(
                 postTelegram(privateUpdate(60, "/digest ${installation.id}", userId = 60)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).contains("Digest for ${installation.id}")
-            assertThat(sentMessages().last().text).contains(installation.gitlabBaseUrl)
-            assertThat(sentMessages().last().text).contains("Muted: no")
+            assertThat(sentMessages().last().text).contains("Weekly Digest")
+            assertThat(sentMessages().last().text).contains(installation.repoName)
+            assertThat(sentMessages().last().text).contains(installation.telegramChatId.toString())
         }
 
     @Test
@@ -281,16 +282,17 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(
                 postTelegram(privateUpdate(61, "/test ${installation.id}", userId = 61)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            val delivered = sentMessages().last()
-            assertThat(delivered.chatId).isEqualTo(installation.telegramChatId.toString())
+            val delivered = sentMessages().first { it.chatId == installation.telegramChatId.toString() }
+            val confirmation = sentMessages().first { it.chatId == "61" }
             assertThat(delivered.threadId).isEqualTo(installation.telegramTopicId)
-            assertThat(delivered.text).contains(installation.id.toString())
+            assertThat(delivered.text).contains(installation.repoName)
+            assertThat(confirmation.text).contains("Test notification sent to chat")
             assertThat(auditActionCount("telegram_delivery_test")).isEqualTo(initialTestCount + 1)
 
             assertThat(
                 postTelegram(privateUpdate(61, "/test ${installation.id}", userId = 61)).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages()).hasSize(1)
+            assertThat(sentMessages()).hasSize(2)
             assertThat(auditActionCount("telegram_delivery_test")).isEqualTo(initialTestCount + 1)
         }
 
@@ -326,6 +328,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             val initialAuditCount = auditEventCount()
             val initialMuteCount = auditActionCount("telegram_mute")
 
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 64, "member")
             assertThat(
                 postTelegram(privateUpdate(64, "/mute ${installation.id}", userId = 64)).status,
             ).isEqualTo(HttpStatusCode.OK)
@@ -433,6 +436,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             // User 203 is not an admin
             val initialMuteCount = auditActionCount("telegram_mute")
 
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 203, "member")
             val muteUpdate = callbackGroupUpdate(
                 updateId = 204,
                 callbackId = "cb_unauth",
@@ -466,7 +470,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(testUpdate).status).isEqualTo(HttpStatusCode.OK)
             val answeredTest = mockTelegramService().answeredCallbacks().last()
             assertThat(answeredTest.text).isEqualTo("Test notification sent.")
-            assertThat(sentMessages().last().text).contains(installation.id.toString())
+            assertThat(sentMessages().last().text).contains(installation.repoName)
 
             val statusUpdate = callbackGroupUpdate(
                 updateId = 207,
@@ -478,6 +482,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(statusUpdate).status).isEqualTo(HttpStatusCode.OK)
             val answeredStatus = mockTelegramService().answeredCallbacks().last()
             assertThat(answeredStatus.text).contains("Installation: ${installation.id}")
+            assertThat(answeredStatus.text).contains(installation.gitlabBaseUrl)
             assertThat(answeredStatus.showAlert).isTrue()
         }
 
@@ -498,6 +503,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
                         telegramTopicId = null,
                     )
                     installationRepository.recordInstallationAdmin(inst.id, 300)
+                    mockTelegramService().setChatMemberStatus(inst.telegramChatId, 300, "administrator")
                 }
             }
 
@@ -547,8 +553,8 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(menuUpdate).status).isEqualTo(HttpStatusCode.OK)
             val menuMsg = sentMessages().last()
             assertThat(menuMsg.messageId).isEqualTo("6001")
-            assertThat(menuMsg.text).contains("Installation:")
-            assertThat(menuMsg.text).contains(installation.id.toString())
+            assertThat(menuMsg.text).contains("Repository:")
+            assertThat(menuMsg.text).contains(installation.repoName)
             assertThat(menuMsg.text).contains("Active")
 
             // Mute in place
@@ -607,7 +613,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(auditActionCount("telegram_rotate")).isEqualTo(initialRotateCount + 1)
             val executeMsg = sentMessages().last()
             assertThat(executeMsg.messageId).isEqualTo("7001")
-            assertThat(executeMsg.text).contains("Rotated installation:")
+            assertThat(executeMsg.text).contains("Rotated secret for:")
             assertThat(executeMsg.text).contains("GitLab secret token:")
         }
 
@@ -618,6 +624,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             bootstrapPrivateUser(330)
             // User 330 is NOT an admin of installation
 
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 330, "member")
             val menuUpdate = callbackPrivateUpdate(
                 updateId = 331,
                 callbackId = "cb_unauth_menu",
@@ -627,7 +634,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(menuUpdate).status).isEqualTo(HttpStatusCode.OK)
             val answered = mockTelegramService().answeredCallbacks().last()
             assertThat(answered.callbackQueryId).isEqualTo("cb_unauth_menu")
-            assertThat(answered.text).isEqualTo("Installation not found.")
+            assertThat(answered.text).isEqualTo("Only Telegram group administrators can use this command.")
             assertThat(answered.showAlert).isTrue()
         }
 
@@ -674,7 +681,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(
                 sentMessages().any {
-                    it.text.contains("Management for ${installation.id}")
+                    it.text.contains("Repository:") && it.text.contains(installation.repoName)
                 },
             ).isTrue()
         }
@@ -683,6 +690,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         runBlocking {
             installationRepository.upsertTelegramPrivateChat(userId, userId)
         }
+        mockTelegramService().setChatMemberStatus(installation.telegramChatId, userId, "administrator")
     }
 
     private fun auditEventCount(): Long =

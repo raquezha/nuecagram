@@ -296,7 +296,7 @@ class WebDashboardTest : BaseEventTestHelper() {
 
         val delivered = sentMessages().last()
         assertThat(delivered.chatId).isEqualTo(installation.telegramChatId.toString())
-        assertThat(delivered.text).contains(installation.id.toString())
+        assertThat(delivered.text).contains(installation.repoName)
     }
 
     @Test
