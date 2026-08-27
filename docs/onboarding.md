@@ -1,6 +1,6 @@
 # Onboarding
 
-Nuecagram features a **DM-first** management experience. Group administrators run `/setup` in the destination group or topic, then use private DM commands and inline callback menus to manage GitLab notification webhooks. Text-based slash commands remain fully supported as fallbacks and recovery tools.
+Nuecagram features a **DM-first** management experience. Group administrators run `/setup` in the destination group or topic to receive an inline button that opens the Web App setup wizard, then use private DM commands and inline callback menus to manage GitLab notification webhooks. Text-based slash commands remain supported for management and recovery tools.
 
 ## Telegram setup
 
@@ -12,23 +12,19 @@ Nuecagram features a **DM-first** management experience. Group administrators ru
 
 ## Primary Path: Group Setup, then DM Management
 
-1. In your destination Telegram group chat or forum topic, run `/setup https://gitlab.com <project-id>`.
-2. The bot stores the group or topic as the notification destination and sends credentials to the administrator's private chat.
-3. Use DM commands such as `/manage`, `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest` to manage the installation.
-4. Use the inline menu in DM when you want callback navigation instead of typing commands.
-5. Copy the secret token immediately and configure your GitLab webhook. For security, raw secrets are displayed **only once** in the private DM.
+1. In your destination Telegram group chat or forum topic, run `/setup`.
+2. The bot replies with an inline button for that group or topic.
+3. Tap the button to open the existing Web App wizard.
+4. Enter your GitLab base URL and project ID in the wizard.
+5. Copy the webhook URL and secret token from the in-app reveal screen, then configure your GitLab webhook.
+6. Use DM commands such as `/manage`, `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest` to manage the installation.
+7. Use the inline menu in DM when you want callback navigation instead of typing commands.
 
-## Fallback Path: Command-First Onboarding
+## Setup Flow Notes
 
-If you prefer the command-only path, run:
+Run `/setup` only inside the destination Telegram group or forum topic. The command captures the Telegram group ID, the initiating admin user ID, and the topic ID when present. GitLab URL and project ID are entered later in the Web App wizard.
 
-```text
-/setup https://gitlab.com <project-id>
-```
-
-For a normal group or main chat, Nuecagram stores the chat as the notification destination. For a topic-enabled supergroup, run the command inside the topic that should receive notifications; Nuecagram stores Telegram's message thread automatically.
-
-Nuecagram sends all credential material only to the administrator's private chat. The group response contains no webhook secret and no management link.
+You still need private `/start` first so the Web App session can complete DM bootstrap checks.
 
 ## Configure the GitLab webhook
 
@@ -38,14 +34,14 @@ You have 2 choices for configuring webhooks in GitLab:
 Configure once at the GitLab Group level so all current and future projects in the group send events automatically:
 - Go to **Group Settings > Webhooks** in GitLab.
 - **URL**: `${NUECAGRAM_PUBLIC_URL}/webhook`
-- **Secret token**: the generated secret token from the private `/setup` message.
+- **Secret token**: the generated secret token from the Web App reveal screen.
 - **Trigger events**: Push, Tag, Pipeline, Merge Request, Issue, Note, Release, Job.
 
 ### Choice 2: Project-Level Webhook
 Configure for individual projects one by one:
 - Go to **Project Settings > Webhooks** in GitLab.
 - **URL**: `${NUECAGRAM_PUBLIC_URL}/webhook`
-- **Secret token**: the generated secret token from the private `/setup` message.
+- **Secret token**: the generated secret token from the Web App reveal screen.
 - **Trigger events**: enable pipeline, push, tag, merge request, issue, note, wiki, deployment, and release events as needed.
 
 Do not configure custom Nuecagram headers. Routing comes from the verified installation secret stored by Nuecagram.
@@ -60,7 +56,7 @@ Telegram group administrators run `/setup` in the target group/topic, then manag
 |---------|----------|--------------|---------------------|------------------|--------------------------|
 | `/start` | Private DM | All Users | None | DM: `Private onboarding is ready.` | Group: `Start a private chat with the bot first.` |
 | `/help` | Group or DM | All Users | None | Group: Short guidance + DM button<br>DM: Categorized inline menu | None |
-| `/setup` | Group / Topic | Group Admins | `<gitlab-base-url> <project-id>` | Group: `Private setup details sent.`<br>DM: Credential, Webhook URL, Management URL | Missing args: Usage & example<br>No DM start: `Use /start in a private chat...`<br>Non-admin: `Only Telegram group administrators...` |
+| `/setup` | Group / Topic | Group Admins | None | Group: Web App launcher button | No DM start: `Use /start in a private chat...`<br>Non-admin: `Only Telegram group administrators...` |
 | `/manage` | Private DM | Group Admins | Optional `<installation-id>` | DM: Installation picker or single-use management URL | Group: DM redirect button<br>Missing ID with picker unavailable: no installations found<br>Unauthorized: `Only Telegram group administrators...` |
 | `/test` | Private DM | Group Admins | `<installation-id>` | Stored group/topic receives test notification | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
 | `/status` | Private DM | Group Admins | `<installation-id>` | DM: Status, GitLab URL, Project ID, Mute state | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
@@ -101,9 +97,9 @@ If you run a command and receive an error message in Telegram, follow the resolu
   1. Go to your destination Telegram group or forum topic.
   2. Run the command inside the group chat.
 
-### 5. Usage Guidance (e.g., `Usage: /setup <gitlab-base-url> <project-id>`)
-* **Cause**: The command was sent with missing or incorrectly formatted parameters.
+### 5. Usage Guidance
+* **Cause**: Some DM management commands still require an installation ID.
 * **Resolution**:
-  - For `/setup`: include your GitLab base URL and numeric project ID (e.g. `/setup https://gitlab.com 12345678`).
+  - For `/setup`: run `/setup` with no arguments inside the target group or topic.
   - For `/test`, `/manage`, `/rotate`: include your 8-character installation ID (e.g. `/test a1b2c3d4`).
 

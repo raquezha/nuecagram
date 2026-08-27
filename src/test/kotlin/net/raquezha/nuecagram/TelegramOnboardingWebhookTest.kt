@@ -25,7 +25,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             configureTestApplication()
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 70, "administrator")
             val initialAuditCount = auditEventCount()
-            val initialSetupAuditCount = auditActionCount("telegram_setup")
+            val initialLaunchAuditCount = auditActionCount("telegram_webapp_launch")
 
             assertThat(
                 postTelegram(
@@ -36,7 +36,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 sentMessages().last().text,
             ).isEqualTo("Use /start in a private chat before using admin commands.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
-            assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount)
+            assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
         }
 
     @Test
@@ -44,7 +44,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         testApplication {
             configureTestApplication()
             val initialAuditCount = auditEventCount()
-            val initialSetupAuditCount = auditActionCount("telegram_setup")
+            val initialLaunchAuditCount = auditActionCount("telegram_webapp_launch")
 
             assertThat(
                 postTelegram(
@@ -54,7 +54,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
             assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
-            assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount)
+            assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
         }
 
     @Test
@@ -71,7 +71,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun setupShowsUsageToConfirmedAdminWithoutArguments() =
+    fun setupLaunchesWebAppForConfirmedAdminWithoutArguments() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(77)
@@ -82,16 +82,18 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     groupUpdate(177, "/setup", installation.telegramChatId, userId = 77),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo(
-                "Usage: <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code>\n" +
-                    "Example: <code>/setup https://gitlab.com 12345678</code>",
-            )
+
+            val lastMessage = sentMessages().last()
+            assertThat(lastMessage.text).contains("Open Nuecagram Web App to set up GitLab notifications:")
+            assertThat(lastMessage.replyMarkup).isNotNull()
+            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(button.text).isEqualTo("Set Up GitLab Notifications")
+            assertThat(button.webApp).isNotNull()
+            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
         }
 
     @Test
-    fun setupSendsCredentialOnlyToPrivateChatAndAudits() {
+    fun setupLaunchesWebAppWithoutCreatingInstallationOrSendingDmSecrets() {
         val previous = System.getProperty("nuecagram.publicUrl")
         System.setProperty("nuecagram.publicUrl", "https://android.nweca.com/nuecagram")
         try {
@@ -99,8 +101,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 configureTestApplication()
                 bootstrapPrivateUser(71)
                 mockTelegramService().setChatMemberStatus(installation.telegramChatId, 71, "administrator")
-                val initialSetupAuditCount = auditActionCount("telegram_setup")
-                val initialLinkAuditCount = auditActionCount("telegram_management_link")
+                val initialLaunchAuditCount = auditActionCount("telegram_webapp_launch")
 
                 assertThat(
                     postTelegram(
@@ -116,25 +117,16 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     ).status,
                 ).isEqualTo(HttpStatusCode.OK)
 
-                val privateMessage = messagesForChat(71).single()
                 val groupMessage = messagesForChat(installation.telegramChatId).single()
-                assertThat(privateMessage.text).contains("GitLab secret token:")
-                assertThat(privateMessage.text).contains("Management URL:")
-                assertThat(privateMessage.text).contains("Webhook URL:")
-                assertThat(privateMessage.text).contains("https://android.nweca.com/nuecagram/webhook")
-                assertThat(privateMessage.text).contains("https://android.nweca.com/nuecagram/manage/")
-                assertThat(groupMessage.text).isEqualTo("Private setup details sent.")
-                assertThat(groupMessage.text).doesNotContain("GitLab secret token:")
-                assertThat(groupMessage.text).doesNotContain("Management URL:")
-                assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(1)
-                assertThat(installationTopicId("https://gitlab.example.com", 321L)).isEqualTo(777)
-                assertThat(installationRepoName("https://gitlab.example.com", 321L)).isEqualTo("Project #321")
-                assertThat(auditActionCount("telegram_setup")).isEqualTo(initialSetupAuditCount + 1)
-                assertThat(auditActionCount("telegram_management_link")).isEqualTo(initialLinkAuditCount + 1)
-
-                val setupMetadata = setupAuditMetadata(71)
-                assertThat(setupMetadata).contains("alice71")
-                assertThat(setupMetadata).contains("Alice")
+                assertThat(groupMessage.text).isEqualTo("Open Nuecagram Web App to set up GitLab notifications:")
+                assertThat(groupMessage.replyMarkup).isNotNull()
+                val button = groupMessage.replyMarkup!!.inlineKeyboard.single().single()
+                assertThat(button.text).isEqualTo("Set Up GitLab Notifications")
+                assertThat(button.webApp).isNotNull()
+                assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+                assertThat(messagesForChat(71)).isEmpty()
+                assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
+                assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount + 1)
             }
         } finally {
             if (previous == null) {
@@ -290,27 +282,8 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             }
         }
 
-    private fun setupAuditMetadata(userId: Long): String =
-        runBlocking {
-            DatabaseFactory.dbQuery { connection ->
-                val sql = "SELECT metadata FROM audit_events WHERE action = 'telegram_setup' AND actor_id = ?"
-                connection.prepareStatement(sql).use { statement ->
-                    statement.setString(1, userId.toString())
-                    statement.executeQuery().use { result ->
-                        if (result.next()) result.getString(1) else ""
-                    }
-                }
-            }
-        }
-
     private fun installationCount(gitlabBaseUrl: String, projectId: Long): Long =
         installationValue(gitlabBaseUrl, projectId, "COUNT(*)") as Long
-
-    private fun installationTopicId(gitlabBaseUrl: String, projectId: Long): Long? =
-        installationValue(gitlabBaseUrl, projectId, "telegram_topic_id") as Long?
-
-    private fun installationRepoName(gitlabBaseUrl: String, projectId: Long): String =
-        installationValue(gitlabBaseUrl, projectId, "repo_name") as String
 
     private fun installationValue(
         gitlabBaseUrl: String,

@@ -101,11 +101,11 @@ object TelegramMenuMessages {
         "⚙️ <b>First-Time Setup Instructions</b>\n\n" +
             "1. Send <code>/start</code> in a private chat with the bot.\n" +
             "2. Add the bot as an Administrator to your Telegram group or topic.\n" +
-            "3. Run <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in your group/topic."
+            "3. Run <code>/setup</code> in your group/topic, then finish GitLab setup in the Web App wizard."
 
     const val HELP_COMMANDS_TEXT =
         "📖 <b>Command Reference</b>\n\n" +
-            "• <code>/setup &lt;url&gt; &lt;project-id&gt;</code> (Group) : Bind project\n" +
+            "• <code>/setup</code> (Group) : Open setup wizard\n" +
             "• <code>/status &lt;inst-id&gt;</code> (DM) : View installation status\n" +
             "• <code>/test &lt;inst-id&gt;</code> (DM) : Send test notification\n" +
             "• <code>/manage [inst-id]</code> (DM) : Management dashboard / menu\n" +

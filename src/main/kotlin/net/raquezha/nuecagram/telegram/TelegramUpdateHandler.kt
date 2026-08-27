@@ -5,18 +5,15 @@ package net.raquezha.nuecagram.telegram
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.db.InstallationAdminContext
-import net.raquezha.nuecagram.db.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
 
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
 private const val GROUP_HELP_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
-        "Run <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code> in this group to bind notifications.\n" +
+        "Run <code>/setup</code> in this group or topic to open the GitLab setup wizard.\n" +
         "For status, management, and configuration options, open a private chat with the bot."
 private const val STATUS_USAGE_MESSAGE = "Usage: <code>/status &lt;installation-id&gt;</code>"
 private const val DIGEST_USAGE_MESSAGE = "Usage: <code>/digest &lt;installation-id&gt;</code>"
@@ -24,9 +21,6 @@ private const val TEST_USAGE_MESSAGE =
     "Usage: <code>/test &lt;installation-id&gt;</code>\nExample: <code>/test a1b2c3d4</code>"
 private const val MUTE_USAGE_MESSAGE = "Usage: <code>/mute &lt;installation-id&gt;</code>"
 private const val UNMUTE_USAGE_MESSAGE = "Usage: <code>/unmute &lt;installation-id&gt;</code>"
-private const val SETUP_USAGE_MESSAGE =
-    "Usage: <code>/setup &lt;gitlab-base-url&gt; &lt;project-id&gt;</code>\n" +
-        "Example: <code>/setup https://gitlab.com 12345678</code>"
 private const val MANAGE_USAGE_MESSAGE =
     "Usage: <code>/manage &lt;installation-id&gt;</code>\nExample: <code>/manage a1b2c3d4</code>"
 private const val ROTATE_USAGE_MESSAGE =
@@ -39,29 +33,16 @@ private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
 private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
 private const val MANAGEMENT_LINK_TTL_MINUTES = 30L
 private const val ROTATION_GRACE_MINUTES = 0L
-private const val SETUP_ARG_COUNT_MIN = 3
-private const val SETUP_ARG_COUNT_MAX = 4
-private const val SETUP_URL_INDEX = 1
-private const val SETUP_PROJECT_INDEX = 2
-private const val SETUP_REPO_NAME_INDEX = 3
 private const val LAUNCH_NONCE_TTL_MINUTES = 10L
 
 private data class AuthorizedGroupAdmin(
     val actorId: Long,
-    val privateChatId: Long,
-    val user: TelegramUpdate.User? = null,
 )
 
 private data class AuthorizedInstallationCommand(
     val installation: InstallationAdminContext,
     val actorId: Long,
     val privateChatId: Long,
-)
-
-private data class SetupArguments(
-    val gitlabBaseUrl: String,
-    val projectId: Long,
-    val repoName: String?,
 )
 
 @Suppress("TooManyFunctions")
@@ -306,46 +287,19 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun handleSetup(message: TelegramUpdate.Message) {
-        val authorized = authorizeGroupAdmin(message, SETUP_USAGE_MESSAGE) ?: return
-        val setup = parseSetupArgumentsValue(message.text) ?: run {
-            send(message.chat.id, SETUP_USAGE_MESSAGE, message.messageThreadId)
-            return
-        }
-        val installation =
-            installationRepository.createInstallation(
-                repoName = setup.repoName ?: "Project #${setup.projectId}",
-                chatName = message.chat.title,
-                gitlabBaseUrl = setup.gitlabBaseUrl,
-                gitlabProjectId = setup.projectId,
-                telegramChatId = message.chat.id,
-                telegramTopicId = message.messageThreadId,
-            )
-        installationRepository.recordInstallationAdmin(installation.id, authorized.actorId)
-        val credential = installationRepository.issueWebhookSecret(installation.id)
-        val managementLink = installationRepository.issueManagementLink(installation.id, managementLinkExpiry())
+        val authorized = authorizeGroupAdmin(message, requireArguments = false) ?: return
         installationRepository.writeAuditEvent(
-            installationId = installation.id,
+            installationId = null,
             actorType = "telegram",
             actorId = authorized.actorId.toString(),
-            action = "telegram_setup",
-            metadataJson = authorized.user.toAuditMetadataJson(),
-        )
-        installationRepository.writeAuditEvent(
-            installationId = installation.id,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_management_link",
-        )
-        send(
-            authorized.privateChatId,
-            setupDetailsText(config, installation, credential.raw, managementLink.raw),
+            action = "telegram_webapp_launch",
         )
         sendLauncherMessage(
             message.chat.id,
             message.messageThreadId,
             authorized.actorId,
-            PRIVATE_DELIVERY_MESSAGE,
-            "Open Setup in Web App",
+            "Open Nuecagram Web App to set up GitLab notifications:",
+            "Set Up GitLab Notifications",
         )
     }
 
@@ -448,7 +402,6 @@ class TelegramUpdateHandler(
 
     private suspend fun authorizeGroupAdmin(
         message: TelegramUpdate.Message,
-        usageMessage: String,
         requireArguments: Boolean = true,
     ): AuthorizedGroupAdmin? {
         val text = message.text?.trim().orEmpty()
@@ -469,15 +422,12 @@ class TelegramUpdateHandler(
                 send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
                 null
             }
-            requireArguments && text.substringAfter(' ', "").isBlank() -> {
-                send(message.chat.id, usageMessage, message.messageThreadId)
-                null
-            }
+            requireArguments && text.substringAfter(' ', "").isBlank() -> null
             userId == null || privateChatId == null -> {
                 send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
                 null
             }
-            else -> AuthorizedGroupAdmin(userId, privateChatId, message.from)
+            else -> AuthorizedGroupAdmin(userId)
         }
 
         return result
@@ -635,25 +585,6 @@ class TelegramUpdateHandler(
     }
 }
 
-private fun parseSetupArgumentsValue(text: String?): SetupArguments? {
-    val parts = text?.trim()?.split(Regex("\\s+")) ?: return null
-    if (parts.size !in SETUP_ARG_COUNT_MIN..SETUP_ARG_COUNT_MAX) return null
-    val url = parts[SETUP_URL_INDEX]
-    val projectId = parts[SETUP_PROJECT_INDEX].toLongOrNull() ?: return null
-    val repoName = parts.getOrNull(SETUP_REPO_NAME_INDEX)?.trim()?.takeIf(String::isNotBlank)
-    return SetupArguments(url, projectId, repoName)
-}
-
-private fun TelegramUpdate.User?.toAuditMetadataJson(): String =
-    this?.let { u ->
-        val map = buildMap {
-            u.username?.takeIf(String::isNotBlank)?.let { put("username", it) }
-            u.firstName?.takeIf(String::isNotBlank)?.let { put("first_name", it) }
-            u.lastName?.takeIf(String::isNotBlank)?.let { put("last_name", it) }
-        }
-        if (map.isNotEmpty()) Json.encodeToString(map) else "{}"
-    } ?: "{}"
-
 private fun InstallationAdminContext.statusText(): String =
     buildString {
         append("Installation: ")
@@ -702,23 +633,6 @@ private fun ConfigWithSecrets.webhookUrl(): String = "${publicBaseUrl()}/webhook
 
 private fun ConfigWithSecrets.managementUrl(code: String): String =
     "${publicBaseUrl()}/manage/$code"
-
-private fun setupDetailsText(
-    config: ConfigWithSecrets,
-    installation: InstallationRecord,
-    credential: String,
-    managementCode: String,
-): String =
-    buildString {
-        append("Installation: ")
-        append(installation.id)
-        append("\nWebhook URL: ")
-        append(config.webhookUrl())
-        append("\nGitLab secret token: ")
-        append(credential)
-        append("\nManagement URL: ")
-        append(config.managementUrl(managementCode))
-    }
 
 private fun managementLinkText(
     config: ConfigWithSecrets,

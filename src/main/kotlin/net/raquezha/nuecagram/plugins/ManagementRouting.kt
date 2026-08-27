@@ -19,7 +19,6 @@ import kotlinx.html.button
 import kotlinx.html.code
 import kotlinx.html.details
 import kotlinx.html.div
-import kotlinx.html.em
 import kotlinx.html.form
 import kotlinx.html.h1
 import kotlinx.html.h2
@@ -426,16 +425,12 @@ private fun onboardingHtml(basePath: String): String =
             p {
                 span(classes = "cmd-label") { +"Telegram Command" }
                 +" "
-                code(classes = "cmd") { +"/setup <gitlab-base-url> <project-id>" }
-            }
-            p {
-                em { +"Example:" }
-                +" "
-                code(classes = "cmd") { +"/setup https://gitlab.com 12345678" }
+                code(classes = "cmd") { +"/setup" }
             }
             p {
                 attributes["style"] = "margin-bottom: 0;"
-                +"Nuecagram will privately send your secret webhook URL and token directly to your private chat."
+                +("Nuecagram replies with an inline button for that group or topic; " +
+                    "tap it to open the Web App wizard and reveal your webhook URL and token in-app.")
             }
         }
 
