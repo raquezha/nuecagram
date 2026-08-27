@@ -373,13 +373,13 @@ class TelegramMenuHandler(
             inlineKeyboard = listOf(
                 listOf(
                     InlineKeyboardButton(
-                        text = "✅ Yes, Rotate Secret",
+                        text = "Yes, Rotate Secret",
                         callbackData = "inst:rotate:execute:$installationId",
                     ),
                 ),
                 listOf(
                     InlineKeyboardButton(
-                        text = "« Cancel",
+                        text = "Cancel",
                         callbackData = "inst:menu:$installationId",
                     ),
                 ),
@@ -391,7 +391,7 @@ class TelegramMenuHandler(
             inlineKeyboard = listOf(
                 listOf(
                     InlineKeyboardButton(
-                        text = "« Back to Menu",
+                        text = "Back to Menu",
                         callbackData = "inst:menu:$installationId",
                     ),
                 ),
@@ -505,7 +505,7 @@ class TelegramMenuHandler(
                     InlineKeyboardButton(text = "Open Web App", webApp = WebAppInfo(url = webAppUrl)),
                 ),
                 listOf(
-                    InlineKeyboardButton(text = "« Back", callbackData = "inst:help_menu:all"),
+                    InlineKeyboardButton(text = "Back", callbackData = "inst:help_menu:all"),
                 ),
             ),
         )
@@ -521,9 +521,9 @@ class TelegramMenuHandler(
                 "Select an option below to manage notification installations or view command instructions:"
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(
-                listOf(InlineKeyboardButton(text = "📦 My Installations", callbackData = "inst:list:page=0")),
-                listOf(InlineKeyboardButton(text = "⚙️ Setup Instructions", callbackData = "inst:help_setup:all")),
-                listOf(InlineKeyboardButton(text = "📖 Command List", callbackData = "inst:help_commands:all")),
+                listOf(InlineKeyboardButton(text = "My Installations", callbackData = "inst:list:page=0")),
+                listOf(InlineKeyboardButton(text = "Setup Instructions", callbackData = "inst:help_setup:all")),
+                listOf(InlineKeyboardButton(text = "Command List", callbackData = "inst:help_commands:all")),
             ),
         )
         send(
@@ -549,7 +549,7 @@ class TelegramMenuHandler(
     ) {
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(
-                listOf(InlineKeyboardButton(text = "« Back", callbackData = "inst:help_menu:all")),
+                listOf(InlineKeyboardButton(text = "Back", callbackData = "inst:help_menu:all")),
             ),
         )
         send(
@@ -567,7 +567,7 @@ class TelegramMenuHandler(
     ) {
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(
-                listOf(InlineKeyboardButton(text = "« Back", callbackData = "inst:help_menu:all")),
+                listOf(InlineKeyboardButton(text = "Back", callbackData = "inst:help_menu:all")),
             ),
         )
         send(

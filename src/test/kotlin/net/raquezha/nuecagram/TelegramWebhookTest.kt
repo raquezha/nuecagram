@@ -118,11 +118,11 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(helpMsg.replyMarkup).isNotNull()
             val rows = helpMsg.replyMarkup!!.inlineKeyboard
             assertThat(rows).hasSize(3)
-            assertThat(rows[0][0].text).isEqualTo("📦 My Installations")
+            assertThat(rows[0][0].text).isEqualTo("My Installations")
             assertThat(rows[0][0].callbackData).isEqualTo("inst:list:page=0")
-            assertThat(rows[1][0].text).isEqualTo("⚙️ Setup Instructions")
+            assertThat(rows[1][0].text).isEqualTo("Setup Instructions")
             assertThat(rows[1][0].callbackData).isEqualTo("inst:help_setup:all")
-            assertThat(rows[2][0].text).isEqualTo("📖 Command List")
+            assertThat(rows[2][0].text).isEqualTo("Command List")
             assertThat(rows[2][0].callbackData).isEqualTo("inst:help_commands:all")
 
             val setupCallback = callbackPrivateUpdate(
@@ -677,6 +677,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(confirmMsg.messageId).isEqualTo("7001")
             assertThat(confirmMsg.text).contains("Are you sure you want to rotate")
             val executeButton = confirmMsg.replyMarkup!!.inlineKeyboard.first().first()
+            assertThat(executeButton.text).isEqualTo("Yes, Rotate Secret")
             assertThat(executeButton.callbackData).isEqualTo("inst:rotate:execute:${installation.id}")
             assertThat(auditActionCount("telegram_rotate")).isEqualTo(initialRotateCount)
 
