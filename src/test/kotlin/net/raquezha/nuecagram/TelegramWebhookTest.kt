@@ -29,13 +29,24 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun recordsPrivateStartOnlyOnce() =
+    fun privateStartRecordsChatAndReturnsWelcomeWithoutInlineButton() =
         testApplication {
             configureTestApplication()
             val update = privateUpdate(42, "/start", userId = 42)
+            val nextUpdate = privateUpdate(43, "/start", userId = 42)
+
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
             assertThat(postTelegram(update).status).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages()).hasSize(1)
+            assertThat(postTelegram(nextUpdate).status).isEqualTo(HttpStatusCode.OK)
+
+            assertThat(sentMessages()).hasSize(2)
+            val welcome = sentMessages().first()
+            assertThat(welcome.text).contains("Nuecagram GitLab Notification Gateway")
+            assertThat(welcome.text).contains("/manage")
+            assertThat(welcome.text).doesNotContain("/myinstallations")
+            assertThat(welcome.text).contains("OPEN")
+            assertThat(welcome.replyMarkup).isNull()
+            assertThat(sentMessages().last().text).isEqualTo(welcome.text)
             assertThat(runBlocking { installationRepository.telegramPrivateChatId(42) }).isEqualTo(42)
         }
 
@@ -107,11 +118,11 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(helpMsg.replyMarkup).isNotNull()
             val rows = helpMsg.replyMarkup!!.inlineKeyboard
             assertThat(rows).hasSize(3)
-            assertThat(rows[0][0].text).isEqualTo("📦 My Installations")
+            assertThat(rows[0][0].text).isEqualTo("My Installations")
             assertThat(rows[0][0].callbackData).isEqualTo("inst:list:page=0")
-            assertThat(rows[1][0].text).isEqualTo("⚙️ Setup Instructions")
+            assertThat(rows[1][0].text).isEqualTo("Setup Instructions")
             assertThat(rows[1][0].callbackData).isEqualTo("inst:help_setup:all")
-            assertThat(rows[2][0].text).isEqualTo("📖 Command List")
+            assertThat(rows[2][0].text).isEqualTo("Command List")
             assertThat(rows[2][0].callbackData).isEqualTo("inst:help_commands:all")
 
             val setupCallback = callbackPrivateUpdate(
@@ -133,6 +144,85 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(postTelegram(commandsCallback).status).isEqualTo(HttpStatusCode.OK)
             val commandsMsg = sentMessages().last()
             assertThat(commandsMsg.text).contains("Command Reference")
+        }
+
+    @Test
+    fun dmRepositoryScopedCommandsUseDirectActionsForSingleInstallation() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(580)
+            runBlocking { installationRepository.recordInstallationAdmin(installation.id, 580) }
+
+            assertThat(postTelegram(privateUpdate(5800, "/status", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains("Installation Status")
+
+            assertThat(postTelegram(privateUpdate(5801, "/rotate", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            val rotateMsg = sentMessages().last()
+            assertThat(rotateMsg.text).contains("Rotate Webhook Secret")
+            assertThat(rotateMsg.replyMarkup!!.inlineKeyboard.first().first().callbackData)
+                .isEqualTo("inst:rotate:execute:${installation.id}")
+
+            assertThat(postTelegram(privateUpdate(5802, "/mute", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Installation muted.")
+
+            assertThat(postTelegram(privateUpdate(5803, "/unmute", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).isEqualTo("Installation unmuted.")
+
+            assertThat(postTelegram(privateUpdate(5804, "/test", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains("Test notification sent")
+
+            assertThat(postTelegram(privateUpdate(5805, "/digest", userId = 580)).status)
+                .isEqualTo(HttpStatusCode.OK)
+            assertThat(sentMessages().last().text).contains("Weekly Digest")
+
+            assertThat(installationMuted(installation.id)).isFalse()
+        }
+
+    @Test
+    fun dmRepositoryScopedPickerKeepsActionWhenPaginating() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(590)
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 590)
+                for (i in 1..9) {
+                    val inst = installationRepository.createInstallation(
+                        gitlabBaseUrl = "https://gitlab.com",
+                        gitlabProjectId = 590L + i,
+                        telegramChatId = 5900L + i,
+                        telegramTopicId = null,
+                    )
+                    installationRepository.recordInstallationAdmin(inst.id, 590)
+                    mockTelegramService().setChatMemberStatus(inst.telegramChatId, 590, "administrator")
+                }
+            }
+
+            assertThat(postTelegram(privateUpdate(5900, "/digest", userId = 590)).status)
+                .isEqualTo(HttpStatusCode.OK)
+
+            val nextButton = sentMessages().last().replyMarkup!!.inlineKeyboard.last().last()
+            assertThat(nextButton.callbackData).isEqualTo("inst:digest:page=1")
+
+            assertThat(
+                postTelegram(
+                    callbackPrivateUpdate(
+                        updateId = 5901,
+                        callbackId = "cb_digest_page",
+                        data = nextButton.callbackData,
+                        userId = 590,
+                        messageId = 9001,
+                    ),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val pageTwo = sentMessages().last()
+            assertThat(pageTwo.text).contains("Select a repository to view digest summary:")
+            assertThat(pageTwo.replyMarkup!!.inlineKeyboard.first().first().callbackData).startsWith("inst:digest:")
         }
 
     @Test
@@ -598,6 +688,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             assertThat(confirmMsg.messageId).isEqualTo("7001")
             assertThat(confirmMsg.text).contains("Are you sure you want to rotate")
             val executeButton = confirmMsg.replyMarkup!!.inlineKeyboard.first().first()
+            assertThat(executeButton.text).isEqualTo("Yes, Rotate Secret")
             assertThat(executeButton.callbackData).isEqualTo("inst:rotate:execute:${installation.id}")
             assertThat(auditActionCount("telegram_rotate")).isEqualTo(initialRotateCount)
 

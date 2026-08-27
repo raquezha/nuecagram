@@ -7,6 +7,16 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class BotCommand(
+    @get:JsonProperty("command")
+    @SerialName("command")
+    val command: String,
+    @get:JsonProperty("description")
+    @SerialName("description")
+    val description: String,
+)
+
+@Serializable
 data class WebAppInfo(
     @get:JsonProperty("url")
     @SerialName("url")

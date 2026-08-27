@@ -13,6 +13,7 @@ import org.apache.http.HttpException
 
 private const val TELEGRAM_API_BASE_URL = "https://api.telegram.org/bot"
 private const val METHOD_GET_CHAT_MEMBER = "getChatMember"
+private const val METHOD_SET_MY_COMMANDS = "setMyCommands"
 private const val METHOD_SEND_MESSAGE = "sendMessage"
 private const val METHOD_EDIT_MESSAGE_TEXT = "editMessageText"
 private const val METHOD_ANSWER_CALLBACK_QUERY = "answerCallbackQuery"
@@ -22,6 +23,17 @@ class TelegramServiceImpl(
     private val config: ConfigWithSecrets,
 ) : TelegramService {
     private val mapper = ObjectMapper()
+
+    override suspend fun setMyCommands(commands: List<BotCommand>): Boolean {
+        val response = client.post(telegramEndpoint(METHOD_SET_MY_COMMANDS)) {
+            contentType(ContentType.Application.Json)
+            setBody(mapper.writeValueAsString(mapOf("commands" to commands)))
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw HttpException("Failed to set bot commands: ${response.status}")
+        }
+        return true
+    }
 
     override suspend fun chatMemberStatus(
         chatId: Long,

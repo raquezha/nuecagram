@@ -16,6 +16,8 @@ import kotlinx.coroutines.launch
 import net.raquezha.nuecagram.configuredRoute
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.telegram.BotCommand
+import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestException
@@ -25,6 +27,17 @@ import org.koin.ktor.ext.inject
 
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
+private val BOT_COMMANDS = listOf(
+    BotCommand("manage", "View and manage connected repositories"),
+    BotCommand("status", "Choose a repository and view status"),
+    BotCommand("test", "Choose a repository and send a test"),
+    BotCommand("rotate", "Choose a repository and rotate secret"),
+    BotCommand("mute", "Choose a repository and pause notifications"),
+    BotCommand("unmute", "Choose a repository and resume notifications"),
+    BotCommand("digest", "Choose a repository and view summary"),
+    BotCommand("setup", "How to bind a new GitLab repository"),
+    BotCommand("help", "View command reference and instructions"),
+)
 
 private fun Application.healthPath() = configuredRoute("/health")
 
@@ -66,8 +79,14 @@ fun Application.configureRouting() {
     val databaseFactory by inject<DatabaseFactory>()
     val webhookService by inject<WebHookService>()
     val installationRepository by inject<InstallationRepository>()
+    val telegramService by inject<TelegramService>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
+
+    launch {
+        runCatching { telegramService.setMyCommands(BOT_COMMANDS) }
+            .onFailure { logger.warn(it) { "Failed to configure Telegram bot commands" } }
+    }
 
     routing {
         healthRouting(this@configureRouting.healthPath(), databaseFactory)

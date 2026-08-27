@@ -1,6 +1,8 @@
 package net.raquezha.nuecagram.telegram
 
 interface TelegramService {
+    suspend fun setMyCommands(commands: List<BotCommand>): Boolean
+
     suspend fun sendMessage(message: Message): String
 
     suspend fun chatMemberStatus(

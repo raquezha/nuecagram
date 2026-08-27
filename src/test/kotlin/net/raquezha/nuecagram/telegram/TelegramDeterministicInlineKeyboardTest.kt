@@ -64,7 +64,7 @@ class TelegramDeterministicInlineKeyboardTest : BaseEventTestHelper() {
             val rotateMsg = sentMessages().last()
             assertThat(rotateMsg.text).contains("Rotate Webhook Secret")
             val rotateCancelBtn = rotateMsg.replyMarkup!!.inlineKeyboard.flatten().last()
-            assertThat(rotateCancelBtn.text).isEqualTo("« Cancel")
+            assertThat(rotateCancelBtn.text).isEqualTo("Cancel")
 
             // /mute without args
             assertThat(
@@ -116,7 +116,7 @@ class TelegramDeterministicInlineKeyboardTest : BaseEventTestHelper() {
             val setupMsg = sentMessages().last()
             assertThat(setupMsg.text).contains("First-Time Setup Instructions")
             val setupBackBtn = setupMsg.replyMarkup!!.inlineKeyboard.single().single()
-            assertThat(setupBackBtn.text).isEqualTo("« Back")
+            assertThat(setupBackBtn.text).isEqualTo("Back")
             assertThat(setupBackBtn.callbackData).isEqualTo("inst:help_menu:all")
 
             // 3. Click « Main Menu back button
