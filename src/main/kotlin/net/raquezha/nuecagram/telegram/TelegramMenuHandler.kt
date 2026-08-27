@@ -8,8 +8,14 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
+private data class InstallationPickerSpec(
+    val actionPrefix: String,
+    val pageActionPrefix: String,
+    val headerText: String,
+)
+
 sealed interface PrivateCallbackAction {
-    data class ListPage(val page: Int) : PrivateCallbackAction
+    data class ListPage(val page: Int, val action: String) : PrivateCallbackAction
     data class Menu(val targetId: String) : PrivateCallbackAction
     data class Status(val targetId: String) : PrivateCallbackAction
     data class Test(val targetId: String) : PrivateCallbackAction
@@ -26,8 +32,10 @@ sealed interface PrivateCallbackAction {
     companion object {
         @Suppress("CyclomaticComplexMethod")
         fun from(payload: TelegramCallbackPayload): PrivateCallbackAction =
-            when (payload.action) {
-                "list" -> ListPage(parsePageIndex(payload.targetId))
+            when {
+                payload.targetId.startsWith("page=") -> ListPage(parsePageIndex(payload.targetId), payload.action)
+                payload.action == "list" -> ListPage(parsePageIndex(payload.targetId), payload.action)
+                else -> when (payload.action) {
                 "menu" -> Menu(payload.targetId)
                 "status" -> Status(payload.targetId)
                 "test" -> Test(payload.targetId)
@@ -41,6 +49,7 @@ sealed interface PrivateCallbackAction {
                 "help_setup" -> HelpSetup
                 "help_commands" -> HelpCommands
                 else -> Unknown
+            }
             }
 
         private fun parsePageIndex(targetId: String): Int =
@@ -171,7 +180,8 @@ class TelegramMenuHandler(
         userId: Long,
     ) {
         when (val action = PrivateCallbackAction.from(payload)) {
-            is PrivateCallbackAction.ListPage -> handlePrivateListCallback(callbackQuery, message, userId, action.page)
+            is PrivateCallbackAction.ListPage ->
+                handlePrivateListCallback(callbackQuery, message, userId, action.page, action.action)
             is PrivateCallbackAction.Back -> handlePrivateBackCallback(callbackQuery, message, userId, action.page)
             is PrivateCallbackAction.Menu -> handlePrivateMenuCallback(callbackQuery, message, userId, action.targetId)
             is PrivateCallbackAction.Status -> handlePrivateStatusCallback(callbackQuery, userId, action.targetId)
@@ -195,13 +205,21 @@ class TelegramMenuHandler(
         message: TelegramUpdate.Message,
         userId: Long,
         page: Int,
+        action: String,
     ) {
         val authorized = getAuthorizedInstallations(userId)
         if (authorized.isEmpty()) {
             answerCallbackError(callbackQuery.id, "No installations found.", showAlert = true)
             return
         }
-        val (text, markup) = buildInstallationListMarkup(authorized, page)
+        val spec = pickerSpec(action)
+        val (text, markup) = buildInstallationListMarkup(
+            authorized,
+            page,
+            actionPrefix = spec.actionPrefix,
+            headerText = spec.headerText,
+            pageActionPrefix = spec.pageActionPrefix,
+        )
         send(
             chatId = message.chat.id,
             text = text,
@@ -216,7 +234,7 @@ class TelegramMenuHandler(
         message: TelegramUpdate.Message,
         userId: Long,
         page: Int,
-    ) = handlePrivateListCallback(callbackQuery, message, userId, page)
+    ) = handlePrivateListCallback(callbackQuery, message, userId, page, "list")
 
     private suspend fun handlePrivateMenuCallback(
         callbackQuery: TelegramUpdate.CallbackQuery,
@@ -380,11 +398,51 @@ class TelegramMenuHandler(
             ),
         )
 
+    private fun pickerSpec(action: String): InstallationPickerSpec =
+        when (action) {
+            "status" -> InstallationPickerSpec(
+                actionPrefix = "inst:status",
+                pageActionPrefix = "inst:status",
+                headerText = "<b>Repository Status Summary</b>\nSelect a repository to view details:",
+            )
+            "test" -> InstallationPickerSpec(
+                actionPrefix = "inst:test",
+                pageActionPrefix = "inst:test",
+                headerText = "Select a repository to send a test notification:",
+            )
+            "rotate:confirm" -> InstallationPickerSpec(
+                actionPrefix = "inst:rotate:confirm",
+                pageActionPrefix = "inst:rotate:confirm",
+                headerText = "Select a repository to rotate its webhook secret:",
+            )
+            "mute" -> InstallationPickerSpec(
+                actionPrefix = "inst:mute",
+                pageActionPrefix = "inst:mute",
+                headerText = "Select a repository to pause notifications:",
+            )
+            "unmute" -> InstallationPickerSpec(
+                actionPrefix = "inst:unmute",
+                pageActionPrefix = "inst:unmute",
+                headerText = "Select a repository to resume notifications:",
+            )
+            "digest" -> InstallationPickerSpec(
+                actionPrefix = "inst:digest",
+                pageActionPrefix = "inst:digest",
+                headerText = "Select a repository to view digest summary:",
+            )
+            else -> InstallationPickerSpec(
+                actionPrefix = "inst:menu",
+                pageActionPrefix = "inst:list",
+                headerText = TelegramMenuMessages.LIST_HEADER,
+            )
+        }
+
     private fun buildInstallationListMarkup(
         installations: List<InstallationAdminContext>,
         page: Int,
         actionPrefix: String = "inst:menu",
         headerText: String = TelegramMenuMessages.LIST_HEADER,
+        pageActionPrefix: String = "inst:list",
     ): Pair<String, InlineKeyboardMarkup> {
         val totalPages = (installations.size + PAGE_SIZE - 1) / PAGE_SIZE
         val validPage = page.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
@@ -403,14 +461,20 @@ class TelegramMenuHandler(
         if (totalPages > 1) {
             val navRow = mutableListOf<InlineKeyboardButton>()
             if (validPage > 0) {
-                navRow += InlineKeyboardButton(text = "⬅️ Prev", callbackData = "inst:list:page=${validPage - 1}")
+                navRow += InlineKeyboardButton(
+                    text = "⬅️ Prev",
+                    callbackData = "$pageActionPrefix:page=${validPage - 1}",
+                )
             }
             navRow += InlineKeyboardButton(
                 text = "${validPage + 1}/$totalPages",
-                callbackData = "inst:list:page=$validPage",
+                callbackData = "$pageActionPrefix:page=$validPage",
             )
             if (validPage < totalPages - 1) {
-                navRow += InlineKeyboardButton(text = "Next ➡️", callbackData = "inst:list:page=${validPage + 1}")
+                navRow += InlineKeyboardButton(
+                    text = "Next ➡️",
+                    callbackData = "$pageActionPrefix:page=${validPage + 1}",
+                )
             }
             rows += navRow
         }
@@ -682,6 +746,7 @@ class TelegramMenuHandler(
             page = 0,
             actionPrefix = actionPrefix,
             headerText = headerText,
+            pageActionPrefix = actionPrefix,
         )
         send(message.chat.id, text, message.messageThreadId, replyMarkup = markup)
     }

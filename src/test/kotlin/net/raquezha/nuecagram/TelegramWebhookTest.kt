@@ -173,6 +173,48 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun dmRepositoryScopedPickerKeepsActionWhenPaginating() =
+        testApplication {
+            configureTestApplication()
+            bootstrapPrivateUser(590)
+            runBlocking {
+                installationRepository.recordInstallationAdmin(installation.id, 590)
+                for (i in 1..9) {
+                    val inst = installationRepository.createInstallation(
+                        gitlabBaseUrl = "https://gitlab.com",
+                        gitlabProjectId = 590L + i,
+                        telegramChatId = 5900L + i,
+                        telegramTopicId = null,
+                    )
+                    installationRepository.recordInstallationAdmin(inst.id, 590)
+                    mockTelegramService().setChatMemberStatus(inst.telegramChatId, 590, "administrator")
+                }
+            }
+
+            assertThat(postTelegram(privateUpdate(5900, "/digest", userId = 590)).status)
+                .isEqualTo(HttpStatusCode.OK)
+
+            val nextButton = sentMessages().last().replyMarkup!!.inlineKeyboard.last().last()
+            assertThat(nextButton.callbackData).isEqualTo("inst:digest:page=1")
+
+            assertThat(
+                postTelegram(
+                    callbackPrivateUpdate(
+                        updateId = 5901,
+                        callbackId = "cb_digest_page",
+                        data = nextButton.callbackData,
+                        userId = 590,
+                        messageId = 9001,
+                    ),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val pageTwo = sentMessages().last()
+            assertThat(pageTwo.text).contains("Select a repository to view digest summary:")
+            assertThat(pageTwo.replyMarkup!!.inlineKeyboard.first().first().callbackData).startsWith("inst:digest:")
+        }
+
+    @Test
     fun statusSupportsShort8CharInstallationIdPrefixInDm() =
         testApplication {
             configureTestApplication()
