@@ -29,12 +29,12 @@ private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
 private val BOT_COMMANDS = listOf(
     BotCommand("manage", "View and manage connected repositories"),
-    BotCommand("status", "View repository notification status"),
-    BotCommand("test", "Send a test notification"),
-    BotCommand("rotate", "Rotate webhook secret token"),
-    BotCommand("mute", "Pause notifications"),
-    BotCommand("unmute", "Resume notifications"),
-    BotCommand("digest", "View summary text"),
+    BotCommand("status", "Choose a repository and view status"),
+    BotCommand("test", "Choose a repository and send a test"),
+    BotCommand("rotate", "Choose a repository and rotate secret"),
+    BotCommand("mute", "Choose a repository and pause notifications"),
+    BotCommand("unmute", "Choose a repository and resume notifications"),
+    BotCommand("digest", "Choose a repository and view summary"),
     BotCommand("setup", "How to bind a new GitLab repository"),
     BotCommand("help", "View command reference and instructions"),
 )

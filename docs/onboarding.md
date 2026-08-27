@@ -58,12 +58,12 @@ Telegram group administrators run `/setup` in the target group/topic, then manag
 | `/help` | Group or DM | All Users | None | Group: Short guidance + DM button<br>DM: Categorized inline menu | None |
 | `/setup` | Group / Topic | Group Admins | None | Group: Web App launcher button | No DM start: `Use /start in a private chat...`<br>Non-admin: `Only Telegram group administrators...` |
 | `/manage` | Private DM | Group Admins | Optional `<installation-id>` | DM: Installation picker or single-use management URL | Group: DM redirect button<br>Missing ID with picker unavailable: no installations found<br>Unauthorized: `Only Telegram group administrators...` |
-| `/test` | Private DM | Group Admins | `<installation-id>` | Stored group/topic receives test notification | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
-| `/status` | Private DM | Group Admins | `<installation-id>` | DM: Status, GitLab URL, Project ID, Mute state | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
-| `/rotate` | Private DM | Group Admins | `<installation-id>` | DM: New credential & Management URL | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
-| `/mute` | Private DM | Group Admins | `<installation-id>` | DM: `Installation muted.` | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
-| `/unmute` | Private DM | Group Admins | `<installation-id>` | DM: `Installation unmuted.` | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
-| `/digest` | Private DM | Group Admins | `<installation-id>` | DM: Installation summary text | Group: DM redirect button<br>Missing ID: Usage & example<br>Unauthorized: `Only Telegram group administrators...` |
+| `/test` | Private DM | Group Admins | None | DM: Repository picker, then stored group/topic receives test notification | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
+| `/status` | Private DM | Group Admins | None | DM: Repository picker, then status, GitLab URL, Project ID, Mute state | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
+| `/rotate` | Private DM | Group Admins | None | DM: Repository picker, then rotation confirmation | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
+| `/mute` | Private DM | Group Admins | None | DM: Repository picker, then `Installation muted.` | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
+| `/unmute` | Private DM | Group Admins | None | DM: Repository picker, then `Installation unmuted.` | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
+| `/digest` | Private DM | Group Admins | None | DM: Repository picker, then installation summary text | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
 
 ---
 
@@ -98,8 +98,8 @@ If you run a command and receive an error message in Telegram, follow the resolu
   2. Run the command inside the group chat.
 
 ### 5. Usage Guidance
-* **Cause**: Some DM management commands still require an installation ID.
+* **Cause**: Some typed fallback commands can still accept an installation ID.
 * **Resolution**:
   - For `/setup`: run `/setup` with no arguments inside the target group or topic.
-  - For `/test`, `/manage`, `/rotate`: include your 8-character installation ID (e.g. `/test a1b2c3d4`).
+  - For `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest`: run the command in DM and choose a repository from the picker.
 
