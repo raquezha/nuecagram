@@ -911,7 +911,7 @@ private fun webAppShellHtml(basePath: String): String = """
           </div>
           <div class="field">
             <label>Webhook URL</label>
-            <div id="revUrl" class="codebox" style="cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
+            <div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
           </div>
         </div>
         <div style="margin-top:16px;">
