@@ -497,8 +497,10 @@ private fun FlowContent.auditExplorerResultsPanel(
                     thead {
                         tr {
                             th { +"Timestamp" }
-                            th { +"Installation ID" }
+                            th { +"Repository" }
                             th { +"Action" }
+                            th { +"Actor" }
+                            th { +"Chat & Details" }
                         }
                     }
                     tbody { auditEvents.forEach(::platformAdminAuditRow) }
@@ -533,17 +535,17 @@ private fun FlowContent.auditPaginationBtn(
 private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
     tr {
         td { +event.createdAt.toString() }
-        td {
-            val instIdStr = event.installationId?.toString()?.take(SHORT_ID_LENGTH).orEmpty()
-            if (instIdStr.isNotBlank()) {
-                code { +instIdStr }
-            } else {
-                span { +"System" }
-            }
-        }
+        td { +event.repository }
         td {
             span(classes = auditActionBadgeClass(event.action)) {
                 +event.action
+            }
+        }
+        td { +event.actor }
+        td {
+            div { +event.chatDetails }
+            event.details.forEach { line ->
+                div(classes = "table-subtle") { +line }
             }
         }
     }
@@ -551,9 +553,10 @@ private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRe
 
 private fun auditActionBadgeClass(action: String): String =
     when (action) {
-        "telegram_setup" -> "status-badge status-active"
-        "telegram_rotate", "management_rotate" -> "status-badge status-degraded"
-        "telegram_mute", "telegram_unmute" -> "status-badge status-muted"
+        "telegram_setup", "telegram_webapp_launch", "webapp_setup" -> "status-badge status-active"
+        "telegram_rotate", "management_rotate", "webapp_rotate" -> "status-badge status-degraded"
+        "telegram_mute", "telegram_unmute", "management_mute", "management_unmute", "webapp_mute", "webapp_unmute" ->
+            "status-badge status-muted"
         else -> "status-badge"
     }
 
@@ -880,15 +883,16 @@ private fun platformAdminHtml(
                     thead {
                         tr {
                             th { +"Time" }
-                            th { +"Installation" }
+                            th { +"Repository" }
                             th { +"Action" }
+                            th { +"Actor" }
                         }
                     }
                     tbody {
                         if (previewAuditEvents.isEmpty()) {
                             tr {
                                 td {
-                                    colSpan = "3"
+                                    colSpan = "4"
                                     +"No audit activity in past 24 hours"
                                 }
                             }
@@ -896,8 +900,9 @@ private fun platformAdminHtml(
                             previewAuditEvents.forEach { event ->
                                 tr {
                                     td { +event.createdAt.toString() }
-                                    td { +(event.installationId?.toString()?.take(SHORT_ID_LENGTH).orEmpty()) }
+                                    td { +event.repository }
                                     td { +event.action }
+                                    td { +event.actor }
                                 }
                             }
                         }

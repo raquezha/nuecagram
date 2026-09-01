@@ -455,29 +455,67 @@ val InstallationRepositoryTests by testSuite {
 
             val initialAuditCount = readRepository.auditEventsPage(limit = 1).totalCount
 
-            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_setup")
+            repository.writeAuditEvent(
+                inst.id,
+                "telegram",
+                "1",
+                "telegram_setup",
+                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(actorUsername = "alice"),
+            )
+            repository.writeAuditEvent(inst.id, "webapp_session", "1", "webapp_setup")
             repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_rotate")
             repository.writeAuditEvent(inst.id, "management", "2", "management_rotate")
+            repository.writeAuditEvent(inst.id, "webapp_session", "1", "webapp_rotate")
             repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_mute")
-            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_unmute")
+            repository.writeAuditEvent(inst.id, "management", "2", "management_mute")
+            repository.writeAuditEvent(
+                inst.id,
+                "webapp_session",
+                "1",
+                "webapp_identity_update",
+                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                    actorFirstName = "Alice",
+                    identityDelta = net.raquezha.nuecagram.db.AuditIdentityDelta(
+                        oldRepoName = "old/repo",
+                        newRepoName = "new/repo",
+                        oldNickname = "old room",
+                        newNickname = null,
+                    ),
+                ),
+            )
+            repository.writeAuditEvent(null, "system", null, "system_ping")
 
-            val allEvents = readRepository.auditEventsPage(limit = 2, offset = 0)
-            assertThat(allEvents.totalCount).isEqualTo(initialAuditCount + 5)
-            assertThat(allEvents.items).hasSize(2)
+            val allEvents = readRepository.auditEventsPage(limit = 3, offset = 0)
+            assertThat(allEvents.totalCount).isEqualTo(initialAuditCount + 9)
+            assertThat(allEvents.items).hasSize(3)
 
             val setupEvents = readRepository.auditEventsPage(action = "setup", limit = 10)
-            assertThat(setupEvents.totalCount).isEqualTo(1)
-            assertThat(setupEvents.items[0].action).isEqualTo("telegram_setup")
+            assertThat(setupEvents.totalCount).isEqualTo(2)
+            assertThat(setupEvents.items.map { it.action })
+                .containsExactlyElementsIn(setOf("telegram_setup", "webapp_setup"))
 
             val rotateEvents = readRepository.auditEventsPage(action = "rotate", limit = 10)
-            assertThat(rotateEvents.totalCount).isEqualTo(2)
+            assertThat(rotateEvents.totalCount).isEqualTo(3)
             assertThat(rotateEvents.items.map { it.action })
-                .containsExactlyElementsIn(setOf("management_rotate", "telegram_rotate"))
+                .containsExactlyElementsIn(setOf("management_rotate", "telegram_rotate", "webapp_rotate"))
 
             val statusEvents = readRepository.auditEventsPage(action = "status_change", limit = 10)
             assertThat(statusEvents.totalCount).isEqualTo(2)
             assertThat(statusEvents.items.map { it.action })
-                .containsExactlyElementsIn(setOf("telegram_unmute", "telegram_mute"))
+                .containsExactlyElementsIn(setOf("telegram_mute", "management_mute"))
+
+            val identityEvent =
+                readRepository.auditEventsPage(limit = 10).items.first { it.action == "webapp_identity_update" }
+            assertThat(identityEvent.repository).isEqualTo("Project #111")
+            assertThat(identityEvent.actor).isEqualTo("Alice")
+            assertThat(identityEvent.chatDetails).isEqualTo("222")
+            assertThat(identityEvent.details)
+                .containsExactly("repo: old/repo -> new/repo", "chat: old room -> (blank)")
+
+            val systemEvent = readRepository.auditEventsPage(limit = 10).items.first { it.action == "system_ping" }
+            assertThat(systemEvent.repository).isEqualTo("System")
+            assertThat(systemEvent.actor).isEqualTo("Unknown Actor")
+            assertThat(systemEvent.chatDetails).isEqualTo("Unknown Chat")
         } finally {
             // Pool cleaned up automatically on re-initialization
         }

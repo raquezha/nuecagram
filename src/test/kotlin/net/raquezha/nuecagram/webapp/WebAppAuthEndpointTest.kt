@@ -78,7 +78,10 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
     fun authEndpointIssuesSessionCookieAndCsrfForValidInitData() = testApplication {
         configureTestApplication()
         val botToken = testConfig.botApi
-        val initData = buildTestInitData(botToken)
+        val initData = buildTestInitData(
+            botToken,
+            extraParams = mapOf("user" to "{\"id\":12345,\"first_name\":\"Test\",\"username\":\"alice\"}"),
+        )
         val response = client.post("/nuecagram/api/webapp/auth") {
             contentType(ContentType.Application.Json)
             setBody("""{"initData":"$initData"}""")
@@ -88,8 +91,15 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         val payload = json.decodeFromString<TestAuthResponsePayload>(response.bodyAsText())
         assertThat(payload.success).isTrue()
         assertThat(payload.user.id).isEqualTo(12345L)
+        assertThat(payload.user.firstName).isEqualTo("Test")
+        assertThat(payload.user.username).isEqualTo("alice")
         assertThat(payload.csrf).isNotEmpty()
         assertThat(payload.sessionToken).isNotNull()
+
+        val verifiedSession = runBlocking { installationRepository.verifyWebAppSession(payload.sessionToken!!) }
+        assertThat(verifiedSession?.telegramUserId).isEqualTo(12345L)
+        assertThat(verifiedSession?.firstName).isEqualTo("Test")
+        assertThat(verifiedSession?.username).isEqualTo("alice")
 
         val setCookie = response.headers.getAll("Set-Cookie").orEmpty().joinToString("; ")
         assertThat(setCookie).contains("nuecagram_webapp_session=")

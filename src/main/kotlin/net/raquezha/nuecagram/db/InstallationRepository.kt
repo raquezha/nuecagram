@@ -76,6 +76,8 @@ data class WebAppSessionContext(
     val telegramUserId: Long,
     val telegramChatId: Long?,
     val telegramTopicId: Long?,
+    val username: String?,
+    val firstName: String?,
     val csrfDigest: ByteArray,
     val csrfHash: String,
 )
@@ -87,7 +89,15 @@ data class LaunchNonceContext(
     val telegramUserId: Long,
 )
 
-data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
+data class PlatformAdminAuditRecord(
+    val installationId: UUID?,
+    val action: String,
+    val createdAt: Instant,
+    val repository: String,
+    val actor: String,
+    val chatDetails: String,
+    val details: List<String> = emptyList(),
+)
 
 data class PlatformAdminInstallationsPage(
     val items: List<InstallationAdminContext>,
@@ -614,6 +624,8 @@ class InstallationRepository(
         telegramUserId: Long,
         telegramChatId: Long?,
         telegramTopicId: Long?,
+        username: String?,
+        firstName: String?,
         expiresAt: Instant,
     ): IssuedWebAppSession = databaseFactory.dbTransaction {
         val id = UUID.randomUUID()
@@ -624,6 +636,8 @@ class InstallationRepository(
             it[WebAppSessions.telegramUserId] = telegramUserId
             it[WebAppSessions.telegramChatId] = telegramChatId
             it[WebAppSessions.telegramTopicId] = telegramTopicId
+            it[WebAppSessions.username] = username
+            it[WebAppSessions.firstName] = firstName
             it[tokenDigest] = stored.digest
             it[tokenHash] = stored.hash
             it[csrfDigest] = storedCsrf.digest
@@ -648,6 +662,8 @@ class InstallationRepository(
                 telegramUserId = row[WebAppSessions.telegramUserId],
                 telegramChatId = row[WebAppSessions.telegramChatId],
                 telegramTopicId = row[WebAppSessions.telegramTopicId],
+                username = row[WebAppSessions.username],
+                firstName = row[WebAppSessions.firstName],
                 csrfDigest = row[WebAppSessions.csrfDigest],
                 csrfHash = row[WebAppSessions.csrfHash],
             )

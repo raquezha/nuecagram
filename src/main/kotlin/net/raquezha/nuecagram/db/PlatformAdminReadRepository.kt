@@ -6,6 +6,7 @@ import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 private const val PLATFORM_ADMIN_SEARCH_FIELDS = 5
+private const val SHORT_INSTALLATION_ID_LENGTH = 8
 private val PLATFORM_ADMIN_SEARCH_SQL =
     """
     (
@@ -16,6 +17,18 @@ private val PLATFORM_ADMIN_SEARCH_SQL =
         LOWER(COALESCE(i.chat_name, '')) LIKE ?
     )
     """.trimIndent()
+private val AUDIT_SETUP_ACTIONS = listOf("telegram_setup", "telegram_webapp_launch", "webapp_setup")
+private val AUDIT_ROTATE_ACTIONS = listOf("telegram_rotate", "management_rotate", "webapp_rotate")
+private val AUDIT_STATUS_ACTIONS =
+    listOf(
+        "telegram_mute",
+        "telegram_unmute",
+        "management_mute",
+        "management_unmute",
+        "webapp_mute",
+        "webapp_unmute",
+    )
+private const val BLANK_VALUE_LABEL = "(blank)"
 
 class PlatformAdminReadRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
@@ -41,18 +54,8 @@ class PlatformAdminReadRepository(
             )
         }
 
-    suspend fun auditEvents(limit: Int = 200): List<PlatformAdminAuditRecord> = databaseFactory.dbTransaction {
-        AuditEvents.selectAll()
-            .orderBy(AuditEvents.createdAt to SortOrder.DESC)
-            .limit(limit)
-            .map { row ->
-                PlatformAdminAuditRecord(
-                    row[AuditEvents.installationId],
-                    row[AuditEvents.action],
-                    row[AuditEvents.createdAt].toInstant(),
-                )
-            }
-    }
+    suspend fun auditEvents(limit: Int = 200): List<PlatformAdminAuditRecord> =
+        auditEventsPage(limit = limit).items
 
     suspend fun auditEventsPage(
         action: String? = null,
@@ -73,23 +76,18 @@ class PlatformAdminReadRepository(
         val params = mutableListOf<Any>()
 
         when (action?.trim()?.lowercase()) {
-            "setup" -> {
-                whereClauses += "action = ?"
-                params += "telegram_setup"
-            }
-            "rotate" -> {
-                whereClauses += "action IN (?, ?)"
-                params += "telegram_rotate"
-                params += "management_rotate"
-            }
-            "status change", "status_change", "status-change" -> {
-                whereClauses += "action IN (?, ?)"
-                params += "telegram_mute"
-                params += "telegram_unmute"
-            }
+            "setup" -> whereClauses += actionInSql(AUDIT_SETUP_ACTIONS, params)
+            "rotate" -> whereClauses += actionInSql(AUDIT_ROTATE_ACTIONS, params)
+            "status change", "status_change", "status-change" ->
+                whereClauses += actionInSql(AUDIT_STATUS_ACTIONS, params)
         }
 
         return AuditFilter(whereClauses, params)
+    }
+
+    private fun actionInSql(actions: List<String>, params: MutableList<Any>): String {
+        params.addAll(actions)
+        return actions.joinToString(prefix = "action IN (", postfix = ")", separator = ", ") { "?" }
     }
 
     private fun auditFromSql(whereClauses: List<String>): String {
@@ -119,7 +117,20 @@ class PlatformAdminReadRepository(
     ): List<PlatformAdminAuditRecord> =
         connection.prepareStatement(
             """
-            SELECT installation_id, action, created_at
+            SELECT installation_id,
+                   actor_id,
+                   action,
+                   created_at,
+                   metadata ->> 'repo_name' AS repo_name,
+                   metadata ->> 'username' AS username,
+                   metadata ->> 'first_name' AS first_name,
+                   metadata ->> 'chat_id' AS chat_id,
+                   metadata ->> 'topic_id' AS topic_id,
+                   metadata ->> 'nickname' AS nickname,
+                   metadata ->> 'old_repo_name' AS old_repo_name,
+                   metadata ->> 'new_repo_name' AS new_repo_name,
+                   metadata ->> 'old_nickname' AS old_nickname,
+                   metadata ->> 'new_nickname' AS new_nickname
             $fromSql
             ORDER BY created_at DESC, id DESC
             LIMIT ? OFFSET ?
@@ -130,12 +141,7 @@ class PlatformAdminReadRepository(
             statement.setLong(params.size + 2, offset.coerceAtLeast(0))
             statement.executeQuery().use { result ->
                 buildList {
-                    while (result.next()) {
-                        val instId = result.getObject("installation_id", UUID::class.java)
-                        val act = result.getString("action")
-                        val created = result.getTimestamp("created_at").toInstant()
-                        add(PlatformAdminAuditRecord(instId, act, created))
-                    }
+                    while (result.next()) add(result.toPlatformAdminAuditRecord())
                 }
             }
         }
@@ -246,6 +252,54 @@ private fun java.sql.ResultSet.toInstallationAdminContext() = InstallationAdminC
     telegramTopicId = getObject("telegram_topic_id") as Long?,
     muted = getBoolean("muted"),
 )
+
+private fun java.sql.ResultSet.toPlatformAdminAuditRecord(): PlatformAdminAuditRecord {
+    val installationId = getObject("installation_id", UUID::class.java)
+    val chatId = getString("chat_id")
+    val topicId = getString("topic_id")
+    val nickname = getString("nickname")
+    val oldRepoName = getString("old_repo_name")
+    val newRepoName = getString("new_repo_name")
+    val oldNickname = getString("old_nickname")
+    val newNickname = getString("new_nickname")
+
+    return PlatformAdminAuditRecord(
+        installationId = installationId,
+        action = getString("action"),
+        createdAt = getTimestamp("created_at").toInstant(),
+        repository = getString("repo_name").orRepositoryFallback(installationId),
+        actor = actorLabel(getString("username"), getString("first_name"), getString("actor_id")),
+        chatDetails = chatLabel(chatId, topicId),
+        details = buildList {
+            nickname?.takeIf(String::isNotBlank)?.let { add("nickname: $it") }
+            aliasDeltaLine("repo", oldRepoName, newRepoName)?.let(::add)
+            aliasDeltaLine("chat", oldNickname, newNickname)?.let(::add)
+        },
+    )
+}
+
+private fun String?.orRepositoryFallback(installationId: UUID?): String =
+    this?.takeIf(String::isNotBlank)
+        ?: installationId?.toString()?.take(SHORT_INSTALLATION_ID_LENGTH)
+        ?: "System"
+
+private fun actorLabel(username: String?, firstName: String?, actorId: String?): String =
+    username?.takeIf(String::isNotBlank)?.let { "@$it" }
+        ?: firstName?.takeIf(String::isNotBlank)
+        ?: actorId?.takeIf(String::isNotBlank)
+        ?: "Unknown Actor"
+
+private fun chatLabel(chatId: String?, topicId: String?): String =
+    chatId?.takeIf(String::isNotBlank)?.let {
+        topicId?.takeIf(String::isNotBlank)?.let { topic -> "$it / topic $topic" } ?: it
+    } ?: "Unknown Chat"
+
+private fun aliasDeltaLine(label: String, oldValue: String?, newValue: String?): String? {
+    if (oldValue == null && newValue == null) return null
+    val from = oldValue.orEmpty().ifBlank { BLANK_VALUE_LABEL }
+    val to = newValue.orEmpty().ifBlank { BLANK_VALUE_LABEL }
+    return if (from == to) null else "$label: $from -> $to"
+}
 
 private fun bindParams(statement: java.sql.PreparedStatement, params: List<Any>) {
     params.forEachIndexed { index, value -> statement.setObject(index + 1, value) }

@@ -155,6 +155,8 @@ object WebAppSessions : Table("webapp_sessions") {
     val telegramUserId = long("telegram_user_id")
     val telegramChatId = long("telegram_chat_id").nullable()
     val telegramTopicId = long("telegram_topic_id").nullable()
+    val username = varchar("username", 255).nullable()
+    val firstName = varchar("first_name", 255).nullable()
     val tokenDigest = binary("token_digest")
     val tokenHash = text("token_hash")
     val csrfDigest = binary("csrf_digest")

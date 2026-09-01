@@ -381,8 +381,8 @@ class TelegramUpdateHandler(
             actorId = userId.toString(),
             action = "telegram_webapp_launch",
             metadataPatch = AuditMetadataPatch(
-                actorUsername = message.from?.username,
-                actorFirstName = message.from?.firstName,
+                actorUsername = message.from.username,
+                actorFirstName = message.from.firstName,
                 chatId = message.chat.id,
                 topicId = message.messageThreadId,
                 nickname = message.chat.title,
