@@ -61,6 +61,8 @@ private data class AuthResponsePayload(
 @Serializable
 private data class InstallationResponsePayload(
     val id: String,
+    val repoName: String,
+    val chatName: String? = null,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long? = null,
     val telegramChatId: Long,
@@ -651,6 +653,8 @@ private suspend fun ApplicationCall.verifyCsrfHeader(
 
 private fun InstallationAdminContext.toResponsePayload() = InstallationResponsePayload(
     id = id.toString(),
+    repoName = repoName,
+    chatName = chatName,
     gitlabBaseUrl = gitlabBaseUrl,
     gitlabProjectId = gitlabProjectId,
     telegramChatId = telegramChatId,

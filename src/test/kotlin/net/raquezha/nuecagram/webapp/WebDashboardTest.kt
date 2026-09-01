@@ -34,6 +34,8 @@ private data class DashboardTestAuthPayload(
 @Serializable
 private data class TestInstallationPayload(
     val id: String,
+    val repoName: String,
+    val chatName: String? = null,
     val gitlabBaseUrl: String,
     val telegramChatId: Long,
     val telegramTopicId: Long? = null,
@@ -170,7 +172,9 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
         val items = json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())
         assertThat(items).isNotEmpty()
-        assertThat(items.map { it.id }).contains(installation.id.toString())
+        val item = items.first { it.id == installation.id.toString() }
+        assertThat(item.repoName).isEqualTo(installation.repoName)
+        assertThat(item.chatName).isNull()
     }
 
     @Test
@@ -208,6 +212,8 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(detailResp.status).isEqualTo(HttpStatusCode.OK)
         val item = json.decodeFromString<TestInstallationPayload>(detailResp.bodyAsText())
         assertThat(item.id).isEqualTo(installation.id.toString())
+        assertThat(item.repoName).isEqualTo(installation.repoName)
+        assertThat(item.chatName).isNull()
 
         val (wrongContextSession, _) = issueSessionWithNonce(
             client,
@@ -368,6 +374,8 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(createResp.status).isEqualTo(HttpStatusCode.Created)
         val created = json.decodeFromString<TestCreateInstallationResponsePayload>(createResp.bodyAsText())
         assertThat(created.installation.telegramChatId).isEqualTo(targetChatId)
+        assertThat(created.installation.repoName).isEqualTo("Project #456")
+        assertThat(created.installation.chatName).isNull()
         assertThat(created.installation.gitlabBaseUrl).isEqualTo("https://gitlab.example.com")
     }
 
