@@ -898,9 +898,24 @@ private fun webAppShellHtml(basePath: String): String = """
       <section id="screen-reveal" class="panel">
         <h1 id="revTitle">Repository created</h1>
         <p>Copy this webhook token now. It will only be shown once.</p>
-        <div class="box"><label>Webhook secret</label><div><span id="revSecret" class="secret hidden"></span> <button id="btnReveal">Reveal</button></div><div class="top-actions"><button id="btnCopy" class="primary">Copy token</button></div><div id="copyHelp" class="helper"></div></div>
-        <div class="field"><label>Webhook URL</label><div id="revUrl" class="codebox"></div></div>
-        <div class="top-actions"><button id="btnRevDone" class="primary">Done</button></div>
+        <div class="group">
+          <div class="field">
+            <label>Webhook secret</label>
+            <div id="revSecret" class="secret hidden"></div>
+            <div id="copyHelp" class="helper ok"></div>
+            <div class="split" style="margin-top:12px;">
+              <button id="btnReveal">Reveal</button>
+              <button id="btnCopy" class="primary">Copy token</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Webhook URL</label>
+            <div id="revUrl" class="codebox"></div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button id="btnRevDone" class="primary" style="width:100%;">Done</button>
+        </div>
       </section>
     </div>
     <script src="${basePath}/webapp/app.js"></script>
