@@ -841,6 +841,7 @@ private fun webAppShellHtml(basePath: String): String = """
       .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
       .ok { color: var(--success); }
       .err { color: var(--danger); }
+      .secret { display: block; margin-top: 8px; }
       .secret.hidden { filter: blur(6px); user-select: none; }
       .footer { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; font-size: 12px; }
       a { color: var(--button); }
