@@ -829,6 +829,7 @@ private fun webAppShellHtml(basePath: String): String = """
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
       .section { margin: 18px 0; }
+      .section > button { width: 100%; }
       .section-title { margin: 18px 4px 8px; font-size: 12px; font-weight: 800; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
       .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
       .field:first-child { border-top: 0; }
