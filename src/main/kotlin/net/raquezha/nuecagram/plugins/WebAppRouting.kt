@@ -1160,7 +1160,15 @@ function setupHandlers() {
     const hidden = secret.classList.toggle('hidden');
     document.getElementById('btnReveal').innerText = hidden ? 'Reveal' : 'Hide';
   });
-  document.getElementById('btnCopy').addEventListener('click', function() { const val = document.getElementById('revSecret').innerText; if (navigator.clipboard) navigator.clipboard.writeText(val); document.getElementById('copyHelp').innerText = '✓ Copied'; });
+  let copyTimer = null;
+  document.getElementById('btnCopy').addEventListener('click', function() {
+    const val = document.getElementById('revSecret').innerText;
+    if (navigator.clipboard) navigator.clipboard.writeText(val);
+    const help = document.getElementById('copyHelp');
+    help.innerText = '✓ Copied';
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(function() { help.innerText = ''; }, 2500);
+  });
 }
 
 initWebApp();
