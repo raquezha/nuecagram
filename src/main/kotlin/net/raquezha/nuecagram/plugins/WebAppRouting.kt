@@ -790,52 +790,58 @@ private fun webAppShellHtml(basePath: String): String = """
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #f6f7f9);
+        --bg-color: var(--tg-theme-bg-color, #f2f3f5);
         --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
         --text-main: var(--tg-theme-text-color, #111827);
         --hint: var(--tg-theme-hint-color, #6b7280);
         --button: var(--tg-theme-button-color, #229ed9);
         --button-text: var(--tg-theme-button-text-color, #ffffff);
         --border: #e5e7eb;
-        --success: #15803d;
+        --success: #12805c;
         --danger: #be123c;
       }
       * { box-sizing: border-box; }
-      body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-main); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 24px 16px 32px; }
-      h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.15; letter-spacing: -0.02em; }
-      h2 { margin: 22px 0 9px; font-size: 13px; color: var(--hint); text-transform: uppercase; letter-spacing: .04em; }
+      body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 18px 14px 28px; }
+      h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.1; letter-spacing: -0.03em; }
+      h2 { margin: 18px 4px 8px; font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
       p { margin: 0 0 14px; color: var(--hint); line-height: 1.45; }
-      button { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 14px; font: 700 14px inherit; cursor: pointer; }
-      button.primary { border-color: var(--button); background: var(--button); color: var(--button-text); }
+      button { border: 0; border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 14px; font: 700 14px inherit; box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
+      button.primary { background: var(--button); color: var(--button-text); box-shadow: none; }
       button.danger { color: var(--danger); }
-      button.link { border: 0; background: transparent; color: var(--button); padding: 8px 0; }
+      button.link { background: transparent; color: var(--button); box-shadow: none; padding: 8px 2px; }
       .top-actions { display: flex; gap: 10px; margin: 16px 0 18px; flex-wrap: wrap; }
-      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--card-bg); box-shadow: 0 1px 2px rgba(17,24,39,.04); }
-      .card.muted { opacity: .68; filter: grayscale(.25); }
-      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #f3f4f6; }
+      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 14px; border-radius: 18px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); }
+      .card.muted { opacity: .72; filter: grayscale(.25); }
+      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; }
       .grow { min-width: 0; flex: 1; }
-      .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 13px 14px; border-top: 1px solid var(--border); }
+      .row:first-child { border-top: 0; }
       .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .sub { margin-top: 4px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .meta { margin-top: 7px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .badge { margin-left: auto; border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 800; }
-      .badge-active { background: #e6f4ea; color: var(--success); }
-      .badge-muted { background: #fff0f1; color: var(--danger); }
-      .chev { color: var(--hint); font-size: 20px; }
+      .badge { margin-left: auto; border-radius: 999px; padding: 4px 7px; font-size: 11px; font-weight: 800; }
+      .badge-active { background: #e8f7ef; color: var(--success); }
+      .badge-muted { background: #fff1f2; color: var(--danger); }
+      .chev { color: #9ca3af; font-size: 22px; }
       .panel { display: none; }
       .panel.active { display: block; }
-      .box { padding: 18px; border: 1px solid var(--border); border-radius: 18px; background: var(--card-bg); }
-      .field { margin: 0 0 16px; }
-      label { display: block; margin-bottom: 5px; font-weight: 800; }
-      input { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px; background: var(--card-bg); color: var(--text-main); font: 14px inherit; }
+      .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+      .box { padding: 18px; }
+      .section { margin: 18px 0; }
+      .section-title { margin: 18px 4px 8px; font-size: 12px; font-weight: 800; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
+      .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
+      .field:first-child { border-top: 0; }
+      label { display: block; margin-bottom: 7px; font-weight: 800; }
+      input, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fafafa; color: var(--text-main); font: 15px inherit; }
+      .codebox { min-height: 44px; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       input[readonly] { color: var(--hint); }
-      .split { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+      .split { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-top: 16px; }
       .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
       .ok { color: var(--success); }
       .err { color: var(--danger); }
       .secret.hidden { filter: blur(6px); user-select: none; }
-      .footer { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 12px; }
+      .footer { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; font-size: 12px; }
       a { color: var(--button); }
     </style>
   </head>
@@ -890,7 +896,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <h1 id="revTitle">Repository created</h1>
         <p>Copy this webhook token now. It will only be shown once.</p>
         <div class="box"><label>Webhook secret</label><div><span id="revSecret" class="secret hidden"></span> <button id="btnReveal">Reveal</button></div><div class="top-actions"><button id="btnCopy" class="primary">Copy token</button></div><div id="copyHelp" class="helper"></div></div>
-        <div class="field"><label>Webhook URL</label><input id="revUrl" readonly></div>
+        <div class="field"><label>Webhook URL</label><div id="revUrl" class="codebox"></div></div>
         <div class="top-actions"><button id="btnRevDone" class="primary">Done</button></div>
       </section>
     </div>
@@ -1038,11 +1044,11 @@ async function openDetail(id) {
 
 function renderDetail() {
   const item = currentItem;
-  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '"><div class="grow"><div class="row"><div class="title">' + escapeHtml(item.repoName) + '</div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div></div>' +
-    '<h2>Repository</h2><p>' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</p>' +
-    '<h2>Destination</h2><p>' + escapeHtml(destinationMeta(item)) + '</p><h2>Installation ID</h2><p>' + escapeHtml(item.id) + '</p>' +
-    '<h2>Actions</h2><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div>' +
-    '<h2>Settings</h2><div class="top-actions"><button id="btnEdit">Edit names</button></div><h2>Danger zone</h2><div class="top-actions"><button id="btnRotate" class="danger">Rotate webhook token</button></div>';
+  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
+    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
+    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names</button></div><div class="section"><div class="section-title">Danger zone</div><button id="btnRotate" class="danger">Rotate webhook token</button></div>';
   document.getElementById('btnTest').addEventListener('click', testDelivery);
   document.getElementById('btnMute').addEventListener('click', toggleMute);
   document.getElementById('btnEdit').addEventListener('click', openEdit);
@@ -1120,7 +1126,7 @@ function showReveal(token, url, title) {
   const secret = document.getElementById('revSecret');
   secret.innerText = token;
   secret.classList.add('hidden');
-  document.getElementById('revUrl').value = url || '';
+  document.getElementById('revUrl').innerText = url || '';
   document.getElementById('copyHelp').innerText = '';
   showScreen('reveal');
 }
