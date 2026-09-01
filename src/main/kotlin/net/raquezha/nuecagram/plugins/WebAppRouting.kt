@@ -790,28 +790,28 @@ private fun webAppShellHtml(basePath: String): String = """
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #eee4d5);
-        --card-bg: var(--tg-theme-secondary-bg-color, rgba(255,255,255,.94));
-        --text-main: var(--tg-theme-text-color, #2c251e);
-        --hint: var(--tg-theme-hint-color, #75695d);
+        --bg-color: var(--tg-theme-bg-color, #f4f4f5);
+        --card-bg: var(--tg-theme-secondary-bg-color, #fff);
+        --text-main: var(--tg-theme-text-color, #1f2328);
+        --hint: var(--tg-theme-hint-color, #6b7280);
         --button: var(--tg-theme-button-color, #229ed9);
         --button-text: var(--tg-theme-button-text-color, #fff);
-        --border: #dfd5c6;
-        --success: #2a684d;
-        --danger: #a94b54;
+        --border: rgba(31,35,40,.10);
+        --success: #218358;
+        --danger: #c24150;
       }
       * { box-sizing: border-box; }
-      body { margin: 0; padding: 16px; background: var(--bg-color); color: var(--text-main); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; }
+      body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-main); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 18px 16px 28px; }
       h1 { margin: 0 0 4px; font-size: 20px; line-height: 1.2; }
       h2 { margin: 20px 0 8px; font-size: 16px; }
       p { margin: 0 0 12px; color: var(--hint); line-height: 1.35; }
-      button { border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--text-main); padding: 10px 12px; font: 700 14px inherit; cursor: pointer; }
+      button { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 10px 12px; font: 700 14px inherit; cursor: pointer; }
       button.primary { border-color: var(--button); background: var(--button); color: var(--button-text); }
       button.danger { color: var(--danger); }
       button.link { border: 0; background: transparent; color: var(--button); padding: 8px 0; }
       .top-actions { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
-      .card { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; margin: 0 0 10px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--card-bg); box-shadow: 0 1px 0 rgba(0,0,0,.03); }
+      .card { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; margin: 0 0 10px; padding: 12px; border: 1px solid var(--border); border-radius: 18px; background: var(--card-bg); box-shadow: 0 8px 24px rgba(31,35,40,.05); }
       .card.muted { opacity: .62; filter: grayscale(.35); }
       .avatar { flex: 0 0 58px; width: 58px; height: 58px; border-radius: 50%; object-fit: cover; background: #f2eadf; }
       .grow { min-width: 0; flex: 1; }
@@ -828,7 +828,7 @@ private fun webAppShellHtml(basePath: String): String = """
       .box { padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--card-bg); }
       .field { margin: 0 0 12px; }
       label { display: block; margin-bottom: 5px; font-weight: 800; }
-      input { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; background: #fff; color: var(--text-main); font: 14px inherit; }
+      input { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px; background: var(--card-bg); color: var(--text-main); font: 14px inherit; }
       input[readonly] { color: var(--hint); }
       .split { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
       .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
