@@ -1143,7 +1143,7 @@ async function toggleMute() {
 
 async function testDelivery() {
   const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/test', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
-  setAction(res.ok ? '✓ Test notification sent.' : 'Could not send test notification.', res.ok);
+  setAction(res.ok ? 'Test notification sent.' : 'Could not send test notification.', res.ok);
 }
 
 function setupHandlers() {
