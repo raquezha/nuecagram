@@ -837,7 +837,8 @@ private fun webAppShellHtml(basePath: String): String = """
       input, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fafafa; color: var(--text-main); font: 15px inherit; }
       .codebox { min-height: 44px; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       input[readonly] { color: var(--hint); }
-      .split { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-top: 16px; }
+      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
+      .split > button { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; }
       .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
       .ok { color: var(--success); }
       .err { color: var(--danger); }
