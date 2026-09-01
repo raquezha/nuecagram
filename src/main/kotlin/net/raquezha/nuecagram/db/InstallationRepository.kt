@@ -4,6 +4,11 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import net.raquezha.nuecagram.webhook.ChatDetails
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -71,6 +76,8 @@ data class WebAppSessionContext(
     val telegramUserId: Long,
     val telegramChatId: Long?,
     val telegramTopicId: Long?,
+    val username: String?,
+    val firstName: String?,
     val csrfDigest: ByteArray,
     val csrfHash: String,
 )
@@ -82,7 +89,15 @@ data class LaunchNonceContext(
     val telegramUserId: Long,
 )
 
-data class PlatformAdminAuditRecord(val installationId: UUID?, val action: String, val createdAt: Instant)
+data class PlatformAdminAuditRecord(
+    val installationId: UUID?,
+    val action: String,
+    val createdAt: Instant,
+    val repository: String,
+    val actor: String,
+    val chatDetails: String,
+    val details: List<String> = emptyList(),
+)
 
 data class PlatformAdminInstallationsPage(
     val items: List<InstallationAdminContext>,
@@ -92,6 +107,23 @@ data class PlatformAdminInstallationsPage(
 data class PlatformAdminAuditPage(
     val items: List<PlatformAdminAuditRecord>,
     val totalCount: Long,
+)
+
+data class AuditIdentityDelta(
+    val oldRepoName: String? = null,
+    val newRepoName: String? = null,
+    val oldNickname: String? = null,
+    val newNickname: String? = null,
+)
+
+data class AuditMetadataPatch(
+    val actorUsername: String? = null,
+    val actorFirstName: String? = null,
+    val repoName: String? = null,
+    val nickname: String? = null,
+    val chatId: Long? = null,
+    val topicId: Long? = null,
+    val identityDelta: AuditIdentityDelta? = null,
 )
 
 data class MrParticipants(
@@ -592,6 +624,8 @@ class InstallationRepository(
         telegramUserId: Long,
         telegramChatId: Long?,
         telegramTopicId: Long?,
+        username: String?,
+        firstName: String?,
         expiresAt: Instant,
     ): IssuedWebAppSession = databaseFactory.dbTransaction {
         val id = UUID.randomUUID()
@@ -602,6 +636,8 @@ class InstallationRepository(
             it[WebAppSessions.telegramUserId] = telegramUserId
             it[WebAppSessions.telegramChatId] = telegramChatId
             it[WebAppSessions.telegramTopicId] = telegramTopicId
+            it[WebAppSessions.username] = username
+            it[WebAppSessions.firstName] = firstName
             it[tokenDigest] = stored.digest
             it[tokenHash] = stored.hash
             it[csrfDigest] = storedCsrf.digest
@@ -626,6 +662,8 @@ class InstallationRepository(
                 telegramUserId = row[WebAppSessions.telegramUserId],
                 telegramChatId = row[WebAppSessions.telegramChatId],
                 telegramTopicId = row[WebAppSessions.telegramTopicId],
+                username = row[WebAppSessions.username],
+                firstName = row[WebAppSessions.firstName],
                 csrfDigest = row[WebAppSessions.csrfDigest],
                 csrfHash = row[WebAppSessions.csrfHash],
             )
@@ -671,17 +709,55 @@ class InstallationRepository(
         actorId: String?,
         action: String,
         metadataJson: String = "{}",
-    ) {
+        metadataPatch: AuditMetadataPatch = AuditMetadataPatch(),
+    ): Boolean {
+        if (actorType in ACTOR_ID_REQUIRED_TYPES && actorId.isNullOrBlank()) return false
+
         databaseFactory.dbTransaction {
+            val installationSnapshot =
+                installationId?.let { installationWithMuteQuery(it).firstOrNull()?.toAdminContext() }
             AuditEvents.insert {
                 it[id] = UUID.randomUUID()
                 it[AuditEvents.installationId] = installationId
                 it[AuditEvents.actorType] = actorType
                 it[AuditEvents.actorId] = actorId
                 it[AuditEvents.action] = action
-                it[metadata] = metadataJson
+                it[metadata] = buildAuditMetadataJson(
+                    existingMetadataJson = metadataJson,
+                    installationId = installationId,
+                    installation = installationSnapshot,
+                    actorId = actorId,
+                    metadataPatch = metadataPatch,
+                )
             }
         }
+        return true
+    }
+
+    private fun buildAuditMetadataJson(
+        existingMetadataJson: String,
+        installationId: UUID?,
+        installation: InstallationAdminContext?,
+        actorId: String?,
+        metadataPatch: AuditMetadataPatch,
+    ): String {
+        val existing =
+            runCatching { auditJson.parseToJsonElement(existingMetadataJson).jsonObject }
+                .getOrDefault(JsonObject(emptyMap()))
+        val fields = existing.toMutableMap()
+        fields.putString("installation_id", installationId?.toString())
+        fields.putString("actor_id", actorId)
+        fields.putString("username", metadataPatch.actorUsername)
+        fields.putString("first_name", metadataPatch.actorFirstName)
+        fields.putString("repo_name", metadataPatch.repoName ?: installation?.repoName)
+        fields.putString("nickname", metadataPatch.nickname ?: installation?.chatName)
+        fields.putLong("chat_id", metadataPatch.chatId ?: installation?.telegramChatId)
+        fields.putLong("topic_id", metadataPatch.topicId ?: installation?.telegramTopicId)
+        fields.putString("old_repo_name", metadataPatch.identityDelta?.oldRepoName)
+        fields.putString("new_repo_name", metadataPatch.identityDelta?.newRepoName)
+        fields.putString("old_nickname", metadataPatch.identityDelta?.oldNickname)
+        fields.putString("new_nickname", metadataPatch.identityDelta?.newNickname)
+        return auditJson.encodeToString(JsonObject.serializer(), JsonObject(fields))
     }
 
     private fun Transaction.issueWebhookSecret(
@@ -748,7 +824,17 @@ class InstallationRepository(
             ?: gitlabBaseUrl.trim().trim('/').takeIf(String::isNotBlank)
             ?: UNKNOWN_REPOSITORY_NAME
 
+    private fun MutableMap<String, JsonElement>.putString(key: String, value: String?) {
+        value?.takeIf(String::isNotBlank)?.let { put(key, JsonPrimitive(it)) }
+    }
+
+    private fun MutableMap<String, JsonElement>.putLong(key: String, value: Long?) {
+        value?.let { put(key, JsonPrimitive(it)) }
+    }
+
     private companion object {
+        val ACTOR_ID_REQUIRED_TYPES = setOf("telegram", "webapp_session")
+        val auditJson = Json
         const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
     }
 

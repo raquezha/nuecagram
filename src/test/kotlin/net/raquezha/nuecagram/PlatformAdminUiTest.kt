@@ -19,6 +19,7 @@ import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class PlatformAdminUiTest : BaseEventTestHelper() {
     @Test
     fun platformAdminLoginShowsRedactedInstallationAndAuditViews() =
@@ -40,6 +41,9 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
                     actorId = "sensitive-actor-id",
                     action = "setup",
                     metadataJson = "{\"credential\":\"must-not-appear\"}",
+                    metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                        actorUsername = "alice",
+                    ),
                 )
             }
             val noRedirectClient = client.config { followRedirects = false }
@@ -58,6 +62,8 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
             assertThat(body).contains(installationWithCredentialInUrl.id.toString().take(8))
             assertThat(body).contains("https://gitlab.example/group")
             assertThat(body).contains("setup")
+            assertThat(body).contains("@alice")
+            assertThat(body).contains(installation.repoName)
             assertThat(body).contains("Active installations")
             assertThat(body).contains("Muted installations")
             assertThat(body).contains("24h Audit events")
@@ -137,46 +143,16 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
             val noRedirectClient = client.config { followRedirects = false }
             val sessionCookie = login(noRedirectClient)
 
-            runBlocking {
-                repeat(21) { index ->
-                    installationRepository.writeAuditEvent(
-                        installationId = installation.id,
-                        actorType = "telegram_user",
-                        actorId = "sensitive-actor-$index",
-                        action = if (index == 20) "telegram_rotate" else "telegram_setup",
-                        metadataJson = "{\"secret\":\"do-not-leak-$index\"}",
-                    )
-                }
-            }
-
-            val pageOne =
-                client.get("${basePath()}/admin/audit") {
-                    header(HttpHeaders.Cookie, sessionCookie)
-                }
-            assertThat(pageOne.status).isEqualTo(HttpStatusCode.OK)
-            val pageOneBody = pageOne.bodyAsText()
-            assertThat(pageOneBody).contains("Audit log explorer")
-            assertThat(pageOneBody).contains("Back to Overview")
-            assertThat(pageOneBody).contains("Showing 1–20 of")
-            assertThat(pageOneBody).contains("Next ›")
-            assertThat(pageOneBody).contains("telegram_setup")
-            assertThat(pageOneBody).doesNotContain("sensitive-actor")
-            assertThat(pageOneBody).doesNotContain("do-not-leak")
-            assertThat(pageOne.headers["Content-Security-Policy"]).contains("default-src 'none'")
-
-            val rotateFilter =
-                client.get("${basePath()}/admin/audit?action=rotate") {
-                    header(HttpHeaders.Cookie, sessionCookie)
-                }
-            assertThat(rotateFilter.status).isEqualTo(HttpStatusCode.OK)
-            val rotateBody = rotateFilter.bodyAsText()
-            assertThat(rotateBody).contains("total")
-            assertThat(rotateBody).contains("telegram_rotate")
-            assertThat(rotateBody).doesNotContain("telegram_setup")
+            seedAuditExplorerEvents()
+            assertAuditExplorerPage(sessionCookie)
+            assertRotateAuditFilter(sessionCookie)
 
             val readRepo = net.raquezha.nuecagram.db.PlatformAdminReadRepository()
             val initialStatusChangeCount =
                 readRepo.auditEventsPage(action = "status_change", limit = 1).totalCount
+
+            seedSystemAuditFallback()
+            assertSystemAuditFallbacks(sessionCookie)
 
             if (initialStatusChangeCount == 0L) {
                 val emptyFilter =
@@ -256,6 +232,80 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
             assertThat(response.status).isEqualTo(HttpStatusCode.Unauthorized)
             assertThat(response.headers[HttpHeaders.SetCookie].orEmpty()).contains("Max-Age=0")
         }
+
+    private suspend fun ApplicationTestBuilder.seedAuditExplorerEvents() {
+        runBlocking {
+            repeat(21) { index ->
+                installationRepository.writeAuditEvent(
+                    installationId = installation.id,
+                    actorType = "telegram_user",
+                    actorId = "sensitive-actor-$index",
+                    action = if (index == 20) "telegram_rotate" else "telegram_setup",
+                    metadataJson = "{\"secret\":\"do-not-leak-$index\"}",
+                    metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                        actorUsername = "user$index",
+                    ),
+                )
+            }
+        }
+    }
+
+    private suspend fun ApplicationTestBuilder.seedSystemAuditFallback() {
+        runBlocking {
+            installationRepository.writeAuditEvent(
+                installationId = null,
+                actorType = "system",
+                actorId = null,
+                action = "system_sync",
+            )
+        }
+    }
+
+    private suspend fun ApplicationTestBuilder.assertAuditExplorerPage(sessionCookie: String) {
+        val pageOne =
+            client.get("${basePath()}/admin/audit") {
+                header(HttpHeaders.Cookie, sessionCookie)
+            }
+        assertThat(pageOne.status).isEqualTo(HttpStatusCode.OK)
+        val pageOneBody = pageOne.bodyAsText()
+        assertThat(pageOneBody).contains("Audit log explorer")
+        assertThat(pageOneBody).contains("Back to Overview")
+        assertThat(pageOneBody).contains("Showing 1–20 of")
+        assertThat(pageOneBody).contains("Next ›")
+        assertThat(pageOneBody).contains("telegram_setup")
+        assertThat(pageOneBody).contains("Repository")
+        assertThat(pageOneBody).contains("Actor")
+        assertThat(pageOneBody).contains("Chat &amp; Details")
+        assertThat(pageOneBody).contains("@user")
+        assertThat(pageOneBody).contains(installation.repoName)
+        assertThat(pageOneBody).contains(installation.telegramChatId.toString())
+        assertThat(pageOneBody).doesNotContain("sensitive-actor")
+        assertThat(pageOneBody).doesNotContain("do-not-leak")
+        assertThat(pageOne.headers["Content-Security-Policy"]).contains("default-src 'none'")
+    }
+
+    private suspend fun ApplicationTestBuilder.assertRotateAuditFilter(sessionCookie: String) {
+        val rotateFilter =
+            client.get("${basePath()}/admin/audit?action=rotate") {
+                header(HttpHeaders.Cookie, sessionCookie)
+            }
+        assertThat(rotateFilter.status).isEqualTo(HttpStatusCode.OK)
+        val rotateBody = rotateFilter.bodyAsText()
+        assertThat(rotateBody).contains("total")
+        assertThat(rotateBody).contains("telegram_rotate")
+        assertThat(rotateBody).doesNotContain("telegram_setup")
+    }
+
+    private suspend fun ApplicationTestBuilder.assertSystemAuditFallbacks(sessionCookie: String) {
+        val fallbackPage =
+            client.get("${basePath()}/admin/audit") {
+                header(HttpHeaders.Cookie, sessionCookie)
+            }
+        val fallbackBody = fallbackPage.bodyAsText()
+        assertThat(fallbackBody).contains("System")
+        assertThat(fallbackBody).contains("Unknown Actor")
+        assertThat(fallbackBody).contains("Unknown Chat")
+    }
 
     private suspend fun ApplicationTestBuilder.seedPlatformInstallations(suiteTag: String) {
         val seeded =

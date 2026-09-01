@@ -2,6 +2,7 @@ package net.raquezha.nuecagram.telegram
 
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
+import net.raquezha.nuecagram.db.AuditMetadataPatch
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import java.time.Duration
@@ -160,6 +161,10 @@ class TelegramMenuHandler(
                     actorType = "telegram",
                     actorId = userId.toString(),
                     action = "telegram_management_link",
+                    metadataPatch = AuditMetadataPatch(
+                        actorUsername = message.from?.username,
+                        actorFirstName = message.from?.firstName,
+                    ),
                 )
                 send(message.chat.id, TelegramMenuMessages.managementLinkText(config, inst, managementLink.raw))
                 sendLauncherMessage(
@@ -304,6 +309,10 @@ class TelegramMenuHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = if (muted) "telegram_mute" else "telegram_unmute",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = callbackQuery.from.username,
+                actorFirstName = callbackQuery.from.firstName,
+            ),
         )
         val updatedInst = inst.copy(muted = muted)
         val (text, markup) = buildSubmenuMarkup(updatedInst)
@@ -353,6 +362,10 @@ class TelegramMenuHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = "telegram_rotate",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = callbackQuery.from.username,
+                actorFirstName = callbackQuery.from.firstName,
+            ),
         )
         val text = TelegramMenuMessages.rotateSuccess(inst, newSecret.raw)
         val markup = buildRotateSuccessMarkup(inst.id)
@@ -821,6 +834,10 @@ class TelegramMenuHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = if (muted) "telegram_mute" else "telegram_unmute",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = message.from?.username,
+                actorFirstName = message.from?.firstName,
+            ),
         )
         val text = if (muted) "Installation muted." else "Installation unmuted."
         send(message.chat.id, text, message.messageThreadId)
@@ -841,6 +858,10 @@ class TelegramMenuHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = "telegram_delivery_test",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = message.from?.username,
+                actorFirstName = message.from?.firstName,
+            ),
         )
         send(message.chat.id, "Test notification sent to chat ${inst.telegramChatId}.", message.messageThreadId)
     }

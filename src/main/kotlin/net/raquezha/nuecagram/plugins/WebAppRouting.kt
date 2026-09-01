@@ -19,6 +19,8 @@ import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.AuditIdentityDelta
+import net.raquezha.nuecagram.db.AuditMetadataPatch
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.WebAppSessionContext
@@ -224,6 +226,8 @@ private suspend fun ApplicationCall.handleWebAppAuth(
         telegramUserId = verified.user.id,
         telegramChatId = resolvedChatId,
         telegramTopicId = resolvedTopicId,
+        username = verified.user.username,
+        firstName = verified.user.firstName,
         expiresAt = sessionExpiry,
     )
 
@@ -367,6 +371,10 @@ private suspend fun ApplicationCall.handleMuteInstallation(
         actorType = "webapp_session",
         actorId = session.telegramUserId.toString(),
         action = if (targetMuted) "webapp_mute" else "webapp_unmute",
+        metadataPatch = AuditMetadataPatch(
+            actorUsername = session.username,
+            actorFirstName = session.firstName,
+        ),
     )
 
     appendWebAppSecurityHeaders()
@@ -403,12 +411,24 @@ private suspend fun ApplicationCall.handleUpdateIdentity(
         return
     }
 
-    installationRepository.updateIdentity(item.id, payload.repoName, payload.chatName)
+    val normalizedRepoName = payload.repoName.trim()
+    val normalizedChatName = payload.chatName?.trim()?.takeIf(String::isNotBlank)
+    installationRepository.updateIdentity(item.id, normalizedRepoName, normalizedChatName)
     installationRepository.writeAuditEvent(
         installationId = item.id,
         actorType = "webapp_session",
         actorId = session.telegramUserId.toString(),
         action = "webapp_identity_update",
+        metadataPatch = AuditMetadataPatch(
+            actorUsername = session.username,
+            actorFirstName = session.firstName,
+            identityDelta = AuditIdentityDelta(
+                oldRepoName = item.repoName,
+                newRepoName = normalizedRepoName,
+                oldNickname = item.chatName,
+                newNickname = normalizedChatName,
+            ),
+        ),
     )
 
     appendWebAppSecurityHeaders()
@@ -448,6 +468,10 @@ private suspend fun ApplicationCall.handleTestInstallation(
         actorType = "webapp_session",
         actorId = session.telegramUserId.toString(),
         action = "webapp_test",
+        metadataPatch = AuditMetadataPatch(
+            actorUsername = session.username,
+            actorFirstName = session.firstName,
+        ),
     )
 
     appendWebAppSecurityHeaders()
@@ -554,9 +578,12 @@ private suspend fun ApplicationCall.processCreateInstallation(
             config = config,
             basePath = basePath,
             parsed = parsed,
-            targetChatId = target.chatId,
-            targetTopicId = target.topicId,
+            target = target,
             telegramUserId = session.telegramUserId,
+            actorMetadata = AuditMetadataPatch(
+                actorUsername = session.username,
+                actorFirstName = session.firstName,
+            ),
         )
     }
 }
@@ -566,17 +593,17 @@ private suspend fun createAndRespond(
     config: ConfigWithSecrets,
     basePath: String,
     parsed: CreateInstallationRequestPayload,
-    targetChatId: Long,
-    targetTopicId: Long?,
+    target: TargetDestination,
     telegramUserId: Long,
+    actorMetadata: AuditMetadataPatch,
 ): WebAppResponseSpec {
     val installation = installationRepository.createInstallation(
         repoName = parsed.repoName,
         chatName = parsed.chatName,
         gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
         gitlabProjectId = parsed.gitlabProjectId,
-        telegramChatId = targetChatId,
-        telegramTopicId = targetTopicId,
+        telegramChatId = target.chatId!!,
+        telegramTopicId = target.topicId,
     )
     installationRepository.recordInstallationAdmin(installation.id, telegramUserId)
     val tok = installationRepository.issueWebhookSecret(installation.id)
@@ -585,6 +612,7 @@ private suspend fun createAndRespond(
         actorType = "webapp_session",
         actorId = telegramUserId.toString(),
         action = "webapp_setup",
+        metadataPatch = actorMetadata,
     )
     return WebAppResponseSpec(
         HttpStatusCode.Created,
@@ -653,6 +681,10 @@ private suspend fun ApplicationCall.processRotateInstallation(
                 actorType = "webapp_session",
                 actorId = session.telegramUserId.toString(),
                 action = "webapp_rotate",
+                metadataPatch = AuditMetadataPatch(
+                    actorUsername = session.username,
+                    actorFirstName = session.firstName,
+                ),
             )
             WebAppResponseSpec(HttpStatusCode.OK, RotateResponsePayload(id = item.id.toString(), credential = tok.raw))
         }

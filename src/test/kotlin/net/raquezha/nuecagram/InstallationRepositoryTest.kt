@@ -271,21 +271,78 @@ val InstallationRepositoryTests by testSuite {
             assertThat(repository.cleanupExpiredPlatformAdminSessions()).isEqualTo(1)
             assertThat(repository.cleanupExpiredWebhookSecrets()).isEqualTo(1)
 
-            repository.writeAuditEvent(
+            val wrote = repository.writeAuditEvent(
                 installationId = installation.id,
-                actorType = "system",
-                actorId = "tests",
+                actorType = "telegram",
+                actorId = "42",
                 action = "rotation.confirmed",
+                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                    actorUsername = "alice",
+                    actorFirstName = "Alice",
+                    identityDelta = net.raquezha.nuecagram.db.AuditIdentityDelta(
+                        oldRepoName = "old/repo",
+                        newRepoName = "new/repo",
+                        oldNickname = "old room",
+                        newNickname = "new room",
+                    ),
+                ),
             )
+            val skipped = repository.writeAuditEvent(
+                installationId = installation.id,
+                actorType = "telegram",
+                actorId = null,
+                action = "rotation.skipped",
+            )
+
+            assertThat(wrote).isTrue()
+            assertThat(skipped).isFalse()
+
             DriverManager.getConnection(config.url, config.username, config.password).use { connection ->
+                connection.prepareStatement(
+                    """
+                    SELECT action,
+                           metadata ->> 'installation_id' AS installation_id,
+                           metadata ->> 'actor_id' AS actor_id,
+                           metadata ->> 'username' AS username,
+                           metadata ->> 'first_name' AS first_name,
+                           metadata ->> 'repo_name' AS repo_name,
+                           metadata ->> 'chat_id' AS chat_id,
+                           metadata ->> 'topic_id' AS topic_id,
+                           metadata ->> 'old_repo_name' AS old_repo_name,
+                           metadata ->> 'new_repo_name' AS new_repo_name,
+                           metadata ->> 'old_nickname' AS old_nickname,
+                           metadata ->> 'new_nickname' AS new_nickname
+                    FROM audit_events
+                    WHERE installation_id = ?
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setObject(1, installation.id)
+                    statement.executeQuery().use { result ->
+                        assertThat(result.next()).isTrue()
+                        assertThat(result.getString("action")).isEqualTo("rotation.confirmed")
+                        assertThat(result.getString("installation_id")).isEqualTo(installation.id.toString())
+                        assertThat(result.getString("actor_id")).isEqualTo("42")
+                        assertThat(result.getString("username")).isEqualTo("alice")
+                        assertThat(result.getString("first_name")).isEqualTo("Alice")
+                        assertThat(result.getString("repo_name")).isEqualTo("Project #3")
+                        assertThat(result.getString("chat_id")).isEqualTo("300")
+                        assertThat(result.getString("topic_id")).isEqualTo("7")
+                        assertThat(result.getString("old_repo_name")).isEqualTo("old/repo")
+                        assertThat(result.getString("new_repo_name")).isEqualTo("new/repo")
+                        assertThat(result.getString("old_nickname")).isEqualTo("old room")
+                        assertThat(result.getString("new_nickname")).isEqualTo("new room")
+                    }
+                }
                 connection.prepareStatement(
                     "SELECT COUNT(*) FROM audit_events WHERE installation_id = ? AND action = ?",
                 ).use { statement ->
                     statement.setObject(1, installation.id)
-                    statement.setString(2, "rotation.confirmed")
+                    statement.setString(2, "rotation.skipped")
                     statement.executeQuery().use { result ->
                         assertThat(result.next()).isTrue()
-                        assertThat(result.getInt(1)).isEqualTo(1)
+                        assertThat(result.getInt(1)).isEqualTo(0)
                     }
                 }
             }
@@ -398,29 +455,67 @@ val InstallationRepositoryTests by testSuite {
 
             val initialAuditCount = readRepository.auditEventsPage(limit = 1).totalCount
 
-            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_setup")
+            repository.writeAuditEvent(
+                inst.id,
+                "telegram",
+                "1",
+                "telegram_setup",
+                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(actorUsername = "alice"),
+            )
+            repository.writeAuditEvent(inst.id, "webapp_session", "1", "webapp_setup")
             repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_rotate")
             repository.writeAuditEvent(inst.id, "management", "2", "management_rotate")
+            repository.writeAuditEvent(inst.id, "webapp_session", "1", "webapp_rotate")
             repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_mute")
-            repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_unmute")
+            repository.writeAuditEvent(inst.id, "management", "2", "management_mute")
+            repository.writeAuditEvent(
+                inst.id,
+                "webapp_session",
+                "1",
+                "webapp_identity_update",
+                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                    actorFirstName = "Alice",
+                    identityDelta = net.raquezha.nuecagram.db.AuditIdentityDelta(
+                        oldRepoName = "old/repo",
+                        newRepoName = "new/repo",
+                        oldNickname = "old room",
+                        newNickname = null,
+                    ),
+                ),
+            )
+            repository.writeAuditEvent(null, "system", null, "system_ping")
 
-            val allEvents = readRepository.auditEventsPage(limit = 2, offset = 0)
-            assertThat(allEvents.totalCount).isEqualTo(initialAuditCount + 5)
-            assertThat(allEvents.items).hasSize(2)
+            val allEvents = readRepository.auditEventsPage(limit = 3, offset = 0)
+            assertThat(allEvents.totalCount).isEqualTo(initialAuditCount + 9)
+            assertThat(allEvents.items).hasSize(3)
 
             val setupEvents = readRepository.auditEventsPage(action = "setup", limit = 10)
-            assertThat(setupEvents.totalCount).isEqualTo(1)
-            assertThat(setupEvents.items[0].action).isEqualTo("telegram_setup")
+            assertThat(setupEvents.totalCount).isEqualTo(2)
+            assertThat(setupEvents.items.map { it.action })
+                .containsExactlyElementsIn(setOf("telegram_setup", "webapp_setup"))
 
             val rotateEvents = readRepository.auditEventsPage(action = "rotate", limit = 10)
-            assertThat(rotateEvents.totalCount).isEqualTo(2)
+            assertThat(rotateEvents.totalCount).isEqualTo(3)
             assertThat(rotateEvents.items.map { it.action })
-                .containsExactlyElementsIn(setOf("management_rotate", "telegram_rotate"))
+                .containsExactlyElementsIn(setOf("management_rotate", "telegram_rotate", "webapp_rotate"))
 
             val statusEvents = readRepository.auditEventsPage(action = "status_change", limit = 10)
             assertThat(statusEvents.totalCount).isEqualTo(2)
             assertThat(statusEvents.items.map { it.action })
-                .containsExactlyElementsIn(setOf("telegram_unmute", "telegram_mute"))
+                .containsExactlyElementsIn(setOf("telegram_mute", "management_mute"))
+
+            val identityEvent =
+                readRepository.auditEventsPage(limit = 10).items.first { it.action == "webapp_identity_update" }
+            assertThat(identityEvent.repository).isEqualTo("Project #111")
+            assertThat(identityEvent.actor).isEqualTo("Alice")
+            assertThat(identityEvent.chatDetails).isEqualTo("222")
+            assertThat(identityEvent.details)
+                .containsExactly("repo: old/repo -> new/repo", "chat: old room -> (blank)")
+
+            val systemEvent = readRepository.auditEventsPage(limit = 10).items.first { it.action == "system_ping" }
+            assertThat(systemEvent.repository).isEqualTo("System")
+            assertThat(systemEvent.actor).isEqualTo("Unknown Actor")
+            assertThat(systemEvent.chatDetails).isEqualTo("Unknown Chat")
         } finally {
             // Pool cleaned up automatically on re-initialization
         }

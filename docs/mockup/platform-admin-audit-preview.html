@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nuecagram platform audit preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #62708a;
+      --line: #d9e0ee;
+      --active: #e7f7ee;
+      --active-text: #157347;
+      --degraded: #fff4db;
+      --degraded-text: #9a6700;
+      --muted-bg: #eef2ff;
+      --muted-text: #4f46e5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(23, 32, 51, 0.05);
+    }
+    .panel { margin-top: 20px; }
+    .kicker {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+    }
+    h1, h2 { margin: 8px 0 12px; }
+    p { margin: 0; color: var(--muted); }
+    .back {
+      display: inline-block;
+      margin-top: 12px;
+      color: #2563eb;
+      text-decoration: none;
+    }
+    .segmented { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .segmented span {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+    }
+    .segmented .active { background: #172033; color: #fff; border-color: #172033; }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .count { color: var(--muted); font-size: 13px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      border-top: 0;
+      white-space: nowrap;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge.active { background: var(--active); color: var(--active-text); }
+    .badge.degraded { background: var(--degraded); color: var(--degraded-text); }
+    .badge.muted { background: var(--muted-bg); color: var(--muted-text); }
+    .subtle { color: var(--muted); margin-top: 4px; }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      color: var(--muted);
+    }
+    .pager { display: flex; gap: 8px; align-items: center; }
+    .pager span {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      background: #fff;
+    }
+    .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+    @media (max-width: 720px) {
+      .head, .footer { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="kicker">Platform administration</div>
+      <h1>Audit log explorer</h1>
+      <p>Preview of the new repository, actor, and chat history audit UI.</p>
+      <a class="back" href="#overview">Back to Overview</a>
+    </section>
+
+    <section class="panel">
+      <div class="segmented">
+        <span class="active">All</span>
+        <span>Setup</span>
+        <span>Rotate</span>
+        <span>Status Change</span>
+      </div>
+      <div class="head">
+        <h2>Audit Log</h2>
+        <div class="count">123 total</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Repository</th>
+              <th>Action</th>
+              <th>Actor</th>
+              <th>Chat &amp; Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>2026-09-01T14:02:31Z</td>
+              <td>group/backend</td>
+              <td><span class="badge active">webapp_setup</span></td>
+              <td>@alice</td>
+              <td>
+                <div>-110012345 / topic 42</div>
+                <div class="subtle">nickname: Ops Room</div>
+              </td>
+            </tr>
+            <tr>
+              <td>2026-09-01T14:01:02Z</td>
+              <td>group/backend</td>
+              <td><span class="badge degraded">webapp_identity_update</span></td>
+              <td>Test</td>
+              <td>
+                <div>-110012345 / topic 42</div>
+                <div class="subtle">repo: Project #111 -&gt; group/backend</div>
+                <div class="subtle">chat: old room -&gt; (blank)</div>
+              </td>
+            </tr>
+            <tr>
+              <td>2026-09-01T13:58:44Z</td>
+              <td>7fa1c2de</td>
+              <td><span class="badge muted">management_mute</span></td>
+              <td>2bb5740a-audit</td>
+              <td><div>-110012345</div></td>
+            </tr>
+            <tr>
+              <td>2026-09-01T13:51:10Z</td>
+              <td>System</td>
+              <td><span class="badge active">telegram_webapp_launch</span></td>
+              <td>Unknown Actor</td>
+              <td><div>Unknown Chat</div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="footer">
+        <div>Showing 1-20 of 123</div>
+        <div class="pager">
+          <span>Prev</span>
+          <span>1 / 7</span>
+          <span>Next</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="overview">
+      <div class="head">
+        <h2>Overview preview</h2>
+        <div class="count">Compact dashboard version</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Repository</th>
+              <th>Action</th>
+              <th>Actor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>2026-09-01T14:02:31Z</td>
+              <td>group/backend</td>
+              <td>webapp_setup</td>
+              <td>@alice</td>
+            </tr>
+            <tr>
+              <td>2026-09-01T13:51:10Z</td>
+              <td>System</td>
+              <td>telegram_webapp_launch</td>
+              <td>Unknown Actor</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
