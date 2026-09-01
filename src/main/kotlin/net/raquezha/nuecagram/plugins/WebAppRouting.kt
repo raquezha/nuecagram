@@ -932,7 +932,7 @@ let currentContext = {};
 let items = [];
 let currentItem = null;
 let listMode = 'scoped';
-const avatars = ['01-giraffe.png','02-elephant.png','03-lion.png','04-koala.png','05-bear.png','06-tiger.png'];
+const avatars = ['01-wildlife-avatar-1-giraffe.png','02-wildlife-avatar-10-tiger.png','03-wildlife-avatar-11-zebra.png','04-wildlife-avatar-12-sloth.png','05-wildlife-avatar-13-yak.png','06-wildlife-avatar-14-impala.png','07-wildlife-avatar-2-elephant.png','08-wildlife-avatar-3-lion.png','09-wildlife-avatar-4-hippo.png','10-wildlife-avatar-5-koala.png','11-wildlife-avatar-6-deer.png','12-wildlife-avatar-7-bear.png','13-wildlife-avatar-8-mouse.png','14-wildlife-avatar-9-rabbit.png','15-animal-avatar-1-giraffe.png','16-animal-avatar-2-panda.png','17-animal-avatar-3-lion.png','18-animal-avatar-4-elephant.png','19-animal-avatar-5-hippo.png','20-animal-avatar-6-tiger.png','21-animal-avatar-7-bear.png','22-baby-jungle-avatar-1-koala.png','23-baby-jungle-avatar-2-giraffe.png','24-baby-jungle-avatar-3-elephant.png','25-baby-jungle-avatar-4-leopard.png','26-baby-jungle-avatar-5-lion.png','27-baby-jungle-avatar-6-bear.png','28-cat-avatar-1.png','29-cat-avatar-2.png','30-cat-avatar-3.png','31-cat-avatar-4.png','32-cat-avatar-5.png','33-doodle-cat-avatar-1.png','34-doodle-cat-avatar-2.png','35-doodle-cat-avatar-3.png','36-doodle-cat-avatar-4.png'];
 
 function getAuthHeaders(extra) {
   const h = Object.assign({}, extra || {});
