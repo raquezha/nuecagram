@@ -860,13 +860,13 @@ private fun webAppShellHtml(basePath: String): String = """
       </section>
 
       <section id="screen-detail" class="panel">
-        <button class="link" data-screen="list">← Repositories</button>
+        <button class="link" data-screen="list">‹ Back to repositories</button>
         <div id="detailBody"></div>
         <p class="footer"><a href="https://www.vecteezy.com/free-vector/animal" target="_blank" rel="noopener">Vectors by Vecteezy</a></p>
       </section>
 
       <section id="screen-edit" class="panel">
-        <button class="link" data-screen="detail">← Details</button>
+        <button class="link" data-screen="detail">‹ Back to details</button>
         <h1>Edit names</h1>
         <div class="field"><label>Repository name</label><input id="editRepoName" autocomplete="off"></div>
         <div class="field"><label>Notification label</label><input id="editChatName" autocomplete="off"></div>
@@ -875,7 +875,7 @@ private fun webAppShellHtml(basePath: String): String = """
       </section>
 
       <section id="screen-add-info" class="panel">
-        <button class="link" data-screen="list">← Repositories</button>
+        <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Repositories must be added from the Telegram group or topic that will receive notifications.</p>
         <div class="box"><p>How to add one:</p><p>1. Go to the target Telegram group or topic.<br>2. Open the group's Nuecagram menu and tap Management.<br>3. Tap + Add.</p><p>You can also run /setup in that group or topic.</p><p>No chat ID typing needed -- Nuecagram fills the destination automatically.</p></div>
@@ -883,7 +883,7 @@ private fun webAppShellHtml(basePath: String): String = """
       </section>
 
       <section id="screen-wizard" class="panel">
-        <button class="link" data-screen="list">← Repositories</button>
+        <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
@@ -1050,7 +1050,7 @@ function renderDetail() {
     '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
-    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names</button></div><div class="section"><div class="section-title">Danger zone</div><button id="btnRotate" class="danger">Rotate webhook token</button></div>';
+    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><button id="btnRotate" class="danger">Rotate webhook token ›</button></div>';
   document.getElementById('btnTest').addEventListener('click', testDelivery);
   document.getElementById('btnMute').addEventListener('click', toggleMute);
   document.getElementById('btnEdit').addEventListener('click', openEdit);
