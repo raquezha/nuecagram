@@ -790,15 +790,15 @@ private fun webAppShellHtml(basePath: String): String = """
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #f2f3f5);
+        --bg-color: var(--tg-theme-bg-color, #f4f5f8);
         --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
-        --text-main: var(--tg-theme-text-color, #111827);
-        --hint: var(--tg-theme-hint-color, #6b7280);
-        --button: var(--tg-theme-button-color, #229ed9);
+        --text-main: var(--tg-theme-text-color, #0f172a);
+        --hint: var(--tg-theme-hint-color, #64748b);
+        --button: var(--tg-theme-button-color, #0284c7);
         --button-text: var(--tg-theme-button-text-color, #ffffff);
-        --border: #e5e7eb;
-        --success: #12805c;
-        --danger: #be123c;
+        --border: #e2e8f0;
+        --success: #16a34a;
+        --danger: #dc2626;
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -821,9 +821,10 @@ private fun webAppShellHtml(basePath: String): String = """
       .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .meta { margin-top: 7px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .badge { margin-left: auto; border-radius: 999px; padding: 4px 7px; font-size: 11px; font-weight: 800; }
-      .badge-active { background: #e8f7ef; color: var(--success); }
-      .badge-muted { background: #fff1f2; color: var(--danger); }
-      .chev { color: #9ca3af; font-size: 22px; }
+      .helper.ok { color: var(--success); font-weight: 700; }
+      .badge-active { background: #dcfce7; color: var(--success); }
+      .badge-muted { background: #fee2e2; color: var(--danger); }
+      .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
       .panel { display: none; }
       .panel.active { display: block; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
