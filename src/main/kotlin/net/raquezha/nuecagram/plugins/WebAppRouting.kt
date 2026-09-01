@@ -900,10 +900,10 @@ private fun webAppShellHtml(basePath: String): String = """
         <h1 id="revTitle">Repository created</h1>
         <p>Copy this webhook token now. It will only be shown once.</p>
         <div class="group">
-          <div class="field">
-            <label>Webhook secret</label>
-            <div id="revSecret" class="secret hidden"></div>
-            <div id="copyHelp" class="helper ok"></div>
+          <div class="field" style="text-align:center;">
+            <label style="text-align:center;">Webhook secret</label>
+            <div id="revSecret" class="secret hidden" style="margin:12px auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:15px;word-break:break-all;"></div>
+            <div id="copyHelp" class="helper ok" style="text-align:center;"></div>
             <div class="split" style="margin-top:12px;">
               <button id="btnReveal">Reveal</button>
               <button id="btnCopy" class="primary">Copy token</button>
