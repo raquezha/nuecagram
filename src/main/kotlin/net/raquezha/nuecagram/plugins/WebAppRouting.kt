@@ -790,43 +790,43 @@ private fun webAppShellHtml(basePath: String): String = """
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #f4f4f5);
-        --card-bg: var(--tg-theme-secondary-bg-color, #fff);
-        --text-main: var(--tg-theme-text-color, #1f2328);
+        --bg-color: var(--tg-theme-bg-color, #f6f7f9);
+        --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+        --text-main: var(--tg-theme-text-color, #111827);
         --hint: var(--tg-theme-hint-color, #6b7280);
         --button: var(--tg-theme-button-color, #229ed9);
-        --button-text: var(--tg-theme-button-text-color, #fff);
-        --border: rgba(31,35,40,.10);
-        --success: #218358;
-        --danger: #c24150;
+        --button-text: var(--tg-theme-button-text-color, #ffffff);
+        --border: #e5e7eb;
+        --success: #15803d;
+        --danger: #be123c;
       }
       * { box-sizing: border-box; }
       body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-main); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 20px 16px 28px; }
-      h1 { margin: 0 0 5px; font-size: 20px; line-height: 1.2; }
-      h2 { margin: 18px 0 7px; font-size: 15px; }
-      p { margin: 0 0 10px; color: var(--hint); line-height: 1.35; }
-      button { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 10px 12px; font: 700 14px inherit; cursor: pointer; }
+      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 24px 16px 32px; }
+      h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.15; letter-spacing: -0.02em; }
+      h2 { margin: 22px 0 9px; font-size: 13px; color: var(--hint); text-transform: uppercase; letter-spacing: .04em; }
+      p { margin: 0 0 14px; color: var(--hint); line-height: 1.45; }
+      button { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 14px; font: 700 14px inherit; cursor: pointer; }
       button.primary { border-color: var(--button); background: var(--button); color: var(--button-text); }
       button.danger { color: var(--danger); }
       button.link { border: 0; background: transparent; color: var(--button); padding: 8px 0; }
-      .top-actions { display: flex; gap: 8px; margin: 12px 0 14px; flex-wrap: wrap; }
-      .card { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; margin: 0 0 8px; padding: 14px; border: 1px solid var(--border); border-radius: 18px; background: var(--card-bg); box-shadow: 0 8px 24px rgba(31,35,40,.05); }
-      .card.muted { opacity: .62; filter: grayscale(.35); }
-      .avatar { flex: 0 0 58px; width: 58px; height: 58px; border-radius: 50%; object-fit: cover; background: #f2eadf; }
+      .top-actions { display: flex; gap: 10px; margin: 16px 0 18px; flex-wrap: wrap; }
+      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--card-bg); box-shadow: 0 1px 2px rgba(17,24,39,.04); }
+      .card.muted { opacity: .68; filter: grayscale(.25); }
+      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #f3f4f6; }
       .grow { min-width: 0; flex: 1; }
       .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .meta { margin-top: 6px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sub { margin-top: 4px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .meta { margin-top: 7px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .badge { margin-left: auto; border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 800; }
       .badge-active { background: #e6f4ea; color: var(--success); }
       .badge-muted { background: #fff0f1; color: var(--danger); }
       .chev { color: var(--hint); font-size: 20px; }
       .panel { display: none; }
       .panel.active { display: block; }
-      .box { padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--card-bg); }
-      .field { margin: 0 0 14px; }
+      .box { padding: 18px; border: 1px solid var(--border); border-radius: 18px; background: var(--card-bg); }
+      .field { margin: 0 0 16px; }
       label { display: block; margin-bottom: 5px; font-weight: 800; }
       input { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px; background: var(--card-bg); color: var(--text-main); font: 14px inherit; }
       input[readonly] { color: var(--hint); }
