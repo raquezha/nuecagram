@@ -924,7 +924,12 @@ function getAuthHeaders(extra) {
   return h;
 }
 
-function escapeHtml(value) {
+function copyValue(val, el) {
+  if (navigator.clipboard) navigator.clipboard.writeText(val);
+  const old = el.innerText;
+  el.innerText = '✓ Copied';
+  setTimeout(function() { el.innerText = old; }, 1800);
+}
   return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
@@ -1047,7 +1052,7 @@ async function openDetail(id) {
 function renderDetail() {
   const item = currentItem;
   document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
-    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
     '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><button id="btnRotate" class="danger">Rotate webhook token ›</button></div>';
