@@ -888,7 +888,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
-        <p style="font-size:12px;color:var(--hint);margin:-4px 0 16px;">To send notifications to a different topic, open Management from that topic.</p>
+        <p style="font-size:12px;color:var(--hint);font-style:italic;opacity:.78;margin:-4px 0 16px;line-height:1.4;">To send notifications to a different topic,<br>open Management from that topic.</p>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
@@ -903,8 +903,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <div class="group">
           <div class="field">
             <label>Webhook secret</label>
-            <div id="revSecret" class="secret hidden" style="margin:8px 0 12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:15px;word-break:break-all;cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, document.getElementById('copyHelp'))"></div>
-            <div id="copyHelp" class="helper ok"></div>
+            <div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>
             <div class="split" style="margin-top:12px;">
               <button id="btnReveal">Reveal</button>
               <button id="btnCopy" class="primary">Copy token</button>
@@ -1206,14 +1205,11 @@ function setupHandlers() {
     const hidden = secret.classList.toggle('hidden');
     document.getElementById('btnReveal').innerText = hidden ? 'Reveal' : 'Hide';
   });
-  let copyTimer = null;
   document.getElementById('btnCopy').addEventListener('click', function() {
-    const val = document.getElementById('revSecret').innerText;
+    const secret = document.getElementById('revSecret');
+    const val = secret.innerText;
     if (navigator.clipboard) navigator.clipboard.writeText(val);
-    const help = document.getElementById('copyHelp');
-    help.innerText = '✓ Copied';
-    if (copyTimer) clearTimeout(copyTimer);
-    copyTimer = setTimeout(function() { help.innerText = ''; }, 2500);
+    copyValue(val, secret);
   });
 }
 
