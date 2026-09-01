@@ -947,10 +947,12 @@ function copyValue(val, el) {
   if (navigator.clipboard) navigator.clipboard.writeText(val);
   if (!el.getAttribute('data-original')) el.setAttribute('data-original', el.innerText);
   el.innerText = '✓ Copied';
+  el.style.color = 'var(--success)';
   if (el._copyTimer) clearTimeout(el._copyTimer);
   el._copyTimer = setTimeout(function() {
     el.innerText = el.getAttribute('data-original');
     el.removeAttribute('data-original');
+    el.style.color = '';
     delete el._copyTimer;
   }, 1800);
 }
