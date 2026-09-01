@@ -34,6 +34,8 @@ private data class DashboardTestAuthPayload(
 @Serializable
 private data class TestInstallationPayload(
     val id: String,
+    val repoName: String,
+    val chatName: String? = null,
     val gitlabBaseUrl: String,
     val telegramChatId: Long,
     val telegramTopicId: Long? = null,
@@ -170,7 +172,9 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
         val items = json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())
         assertThat(items).isNotEmpty()
-        assertThat(items.map { it.id }).contains(installation.id.toString())
+        val item = items.first { it.id == installation.id.toString() }
+        assertThat(item.repoName).isEqualTo(installation.repoName)
+        assertThat(item.chatName).isNull()
     }
 
     @Test
@@ -208,6 +212,8 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(detailResp.status).isEqualTo(HttpStatusCode.OK)
         val item = json.decodeFromString<TestInstallationPayload>(detailResp.bodyAsText())
         assertThat(item.id).isEqualTo(installation.id.toString())
+        assertThat(item.repoName).isEqualTo(installation.repoName)
+        assertThat(item.chatName).isNull()
 
         val (wrongContextSession, _) = issueSessionWithNonce(
             client,
@@ -273,6 +279,60 @@ class WebDashboardTest : BaseEventTestHelper() {
 
         val updatedContext = runBlocking { installationRepository.installationAdminContext(installation.id) }
         assertThat(updatedContext?.muted).isTrue()
+    }
+
+    @Test
+    fun identityEndpointRequiresCsrfAndUpdatesNames() = testApplication {
+        configureTestApplication()
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+
+        val rejectCsrfResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            setBody("""{"repoName":"renamed","chatName":"Deployments"}""")
+        }
+        assertThat(rejectCsrfResp.status).isEqualTo(HttpStatusCode.Forbidden)
+
+        val updateResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"repoName":"  renamed  ","chatName":"   "}""")
+        }
+        assertThat(updateResp.status).isEqualTo(HttpStatusCode.OK)
+        val updatedPayload = json.decodeFromString<TestInstallationPayload>(updateResp.bodyAsText())
+        assertThat(updatedPayload.repoName).isEqualTo("renamed")
+        assertThat(updatedPayload.chatName).isNull()
+
+        val updatedContext = runBlocking { installationRepository.installationAdminContext(installation.id) }
+        assertThat(updatedContext?.repoName).isEqualTo("renamed")
+        assertThat(updatedContext?.chatName).isNull()
+    }
+
+    @Test
+    fun identityEndpointRejectsBlankAndLegacyRepoNames() = testApplication {
+        configureTestApplication()
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+
+        listOf("", "Unknown Repository").forEach { repoName ->
+            val response = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+                contentType(ContentType.Application.Json)
+                header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+                header("X-CSRF-Token", csrf)
+                setBody("""{"repoName":"$repoName","chatName":"Deployments"}""")
+            }
+            assertThat(response.status).isEqualTo(HttpStatusCode.BadRequest)
+        }
     }
 
     @Test
@@ -368,6 +428,8 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(createResp.status).isEqualTo(HttpStatusCode.Created)
         val created = json.decodeFromString<TestCreateInstallationResponsePayload>(createResp.bodyAsText())
         assertThat(created.installation.telegramChatId).isEqualTo(targetChatId)
+        assertThat(created.installation.repoName).isEqualTo("Project #456")
+        assertThat(created.installation.chatName).isNull()
         assertThat(created.installation.gitlabBaseUrl).isEqualTo("https://gitlab.example.com")
     }
 

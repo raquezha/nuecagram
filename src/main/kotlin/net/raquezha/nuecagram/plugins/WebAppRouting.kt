@@ -8,6 +8,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -61,6 +62,8 @@ private data class AuthResponsePayload(
 @Serializable
 private data class InstallationResponsePayload(
     val id: String,
+    val repoName: String,
+    val chatName: String? = null,
     val gitlabBaseUrl: String,
     val gitlabProjectId: Long? = null,
     val telegramChatId: Long,
@@ -71,6 +74,12 @@ private data class InstallationResponsePayload(
 @Serializable
 private data class MuteRequestPayload(
     val muted: Boolean,
+)
+
+@Serializable
+private data class IdentityRequestPayload(
+    val repoName: String,
+    val chatName: String? = null,
 )
 
 @Serializable
@@ -137,6 +146,19 @@ fun Route.webAppRouting(basePath: String) {
         )
     }
 
+    get("$basePath/webapp/avatars/{file}") {
+        val file = call.parameters["file"].orEmpty()
+        val bytes = file.takeIf { it.matches(Regex("[a-zA-Z0-9.-]+\\.png")) }
+            ?.let { Thread.currentThread().contextClassLoader.getResourceAsStream("webapp/avatars/$it") }
+            ?.use { it.readBytes() }
+        if (bytes == null) {
+            call.respond(HttpStatusCode.NotFound)
+        } else {
+            call.appendWebAppSecurityHeaders()
+            call.respondBytes(bytes, ContentType.Image.PNG, HttpStatusCode.OK)
+        }
+    }
+
     post("$basePath/api/webapp/auth") {
         call.handleWebAppAuth(installationRepository, config, json, basePath)
     }
@@ -151,6 +173,10 @@ fun Route.webAppRouting(basePath: String) {
 
     post("$basePath/api/webapp/installations/{id}/mute") {
         call.handleMuteInstallation(installationRepository, telegramService, json)
+    }
+
+    post("$basePath/api/webapp/installations/{id}/identity") {
+        call.handleUpdateIdentity(installationRepository, telegramService, json)
     }
 
     post("$basePath/api/webapp/installations/{id}/test") {
@@ -262,7 +288,8 @@ private suspend fun ApplicationCall.handleGetInstallations(
     if (!verifyAdminStatus(session, telegramService)) return
 
     val isGroupContext = session.telegramChatId != null && session.telegramChatId < 0
-    val items = if (isGroupContext) {
+    val scopedOnly = request.queryParameters["scope"] != "all"
+    val items = if (isGroupContext && scopedOnly) {
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
@@ -344,6 +371,48 @@ private suspend fun ApplicationCall.handleMuteInstallation(
 
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, MuteResponsePayload(id = item.id.toString(), muted = targetMuted))
+}
+
+private suspend fun ApplicationCall.handleUpdateIdentity(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    json: Json,
+) {
+    val session = authenticateWebAppSession(installationRepository) ?: return
+    if (!verifyAdminStatus(session, telegramService)) return
+    if (!verifyCsrfHeader(installationRepository, session)) return
+
+    val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+    if (idParam == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+        return
+    }
+
+    val item = installationRepository.installationAdminContext(idParam)
+    if (item == null || !canAccess(session, item, telegramService)) {
+        respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+        return
+    }
+
+    val payload = runCatching { json.decodeFromString<IdentityRequestPayload>(receiveText()) }.getOrNull()
+    if (payload == null || payload.repoName.isBlank() || payload.repoName.trim() == "Unknown Repository") {
+        respond(
+            HttpStatusCode.BadRequest,
+            ErrorResponsePayload("repoName must be non-blank and not use the legacy fallback value"),
+        )
+        return
+    }
+
+    installationRepository.updateIdentity(item.id, payload.repoName, payload.chatName)
+    installationRepository.writeAuditEvent(
+        installationId = item.id,
+        actorType = "webapp_session",
+        actorId = session.telegramUserId.toString(),
+        action = "webapp_identity_update",
+    )
+
+    appendWebAppSecurityHeaders()
+    respond(HttpStatusCode.OK, installationRepository.installationAdminContext(item.id)!!.toResponsePayload())
 }
 
 private suspend fun ApplicationCall.handleTestInstallation(
@@ -651,6 +720,8 @@ private suspend fun ApplicationCall.verifyCsrfHeader(
 
 private fun InstallationAdminContext.toResponsePayload() = InstallationResponsePayload(
     id = id.toString(),
+    repoName = repoName,
+    chatName = chatName,
     gitlabBaseUrl = gitlabBaseUrl,
     gitlabProjectId = gitlabProjectId,
     telegramChatId = telegramChatId,
@@ -716,101 +787,137 @@ private fun webAppShellHtml(basePath: String): String = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Nuecagram Management</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
-        --bg-color: #eee4d5;
-        --card-bg: rgba(255, 255, 255, 0.92);
-        --card-border: #dfd5c6;
-        --text-main: #2c251e;
-        --accent-tg: #229ed9;
-        --success: #2a684d;
-        --danger: #a62b1e;
-        --code-bg: #eae1d5;
-        --code-text: #8b3a00;
-        --font-grotesk: 'Space Grotesk', sans-serif;
-        --font-mono: 'Reddit Mono', monospace;
+        --bg-color: var(--tg-theme-bg-color, #f4f5f8);
+        --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+        --text-main: var(--tg-theme-text-color, #0f172a);
+        --hint: var(--tg-theme-hint-color, #64748b);
+        --button: var(--tg-theme-button-color, #0284c7);
+        --button-text: var(--tg-theme-button-text-color, #ffffff);
+        --border: #e2e8f0;
+        --success: #16a34a;
+        --danger: #dc2626;
       }
       * { box-sizing: border-box; }
-      body {
-        margin: 0; padding: 1rem;
-        background-color: var(--bg-color);
-        font-family: var(--font-mono);
-        color: var(--text-main);
-      }
-      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; }
-      .context-banner {
-        background: var(--code-bg); padding: 0.75rem 1rem; border-radius: 8px;
-        margin-bottom: 1rem; border: 1px solid var(--card-border); font-size: 0.85rem;
-      }
-      .card {
-        background: var(--card-bg); border: 1px solid var(--card-border);
-        border-radius: 12px; padding: 1rem; margin-bottom: 1rem;
-      }
-      .card-header { display: flex; justify-content: space-between; align-items: center; }
-      .card-id { font-weight: 700; font-family: var(--font-grotesk); }
-      .badge { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
-      .badge-active { background: #e6f4ea; color: var(--success); }
-      .badge-muted { background: #fff5f5; color: var(--danger); }
-      .actions { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
-      button {
-        font-family: var(--font-grotesk); font-weight: 600; font-size: 0.85rem;
-        padding: 0.4rem 0.8rem; border-radius: 6px; border: 1px solid var(--card-border);
-        background: #fff; cursor: pointer;
-      }
+      body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 18px 14px 28px; }
+      h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.1; letter-spacing: -0.03em; }
+      h2 { margin: 18px 4px 8px; font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
+      p { margin: 0 0 14px; color: var(--hint); line-height: 1.45; }
+      button { border: 0; border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 14px; font: 700 14px inherit; box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
+      button.primary { background: var(--button); color: var(--button-text); box-shadow: none; }
+      button.danger { color: var(--danger); }
+      button.link { background: transparent; color: var(--button); box-shadow: none; padding: 8px 2px; }
+      .top-actions { display: flex; gap: 10px; margin: 16px 0 18px; flex-wrap: wrap; }
+      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 14px; border-radius: 18px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); }
+      .card.muted { opacity: .72; filter: grayscale(.25); }
+      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; }
+      .grow { min-width: 0; flex: 1; }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 13px 14px; border-top: 1px solid var(--border); }
+      .row:first-child { border-top: 0; }
+      .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .meta { margin-top: 7px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .badge { margin-left: auto; border-radius: 999px; padding: 4px 7px; font-size: 11px; font-weight: 800; }
+      .helper.ok { color: var(--success); font-weight: 700; }
+      .badge-active { background: #dcfce7; color: var(--success); }
+      .badge-muted { background: #fee2e2; color: var(--danger); }
+      .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
+      .panel { display: none; }
+      .panel.active { display: block; }
+      .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+      .box { padding: 18px; }
+      .section { margin: 18px 0; }
+      .section > button { width: 100%; }
+      .section-title { margin: 18px 4px 8px; font-size: 12px; font-weight: 800; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
+      .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
+      .field:first-child { border-top: 0; }
+      label { display: block; margin-bottom: 7px; font-weight: 800; }
+      input, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fafafa; color: var(--text-main); font: 15px inherit; }
+      .codebox { min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      input[readonly] { color: var(--hint); }
+      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
+      .split > button { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; }
+      .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
+      .ok { color: var(--success); }
+      .err { color: var(--danger); }
+      .secret { display: block; margin-top: 8px; }
+      .secret.hidden { filter: blur(6px); user-select: none; }
+      .footer { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; font-size: 12px; }
+      a { color: var(--button); }
     </style>
   </head>
   <body>
     <div class="container">
-      <div id="contextBanner" class="context-banner" style="display:flex;justify-content:space-between;align-items:center;">
-        <div><strong>Context:</strong> <span id="contextText">Resolving Telegram context...</span></div>
-        <button id="btnAdd" style="display:none;font-size:0.8rem;padding:0.25rem 0.6rem;background:var(--accent-tg);color:#fff;border:none;border-radius:4px;cursor:pointer;">+ Add</button>
-      </div>
-      <div id="installationsList">
-        <div class="card"><p>Loading installations...</p></div>
-      </div>
-      <div id="screen-wizard" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-          <strong style="font-family:var(--font-grotesk);">Connect New Project</strong>
-          <span id="btnCancel" style="font-size:0.78rem;color:var(--accent-tg);cursor:pointer;">Cancel</span>
+      <section id="screen-list" class="panel active">
+        <h1 id="listTitle">Repositories</h1>
+        <p id="listSubtitle">Loading repositories...</p>
+        <div class="top-actions">
+          <button id="btnAdd" class="primary">+ Add repository</button>
+          <button id="btnAll" style="display:none;">View all repositories</button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
-          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">GitLab Base URL</label>
-          <input id="inUrl" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;" type="text" value="https://gitlab.com">
-          <span id="errUrl" style="font-size:0.78rem;color:var(--danger);min-height:1em;"></span>
+        <div id="installationsList"><div class="box">Loading repositories...</div></div>
+      </section>
+
+      <section id="screen-detail" class="panel">
+        <button class="link" data-screen="list">‹ Back to repositories</button>
+        <div id="detailBody"></div>
+        <p class="footer"><a href="https://www.vecteezy.com/free-vector/animal" target="_blank" rel="noopener">Vectors by Vecteezy</a></p>
+      </section>
+
+      <section id="screen-edit" class="panel">
+        <button class="link" data-screen="detail">‹ Back to details</button>
+        <h1>Edit names</h1>
+        <div class="field"><label>Repository name</label><input id="editRepoName" autocomplete="off"></div>
+        <div class="field"><label>Notification label</label><input id="editChatName" autocomplete="off"></div>
+        <div id="editErr" class="helper err"></div>
+        <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
+      </section>
+
+      <section id="screen-add-info" class="panel">
+        <button class="link" data-screen="list">‹ Back to repositories</button>
+        <h1>Add repository</h1>
+        <p>Repositories must be added from the Telegram group or topic that will receive notifications.</p>
+        <div class="box"><p>How to add one:</p><p>1. Go to the target Telegram group or topic.<br>2. Open the group's Nuecagram menu and tap Management.<br>3. Tap + Add.</p><p>You can also run /setup in that group or topic.</p><p>No chat ID typing needed -- Nuecagram fills the destination automatically.</p></div>
+        <div class="top-actions"><button class="primary" data-screen="list">Got it</button></div>
+      </section>
+
+      <section id="screen-wizard" class="panel">
+        <button class="link" data-screen="list">‹ Back to repositories</button>
+        <h1>Add repository</h1>
+        <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
+        <p style="font-size:11px;color:var(--hint);font-style:italic;opacity:.72;margin:-4px 0 16px;line-height:1.35;">To send notifications to a different topic,<br>open Management from that topic.</p>
+        <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
+        <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
+        <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
+        <div class="field"><label>Notification label</label><input id="inChatName" placeholder="Android Team / Notifications"></div>
+        <div id="wizErr" class="helper err"></div>
+        <div class="split"><button data-screen="list">Cancel</button><button id="btnCreate" class="primary">Create</button></div>
+      </section>
+
+      <section id="screen-reveal" class="panel">
+        <h1 id="revTitle">Webhook token rotated</h1>
+        <p id="revSubtitle">Copy this webhook token now. It will only be shown once.</p>
+        <div class="group">
+          <div class="field">
+            <label>Webhook secret</label>
+            <div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>
+            <div class="split" style="margin-top:12px;">
+              <button id="btnReveal">Reveal</button>
+              <button id="btnCopy" class="primary">Copy token</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Webhook URL</label>
+            <div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
+          </div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
-          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">GitLab Project ID</label>
-          <input id="inPid" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;" type="number" placeholder="e.g. 12345678">
-          <span id="errPid" style="font-size:0.78rem;color:var(--danger);min-height:1em;"></span>
+        <div style="margin-top:16px;">
+          <button id="btnRevDone" class="primary" style="width:100%;">Done</button>
         </div>
-        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
-          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">Notification Target</label>
-          <input id="inDest" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;opacity:0.8;" type="text" readonly>
-        </div>
-        <p style="font-size:0.78rem;color:#6e6154;line-height:1.4;margin-bottom:0.75rem;">Nuecagram generates a unique webhook URL and token for your GitLab settings.</p>
-        <div id="wizErr" style="font-size:0.78rem;color:var(--danger);margin-bottom:0.5rem;min-height:1em;"></div>
-        <button id="btnCreate" style="font-family:var(--font-grotesk);font-weight:700;font-size:0.9rem;width:100%;padding:0.7rem;border-radius:0.375rem;border:none;background:var(--accent-tg);color:#fff;cursor:pointer;">Create Installation</button>
-      </div>
-      <div id="screen-reveal" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-          <strong id="revTitle" style="font-family:var(--font-grotesk);">Credential Issued</strong>
-          <span id="btnRevDone" style="font-size:0.78rem;color:var(--accent-tg);cursor:pointer;">Done</span>
-        </div>
-        <div style="background:#fff5f5;border:1px solid var(--danger);border-radius:0.375rem;padding:0.6rem 0.85rem;font-size:0.8rem;color:var(--danger);font-weight:600;margin-bottom:0.75rem;">Store this token now in GitLab settings. Shown <strong>only once</strong>.</div>
-        <div style="background:var(--code-bg);border:1px dashed var(--code-text, #8b3a00);border-radius:0.5rem;padding:0.85rem;margin-bottom:0.75rem;">
-          <span style="font-size:0.72rem;text-transform:uppercase;font-weight:700;color:#8b3a00;display:block;margin-bottom:0.35rem;">Webhook Token</span>
-          <span id="revSecret" style="font-family:var(--font-mono);color:#8b3a00;font-weight:700;font-size:0.9rem;word-break:break-all;"></span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:0.35rem;margin-bottom:0.75rem;">
-          <label style="font-family:var(--font-grotesk);font-size:0.82rem;font-weight:600;">Webhook URL</label>
-          <input id="revUrl" style="font-family:var(--font-mono);padding:0.55rem 0.75rem;border:1px solid var(--card-border);border-radius:0.375rem;background:#fff;color:var(--text-main);font-size:0.85rem;width:100%;box-sizing:border-box;" type="text" readonly>
-        </div>
-        <button id="btnCopy" style="font-family:var(--font-grotesk);font-weight:700;font-size:0.9rem;width:100%;padding:0.7rem;border-radius:0.375rem;border:none;background:var(--accent-tg);color:#fff;cursor:pointer;margin-bottom:0.5rem;">Copy Token</button>
-      </div>
+      </section>
     </div>
     <script src="${basePath}/webapp/app.js"></script>
   </body>
@@ -822,6 +929,10 @@ private fun webAppJsScript(basePath: String): String = """
 let userCsrf = '';
 let sToken = '';
 let currentContext = {};
+let items = [];
+let currentItem = null;
+let listMode = 'scoped';
+const avatars = ['01-wildlife-avatar-1-giraffe.png','02-wildlife-avatar-10-tiger.png','03-wildlife-avatar-11-zebra.png','04-wildlife-avatar-12-sloth.png','05-wildlife-avatar-13-yak.png','06-wildlife-avatar-14-impala.png','07-wildlife-avatar-2-elephant.png','08-wildlife-avatar-3-lion.png','09-wildlife-avatar-4-hippo.png','10-wildlife-avatar-5-koala.png','11-wildlife-avatar-6-deer.png','12-wildlife-avatar-7-bear.png','13-wildlife-avatar-8-mouse.png','14-wildlife-avatar-9-rabbit.png','15-animal-avatar-1-giraffe.png','16-animal-avatar-2-panda.png','17-animal-avatar-3-lion.png','18-animal-avatar-4-elephant.png','19-animal-avatar-5-hippo.png','20-animal-avatar-6-tiger.png','21-animal-avatar-7-bear.png','22-baby-jungle-avatar-1-koala.png','23-baby-jungle-avatar-2-giraffe.png','24-baby-jungle-avatar-3-elephant.png','25-baby-jungle-avatar-4-leopard.png','26-baby-jungle-avatar-5-lion.png','27-baby-jungle-avatar-6-bear.png','28-cat-avatar-1.png','29-cat-avatar-2.png','30-cat-avatar-3.png','31-cat-avatar-4.png','32-cat-avatar-5.png','33-doodle-cat-avatar-1.png','34-doodle-cat-avatar-2.png','35-doodle-cat-avatar-3.png','36-doodle-cat-avatar-4.png'];
 
 function getAuthHeaders(extra) {
   const h = Object.assign({}, extra || {});
@@ -830,211 +941,284 @@ function getAuthHeaders(extra) {
   return h;
 }
 
-function extractStartParam() {
-  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.start_param) {
-    return window.Telegram.WebApp.initDataUnsafe.start_param;
-  }
-  const searchParams = new URLSearchParams(window.location.search);
-  const fromSearch = searchParams.get('startapp') || searchParams.get('tgWebAppStartParam') || searchParams.get('start_param');
-  if (fromSearch) return fromSearch;
+private val copyTimers = mutableMapOf<HTMLElement, Int>()
 
-  if (window.location.hash && window.location.hash.length > 1) {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const fromHash = hashParams.get('tgWebAppStartParam') || hashParams.get('startapp') || hashParams.get('start_param');
-    if (fromHash) return fromHash;
-  }
-  return '';
+function copyValue(val, el) {
+  if (navigator.clipboard) navigator.clipboard.writeText(val);
+  if (el.getAttribute('data-copying') === 'true') return;
+  el.setAttribute('data-copying', 'true');
+  const originalHtml = el.innerHTML;
+  const originalColor = el.style.color;
+  el.innerText = '✓ Copied';
+  el.style.color = 'var(--success)';
+  if (el._copyTimer) clearTimeout(el._copyTimer);
+  el._copyTimer = setTimeout(function() {
+    el.innerHTML = originalHtml;
+    el.style.color = originalColor;
+    el.removeAttribute('data-copying');
+    delete el._copyTimer;
+  }, 1800);
+}
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function destinationLabel(item) {
+  if (item.chatName && item.chatName.trim()) return item.chatName;
+  return 'Chat #' + item.telegramChatId + (item.telegramTopicId ? ' / Topic ' + item.telegramTopicId : '');
+}
+
+function destinationMeta(item) {
+  return 'Chat ' + item.telegramChatId + (item.telegramTopicId ? ' · Topic ' + item.telegramTopicId : '');
+}
+
+function repoMeta(item) {
+  const host = item.gitlabBaseUrl.replace(/^https?:\/\//, '');
+  return host + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '') + ' · id ' + item.id.substring(0, 8);
+}
+
+function avatarFor(item, index) {
+  let n = 0;
+  for (let i = 0; i < item.id.length; i++) n = (n + item.id.charCodeAt(i)) % avatars.length;
+  return avatars[(n + index) % avatars.length];
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.panel').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById('screen-' + name).classList.add('active');
+}
+
+function extractStartParam() {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) return tg.initDataUnsafe.start_param;
+  const q = new URLSearchParams(window.location.search);
+  return q.get('startapp') || q.get('tgWebAppStartParam') || q.get('start_param') || '';
 }
 
 async function initWebApp() {
-  if (window.Telegram && window.Telegram.WebApp) {
-    window.Telegram.WebApp.ready();
-    window.Telegram.WebApp.expand();
-  }
-  const tgInitData = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) || '';
-  const startParam = extractStartParam();
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ initData: tgInitData, startParam: startParam })
+      body: JSON.stringify({ initData: (tg && tg.initData) || '', startParam: extractStartParam() })
     });
-    if (res.ok) {
-      const data = await res.json();
-      userCsrf = data.csrf;
-      const st = data.sessionToken;
-      if (st) sToken = st;
-      currentContext = { chatId: data.telegramChatId, topicId: data.telegramTopicId };
-      const btnAdd = document.getElementById('btnAdd');
-      if (btnAdd) {
-        btnAdd.style.display = (data.telegramChatId != null && data.telegramChatId < 0) ? 'inline-block' : 'none';
-      }
-      const ctxText = document.getElementById('contextText');
-      if (ctxText) ctxText.innerText = data.telegramChatId
-        ? 'Chat #' + data.telegramChatId + (data.telegramTopicId ? ' / Topic #' + data.telegramTopicId : '')
-        : 'All Accessible Installations';
-      const destEl = document.getElementById('inDest');
-      if (destEl) destEl.value = data.telegramChatId
-        ? (data.telegramTopicId ? 'Topic #' + data.telegramTopicId + ' in Chat #' + data.telegramChatId : 'Chat #' + data.telegramChatId)
-        : 'Select destination after launch from a group';
-      await loadInstallations();
-    } else {
-      const ctxText = document.getElementById('contextText');
-      if (ctxText) ctxText.innerText = 'Authentication required.';
-    }
+    if (!res.ok) { renderError(res.status === 403 ? 'Admin access required' : 'Authentication required', 'Only Telegram group admins can manage repositories here.'); return; }
+    const data = await res.json();
+    userCsrf = data.csrf;
+    if (data.sessionToken) sToken = data.sessionToken;
+    currentContext = { chatId: data.telegramChatId, topicId: data.telegramTopicId };
+    listMode = (currentContext.chatId != null && currentContext.chatId < 0) ? 'scoped' : 'all';
+    setupHandlers();
+    await loadInstallations();
   } catch (e) {
-    const ctxText = document.getElementById('contextText');
-    if (ctxText) ctxText.innerText = 'Error connecting to server.';
+    renderError('Nuecagram needs admin access', 'Give the bot admin access in this group to manage repositories.');
   }
-  setupWizardHandlers();
 }
 
 async function loadInstallations() {
+  showScreen('list');
+  renderHeader();
   const el = document.getElementById('installationsList');
+  el.innerHTML = '<div class="box">Loading repositories...</div>';
   try {
-    const res = await fetch('${basePath}/api/webapp/installations', { headers: getAuthHeaders() });
-    if (!res.ok) {
-      if (el) el.innerHTML = '<div class="card"><p style="color:var(--danger)">Failed to load installations (HTTP ' + res.status + ').</p></div>';
-      return;
-    }
-    const items = await res.json();
-    if (!el) return;
-    if (items.length === 0) {
-      const emptyMsg = (currentContext.chatId != null && currentContext.chatId < 0)
-        ? 'No installations found. Tap + Add to create one.'
-        : 'No accessible installations found. Open this Web App inside a Telegram group or topic to set up notifications.';
-      el.innerHTML = '<div class="card"><p>' + emptyMsg + '</p></div>';
-      return;
-    }
-    el.innerHTML = '';
-    items.forEach(function(item) {
-      const card = document.createElement('div');
-      card.className = 'card';
-      const statusBadge = item.muted ? '<span class="badge badge-muted">Muted</span>' : '<span class="badge badge-active">Active</span>';
-      card.innerHTML = '<div class="card-header"><span class="card-id">' + item.id.substring(0, 8) + '</span>' + statusBadge + '</div>' +
-        '<p style="margin: 0.5rem 0 0.25rem; font-size: 0.85rem;">GitLab: ' + item.gitlabBaseUrl + (item.gitlabProjectId ? ' / Project #' + item.gitlabProjectId : '') + '</p>' +
-        '<div class="actions">' +
-        '<button class="btn-test">Test</button>' +
-        '<button class="btn-mute">' + (item.muted ? 'Unmute' : 'Mute') + '</button>' +
-        '<button class="btn-rotate">Rotate</button>' +
-        '</div>';
-      card.querySelector('.btn-test').addEventListener('click', function() { testDelivery(item.id); });
-      card.querySelector('.btn-mute').addEventListener('click', function() { toggleMute(item.id, !item.muted); });
-      card.querySelector('.btn-rotate').addEventListener('click', function() { rotateInstall(item.id); });
-      el.appendChild(card);
-    });
+    const qs = listMode === 'all' ? '?scope=all' : '';
+    const res = await fetch('${basePath}/api/webapp/installations' + qs, { headers: getAuthHeaders() });
+    if (!res.ok) { renderError(res.status === 403 ? 'Admin access required' : 'Nuecagram needs admin access', res.status === 403 ? 'Only Telegram group admins can manage repositories here.' : 'Give the bot admin access in this group to manage repositories.'); return; }
+    items = await res.json();
+    renderList();
   } catch (e) {
-    if (el) el.innerHTML = '<div class="card"><p style="color:var(--danger)">Error loading installations.</p></div>';
+    renderError('Nuecagram needs admin access', 'Give the bot admin access in this group to manage repositories.');
   }
 }
 
-function setupWizardHandlers() {
-  const btnAdd = document.getElementById('btnAdd');
-  if (btnAdd) btnAdd.addEventListener('click', function() { showScreen('wizard'); });
-  const btnCancel = document.getElementById('btnCancel');
-  if (btnCancel) btnCancel.addEventListener('click', function() { showScreen('dashboard'); });
-  const btnCreate = document.getElementById('btnCreate');
-  if (btnCreate) btnCreate.addEventListener('click', createInstallation);
-  const btnRevDone = document.getElementById('btnRevDone');
-  if (btnRevDone) btnRevDone.addEventListener('click', function() { showScreen('dashboard'); loadInstallations(); });
-  const btnCopy = document.getElementById('btnCopy');
-  if (btnCopy) btnCopy.addEventListener('click', function() {
-    const val = document.getElementById('revSecret').innerText;
-    if (navigator.clipboard) navigator.clipboard.writeText(val);
+function renderHeader() {
+  const scoped = listMode !== 'all' && currentContext.chatId != null && currentContext.chatId < 0;
+  document.getElementById('listTitle').innerText = scoped ? 'Repositories' : 'All repositories';
+  document.getElementById('listSubtitle').innerText = scoped ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId}) + '\nNotifications go to this group/topic.' : 'Repositories you can manage across groups/topics.';
+  document.getElementById('btnAll').style.display = scoped ? '' : 'none';
+}
+
+function renderList() {
+  const el = document.getElementById('installationsList');
+  if (!items.length) {
+    const scoped = listMode !== 'all' && currentContext.chatId != null && currentContext.chatId < 0;
+    el.innerHTML = scoped
+      ? '<div class="box"><h1>No repositories here yet.</h1><p>Add a GitLab project to start notifications.</p><button class="primary" id="btnEmptyAdd">+ Add repository</button></div>'
+      : '<div class="box"><h1>No repositories found.</h1><p>Open Nuecagram from a Telegram group/topic or run /setup there.</p></div>';
+    const add = document.getElementById('btnEmptyAdd');
+    if (add) add.addEventListener('click', openAdd);
+    return;
+  }
+  el.innerHTML = '';
+  items.forEach(function(item, index) {
+    const card = document.createElement('button');
+    card.className = 'card' + (item.muted ? ' muted' : '');
+    card.innerHTML = '<img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, index) + '">' +
+      '<div class="grow"><div class="row"><div class="title">' + escapeHtml(item.repoName) + '</div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span><span class="chev">›</span></div>' +
+      '<div class="sub">' + escapeHtml(destinationLabel(item)) + '</div><div class="meta">' + escapeHtml(repoMeta(item)) + '</div></div>';
+    card.addEventListener('click', function() { openDetail(item.id); });
+    el.appendChild(card);
   });
 }
 
-function showScreen(name) {
-  document.getElementById('installationsList').style.display = name === 'dashboard' ? '' : 'none';
-  const wiz = document.getElementById('screen-wizard');
-  const rev = document.getElementById('screen-reveal');
-  if (wiz) wiz.style.display = name === 'wizard' ? '' : 'none';
-  if (rev) rev.style.display = name === 'reveal' ? '' : 'none';
-  const btnAdd = document.getElementById('btnAdd');
-  if (btnAdd) {
-    btnAdd.style.display = (name === 'dashboard' && currentContext.chatId != null && currentContext.chatId < 0) ? 'inline-block' : 'none';
-  }
+function renderError(title, body) {
+  document.getElementById('listTitle').innerText = title;
+  document.getElementById('listSubtitle').innerText = body;
+  document.getElementById('installationsList').innerHTML = '';
+}
+
+async function openDetail(id) {
+  const res = await fetch('${basePath}/api/webapp/installations/' + id, { headers: getAuthHeaders() });
+  if (!res.ok) return;
+  currentItem = await res.json();
+  renderDetail();
+  showScreen('detail');
+}
+
+function renderDetail() {
+  const item = currentItem;
+  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
+    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
+    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><button id="btnRotate" class="danger">Rotate webhook token ›</button></div>';
+  document.getElementById('btnTest').addEventListener('click', testDelivery);
+  document.getElementById('btnMute').addEventListener('click', toggleMute);
+  document.getElementById('btnEdit').addEventListener('click', openEdit);
+  document.getElementById('btnRotate').addEventListener('click', rotateInstall);
+}
+
+function setAction(text, ok) {
+  const el = document.getElementById('actionHelp');
+  el.className = 'helper ' + (ok ? 'ok' : 'err');
+  el.innerText = text;
+  setTimeout(function() { el.innerText = ''; }, 2500);
+}
+
+function openEdit() {
+  document.getElementById('editRepoName').value = currentItem.repoName || '';
+  document.getElementById('editChatName').value = currentItem.chatName || '';
+  document.getElementById('editErr').innerText = '';
+  showScreen('edit');
+}
+
+async function saveIdentity() {
+  const repoName = document.getElementById('editRepoName').value.trim();
+  const chatName = document.getElementById('editChatName').value.trim();
+  if (!repoName) { document.getElementById('editErr').innerText = 'Repository name required.'; return; }
+  const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/identity', {
+    method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ repoName: repoName, chatName: chatName })
+  });
+  if (!res.ok) { document.getElementById('editErr').innerText = 'Could not save names.'; return; }
+  currentItem = await res.json();
+  items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
+  renderDetail();
+  showScreen('detail');
+}
+
+function openAdd() {
+  if (currentContext.chatId == null || currentContext.chatId >= 0) { showScreen('add-info'); return; }
+  document.getElementById('createDestinationName').innerText = destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId});
+  document.getElementById('createDestinationMeta').innerText = destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId});
+  document.getElementById('wizErr').innerText = '';
+  showScreen('wizard');
 }
 
 async function createInstallation() {
-  document.getElementById('errUrl').innerText = '';
-  document.getElementById('errPid').innerText = '';
-  document.getElementById('wizErr').innerText = '';
   const url = document.getElementById('inUrl').value.trim();
   const pid = parseInt(document.getElementById('inPid').value.trim(), 10);
-  let valid = true;
-  if (!url.startsWith('https://')) { document.getElementById('errUrl').innerText = 'Must start with https://'; valid = false; }
-  if (!pid || pid <= 0) { document.getElementById('errPid').innerText = 'Enter a valid project ID'; valid = false; }
-  if (!valid) return;
-  document.getElementById('btnCreate').disabled = true;
-  document.getElementById('btnCreate').innerText = 'Creating...';
-  try {
-    const payload = { repoName: 'Project #' + pid, gitlabBaseUrl: url, gitlabProjectId: pid };
-    if (currentContext.chatId != null && currentContext.chatId < 0) {
-      payload.telegramChatId = currentContext.chatId;
-      if (currentContext.topicId != null) {
-        payload.telegramTopicId = currentContext.topicId;
-      }
-    }
-    const res = await fetch('${basePath}/api/webapp/installations', {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload)
-    });
-    if (res.status === 201) {
-      const data = await res.json();
-      showReveal(data.credential, data.webhookUrl, 'Credential Issued');
-    } else {
-      const err = await res.json();
-      document.getElementById('wizErr').innerText = err.error || 'Failed to create installation';
-    }
-  } catch (e) {
-    document.getElementById('wizErr').innerText = 'Network error';
-  } finally {
-    document.getElementById('btnCreate').disabled = false;
-    document.getElementById('btnCreate').innerText = 'Create Installation';
+  const repoName = document.getElementById('inRepoName').value.trim();
+  const chatName = document.getElementById('inChatName').value.trim();
+  if (!url.startsWith('https://') || !pid || !repoName) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
+  const payload = { repoName: repoName, chatName: chatName, gitlabBaseUrl: url, gitlabProjectId: pid };
+  if (currentContext.chatId != null && currentContext.chatId < 0) {
+    payload.telegramChatId = currentContext.chatId;
+    if (currentContext.topicId != null) payload.telegramTopicId = currentContext.topicId;
+  }
+  const res = await fetch('${basePath}/api/webapp/installations', {
+    method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload)
+  });
+  if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
+  const data = await res.json();
+  showReveal(data.credential, data.webhookUrl, 'Repository created', false);
+}
+
+function confirmRotate(callback) {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg && tg.showConfirm) {
+    tg.showConfirm('Rotate webhook token? Old token will stop working immediately.', callback);
+  } else {
+    callback(confirm('Rotate webhook token?\n\nOld token will stop working immediately.'));
   }
 }
 
-async function rotateInstall(id) {
-  if (!confirm('Rotate the credential? The old token stops working immediately.')) return;
-  try {
-    const res = await fetch('${basePath}/api/webapp/installations/' + id + '/rotate', {
-      method: 'POST',
-      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      showReveal(data.credential, '', 'Credential Rotated');
-    } else {
-      const err = await res.json();
-      alert(err.error || 'Rotation failed');
-    }
-  } catch (e) {
-    alert('Network error');
-  }
+function rotateInstall() {
+  confirmRotate(async function(ok) {
+    if (!ok) return;
+    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/rotate', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
+    if (!res.ok) { setAction('Could not rotate token.', false); return; }
+    const data = await res.json();
+    showReveal(data.credential, '', 'Webhook token rotated', true);
+  });
 }
 
-function showReveal(token, url, title) {
+function showReveal(token, url, title, isRotate) {
   document.getElementById('revTitle').innerText = title;
-  document.getElementById('revSecret').innerText = token;
-  document.getElementById('revUrl').value = url;
+  const sub = document.getElementById('revSubtitle');
+  if (sub) {
+    sub.innerText = isRotate
+      ? 'Copy this rotated token now. It will only be shown once.'
+      : 'Copy this webhook token now. It will only be shown once.';
+  }
+  const secret = document.getElementById('revSecret');
+  secret.innerText = token;
+  secret.classList.add('hidden');
+  document.getElementById('btnReveal').innerText = 'Reveal';
+  const urlEl = document.getElementById('revUrl');
+  if (urlEl) {
+    const field = urlEl.closest('.field');
+    if (field) field.style.display = isRotate ? 'none' : '';
+    urlEl.innerText = url || '';
+  }
+  document.getElementById('copyHelp').innerText = '';
   showScreen('reveal');
 }
 
-async function toggleMute(id, muted) {
-  await fetch('${basePath}/api/webapp/installations/' + id + '/mute', {
-    method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ muted: muted })
-  });
-  await loadInstallations();
+async function toggleMute() {
+  const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/mute', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ muted: !currentItem.muted }) });
+  if (!res.ok) { setAction('Could not update notifications.', false); return; }
+  currentItem.muted = !currentItem.muted;
+  items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
+  renderDetail();
+  setAction('Notification setting updated.', true);
 }
 
-async function testDelivery(id) {
-  await fetch('${basePath}/api/webapp/installations/' + id + '/test', {
-    method: 'POST',
-    headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+async function testDelivery() {
+  const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/test', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
+  setAction(res.ok ? '✓ Test notification sent.' : 'Could not send test notification.', res.ok);
+}
+
+function setupHandlers() {
+  document.querySelectorAll('[data-screen]').forEach(function(b) { b.addEventListener('click', function() { showScreen(b.getAttribute('data-screen')); }); });
+  document.getElementById('btnAdd').addEventListener('click', openAdd);
+  document.getElementById('btnAll').addEventListener('click', function() { listMode = 'all'; loadInstallations(); });
+  document.getElementById('btnSaveIdentity').addEventListener('click', saveIdentity);
+  document.getElementById('btnCreate').addEventListener('click', createInstallation);
+  document.getElementById('btnRevDone').addEventListener('click', loadInstallations);
+  document.getElementById('btnReveal').addEventListener('click', function() {
+    const secret = document.getElementById('revSecret');
+    const hidden = secret.classList.toggle('hidden');
+    document.getElementById('btnReveal').innerText = hidden ? 'Reveal' : 'Hide';
+  });
+  document.getElementById('btnCopy').addEventListener('click', function() {
+    const secret = document.getElementById('revSecret');
+    const val = secret.innerText;
+    if (navigator.clipboard) navigator.clipboard.writeText(val);
+    copyValue(val, secret);
   });
 }
 
