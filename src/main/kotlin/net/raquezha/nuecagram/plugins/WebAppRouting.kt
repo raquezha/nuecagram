@@ -897,8 +897,8 @@ private fun webAppShellHtml(basePath: String): String = """
       </section>
 
       <section id="screen-reveal" class="panel">
-        <h1 id="revTitle">Repository created</h1>
-        <p>Copy this webhook token now. It will only be shown once.</p>
+        <h1 id="revTitle">Webhook token rotated</h1>
+        <p id="revSubtitle">Copy this webhook token now. It will only be shown once.</p>
         <div class="group">
           <div class="field" style="text-align:center;">
             <label style="text-align:center;">Webhook secret</label>
@@ -1134,7 +1134,7 @@ async function createInstallation() {
   });
   if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
   const data = await res.json();
-  showReveal(data.credential, data.webhookUrl, 'Repository created');
+  showReveal(data.credential, data.webhookUrl, 'Repository created', false);
 }
 
 function confirmRotate(callback) {
@@ -1148,17 +1148,28 @@ function rotateInstall() {
     const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/rotate', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
     if (!res.ok) { setAction('Could not rotate token.', false); return; }
     const data = await res.json();
-    showReveal(data.credential, '', 'Webhook token rotated');
+    showReveal(data.credential, '', 'Webhook token rotated', true);
   });
 }
 
-function showReveal(token, url, title) {
+function showReveal(token, url, title, isRotate) {
   document.getElementById('revTitle').innerText = title;
+  const sub = document.getElementById('revSubtitle');
+  if (sub) {
+    sub.innerText = isRotate
+      ? 'Copy this rotated token now. It will only be shown once.'
+      : 'Copy this webhook token now. It will only be shown once.';
+  }
   const secret = document.getElementById('revSecret');
   secret.innerText = token;
   secret.classList.add('hidden');
   document.getElementById('btnReveal').innerText = 'Reveal';
-  document.getElementById('revUrl').innerText = url || '';
+  const urlEl = document.getElementById('revUrl');
+  if (urlEl) {
+    const field = urlEl.closest('.field');
+    if (field) field.style.display = isRotate ? 'none' : '';
+    urlEl.innerText = url || '';
+  }
   document.getElementById('copyHelp').innerText = '';
   showScreen('reveal');
 }
