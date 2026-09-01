@@ -76,6 +76,12 @@ private data class MuteRequestPayload(
 )
 
 @Serializable
+private data class IdentityRequestPayload(
+    val repoName: String,
+    val chatName: String? = null,
+)
+
+@Serializable
 private data class MuteResponsePayload(
     val id: String,
     val muted: Boolean,
@@ -153,6 +159,10 @@ fun Route.webAppRouting(basePath: String) {
 
     post("$basePath/api/webapp/installations/{id}/mute") {
         call.handleMuteInstallation(installationRepository, telegramService, json)
+    }
+
+    post("$basePath/api/webapp/installations/{id}/identity") {
+        call.handleUpdateIdentity(installationRepository, telegramService, json)
     }
 
     post("$basePath/api/webapp/installations/{id}/test") {
@@ -346,6 +356,48 @@ private suspend fun ApplicationCall.handleMuteInstallation(
 
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, MuteResponsePayload(id = item.id.toString(), muted = targetMuted))
+}
+
+private suspend fun ApplicationCall.handleUpdateIdentity(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    json: Json,
+) {
+    val session = authenticateWebAppSession(installationRepository) ?: return
+    if (!verifyAdminStatus(session, telegramService)) return
+    if (!verifyCsrfHeader(installationRepository, session)) return
+
+    val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+    if (idParam == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+        return
+    }
+
+    val item = installationRepository.installationAdminContext(idParam)
+    if (item == null || !canAccess(session, item, telegramService)) {
+        respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+        return
+    }
+
+    val payload = runCatching { json.decodeFromString<IdentityRequestPayload>(receiveText()) }.getOrNull()
+    if (payload == null || payload.repoName.isBlank() || payload.repoName.trim() == "Unknown Repository") {
+        respond(
+            HttpStatusCode.BadRequest,
+            ErrorResponsePayload("repoName must be non-blank and not use the legacy fallback value"),
+        )
+        return
+    }
+
+    installationRepository.updateIdentity(item.id, payload.repoName, payload.chatName)
+    installationRepository.writeAuditEvent(
+        installationId = item.id,
+        actorType = "webapp_session",
+        actorId = session.telegramUserId.toString(),
+        action = "webapp_identity_update",
+    )
+
+    appendWebAppSecurityHeaders()
+    respond(HttpStatusCode.OK, installationRepository.installationAdminContext(item.id)!!.toResponsePayload())
 }
 
 private suspend fun ApplicationCall.handleTestInstallation(

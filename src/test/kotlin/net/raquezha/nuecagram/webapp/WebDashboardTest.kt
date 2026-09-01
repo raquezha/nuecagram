@@ -282,6 +282,60 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun identityEndpointRequiresCsrfAndUpdatesNames() = testApplication {
+        configureTestApplication()
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+
+        val rejectCsrfResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            setBody("""{"repoName":"renamed","chatName":"Deployments"}""")
+        }
+        assertThat(rejectCsrfResp.status).isEqualTo(HttpStatusCode.Forbidden)
+
+        val updateResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"repoName":"  renamed  ","chatName":"   "}""")
+        }
+        assertThat(updateResp.status).isEqualTo(HttpStatusCode.OK)
+        val updatedPayload = json.decodeFromString<TestInstallationPayload>(updateResp.bodyAsText())
+        assertThat(updatedPayload.repoName).isEqualTo("renamed")
+        assertThat(updatedPayload.chatName).isNull()
+
+        val updatedContext = runBlocking { installationRepository.installationAdminContext(installation.id) }
+        assertThat(updatedContext?.repoName).isEqualTo("renamed")
+        assertThat(updatedContext?.chatName).isNull()
+    }
+
+    @Test
+    fun identityEndpointRejectsBlankAndLegacyRepoNames() = testApplication {
+        configureTestApplication()
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+
+        listOf("", "Unknown Repository").forEach { repoName ->
+            val response = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+                contentType(ContentType.Application.Json)
+                header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+                header("X-CSRF-Token", csrf)
+                setBody("""{"repoName":"$repoName","chatName":"Deployments"}""")
+            }
+            assertThat(response.status).isEqualTo(HttpStatusCode.BadRequest)
+        }
+    }
+
+    @Test
     fun testEndpointRequiresCsrfAndDispatchesTestMessage() = testApplication {
         configureTestApplication()
         val (sessionCookie, csrf) = issueSessionWithNonce(

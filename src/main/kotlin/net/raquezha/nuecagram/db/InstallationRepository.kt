@@ -378,6 +378,23 @@ class InstallationRepository(
             }
     }
 
+    suspend fun updateIdentity(
+        installationId: UUID,
+        repoName: String,
+        chatName: String?,
+    ): Boolean {
+        val normalizedRepoName = repoName.trim()
+        require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
+            "repoName must be non-blank and not use the legacy fallback value"
+        }
+        return databaseFactory.dbTransaction {
+            Installations.update({ Installations.id eq installationId }) {
+                it[Installations.repoName] = normalizedRepoName
+                it[Installations.chatName] = chatName?.trim()?.takeIf(String::isNotBlank)
+            } == 1
+        }
+    }
+
     suspend fun setMuted(installationId: UUID, muted: Boolean) {
         databaseFactory.dbTransaction {
             MuteStates.upsert(MuteStates.installationId) {
