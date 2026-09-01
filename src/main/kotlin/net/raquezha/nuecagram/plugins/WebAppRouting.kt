@@ -945,14 +945,17 @@ private val copyTimers = mutableMapOf<HTMLElement, Int>()
 
 function copyValue(val, el) {
   if (navigator.clipboard) navigator.clipboard.writeText(val);
-  if (!el.getAttribute('data-original')) el.setAttribute('data-original', el.innerText);
+  if (el.getAttribute('data-copying') === 'true') return;
+  el.setAttribute('data-copying', 'true');
+  const originalHtml = el.innerHTML;
+  const originalColor = el.style.color;
   el.innerText = '✓ Copied';
   el.style.color = 'var(--success)';
   if (el._copyTimer) clearTimeout(el._copyTimer);
   el._copyTimer = setTimeout(function() {
-    el.innerText = el.getAttribute('data-original');
-    el.removeAttribute('data-original');
-    el.style.color = '';
+    el.innerHTML = originalHtml;
+    el.style.color = originalColor;
+    el.removeAttribute('data-copying');
     delete el._copyTimer;
   }, 1800);
 }
@@ -1146,7 +1149,11 @@ async function createInstallation() {
 
 function confirmRotate(callback) {
   const tg = window.Telegram && window.Telegram.WebApp;
-  if (tg && tg.showConfirm) tg.showConfirm('Rotate webhook token?', callback); else callback(confirm('Rotate webhook token?'));
+  if (tg && tg.showConfirm) {
+    tg.showConfirm('Rotate webhook token? Old token will stop working immediately.', callback);
+  } else {
+    callback(confirm('Rotate webhook token?\n\nOld token will stop working immediately.'));
+  }
 }
 
 function rotateInstall() {
