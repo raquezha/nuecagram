@@ -814,15 +814,17 @@ class InstallationRepository(
         muted = getOrNull(MuteStates.muted) ?: false,
     )
 
-    private fun deriveRepositoryName(gitlabBaseUrl: String, gitlabProjectId: Long?): String =
-        gitlabProjectId?.let { "Project #$it" }
-            ?: gitlabBaseUrl.trim()
-                .substringAfter("://", gitlabBaseUrl.trim())
-                .substringAfter('/', "")
-                .trim('/')
-                .takeIf(String::isNotBlank)
-            ?: gitlabBaseUrl.trim().trim('/').takeIf(String::isNotBlank)
+    private fun deriveRepositoryName(gitlabBaseUrl: String, gitlabProjectId: Long?): String {
+        if (gitlabProjectId != null) return "Project #$gitlabProjectId"
+        val cleanUrl = gitlabBaseUrl.redactedUrl()
+        return cleanUrl.trim()
+            .substringAfter("://", cleanUrl.trim())
+            .substringAfter('/', "")
+            .trim('/')
+            .takeIf(String::isNotBlank)
+            ?: cleanUrl.trim().trim('/').takeIf(String::isNotBlank)
             ?: UNKNOWN_REPOSITORY_NAME
+    }
 
     private fun MutableMap<String, JsonElement>.putString(key: String, value: String?) {
         value?.takeIf(String::isNotBlank)?.let { put(key, JsonPrimitive(it)) }

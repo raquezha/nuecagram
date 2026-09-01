@@ -1,9 +1,17 @@
 package net.raquezha.nuecagram.db
 
+import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import org.mindrot.jbcrypt.BCrypt
+
+internal fun String.redactedUrl(): String =
+    runCatching {
+        val uri = URI(this)
+        require(uri.scheme in setOf("http", "https") && uri.host != null)
+        URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toString()
+    }.getOrDefault("[invalid URL]")
 
 data class StoredCredential(
     val digest: ByteArray,

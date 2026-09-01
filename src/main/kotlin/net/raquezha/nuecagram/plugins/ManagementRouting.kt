@@ -40,6 +40,7 @@ import kotlinx.html.tr
 import kotlinx.html.unsafe
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.db.redactedUrl
 import org.koin.ktor.ext.inject
 
 private const val SESSION_COOKIE_NAME = "nuecagram_manage_session"

@@ -11,7 +11,6 @@ import io.ktor.server.response.respondRedirect
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
-import java.net.URI
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Instant
@@ -19,6 +18,7 @@ import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.CredentialCodec
 import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.redactedUrl
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminAuditRecord
@@ -666,6 +666,8 @@ private fun FlowContent.installationsDirectoryResultsPanel(
                     thead {
                         tr {
                             th { +"ID" }
+                            th { +"Repository" }
+                            th { +"Notification Label" }
                             th { +"GitLab" }
                             th { +"Project" }
                             th { +"Status" }
@@ -717,6 +719,15 @@ private fun FlowContent.installationsPaginationBtn(
 private fun kotlinx.html.TBODY.platformAdminInstallationRow(installation: InstallationAdminContext) {
     tr {
         td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
+        td { +installation.repoName.redactedUrl() }
+        td {
+            val label = installation.chatName?.takeIf(String::isNotBlank)
+            if (label != null) {
+                +label
+            } else {
+                span(classes = "table-subtle") { +"(none)" }
+            }
+        }
         td {
             val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
             if (gitlabUrl.startsWith("http")) {
@@ -815,6 +826,8 @@ private fun platformAdminHtml(
                     thead {
                         tr {
                             th { +"ID" }
+                            th { +"Repository" }
+                            th { +"Notification Label" }
                             th { +"GitLab" }
                             th { +"Project" }
                             th { +"Status" }
@@ -824,7 +837,7 @@ private fun platformAdminHtml(
                         if (previewInstallations.isEmpty()) {
                             tr {
                                 td {
-                                    colSpan = "4"
+                                    colSpan = "6"
                                     +"No installations recorded yet"
                                 }
                             }
@@ -833,6 +846,15 @@ private fun platformAdminHtml(
                                 val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
                                 tr {
                                     td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
+                                    td { +installation.repoName.redactedUrl() }
+                                    td {
+                                        val label = installation.chatName?.takeIf(String::isNotBlank)
+                                        if (label != null) {
+                                            +label
+                                        } else {
+                                            span(classes = "table-subtle") { +"(none)" }
+                                        }
+                                    }
                                     td {
                                         if (gitlabUrl.startsWith("http")) {
                                             a(href = gitlabUrl, target = "_blank", classes = "table-link") {
@@ -942,13 +964,6 @@ private fun String?.platformAdminStatusFilter(): String =
 private fun String?.toPositivePage(): Long = this?.toLongOrNull()?.takeIf { it > 0 } ?: 1L
 
 private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8)
-
-internal fun String.redactedUrl(): String =
-    runCatching {
-        val uri = URI(this)
-        require(uri.scheme in setOf("http", "https") && uri.host != null)
-        URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toString()
-    }.getOrDefault("[invalid URL]")
 
 private class LoginThrottle {
     // ponytail: process-local throttle; move to shared storage if the service runs multiple replicas.
