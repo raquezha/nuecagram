@@ -900,9 +900,9 @@ private fun webAppShellHtml(basePath: String): String = """
         <h1 id="revTitle">Webhook token rotated</h1>
         <p id="revSubtitle">Copy this webhook token now. It will only be shown once.</p>
         <div class="group">
-          <div class="field" style="text-align:center;">
-            <label style="text-align:center;">Webhook secret</label>
-            <div id="revSecret" class="secret hidden" style="margin:12px auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:15px;word-break:break-all;cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, document.getElementById('copyHelp'))"></div>
+          <div class="field">
+            <label>Webhook secret</label>
+            <div id="revSecret" class="secret hidden" style="margin:8px 0 12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:15px;word-break:break-all;cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, document.getElementById('copyHelp'))"></div>
             <div id="copyHelp" class="helper ok"></div>
             <div class="split" style="margin-top:12px;">
               <button id="btnReveal">Reveal</button>
