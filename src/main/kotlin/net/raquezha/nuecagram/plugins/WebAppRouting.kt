@@ -802,31 +802,31 @@ private fun webAppShellHtml(basePath: String): String = """
       }
       * { box-sizing: border-box; }
       body { margin: 0; padding: 0; background: var(--bg-color); color: var(--text-main); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 18px 16px 28px; }
-      h1 { margin: 0 0 4px; font-size: 20px; line-height: 1.2; }
-      h2 { margin: 20px 0 8px; font-size: 16px; }
-      p { margin: 0 0 12px; color: var(--hint); line-height: 1.35; }
+      .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 20px 16px 28px; }
+      h1 { margin: 0 0 5px; font-size: 20px; line-height: 1.2; }
+      h2 { margin: 18px 0 7px; font-size: 15px; }
+      p { margin: 0 0 10px; color: var(--hint); line-height: 1.35; }
       button { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 10px 12px; font: 700 14px inherit; cursor: pointer; }
       button.primary { border-color: var(--button); background: var(--button); color: var(--button-text); }
       button.danger { color: var(--danger); }
       button.link { border: 0; background: transparent; color: var(--button); padding: 8px 0; }
-      .top-actions { display: flex; gap: 8px; margin: 14px 0; flex-wrap: wrap; }
-      .card { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; margin: 0 0 10px; padding: 12px; border: 1px solid var(--border); border-radius: 18px; background: var(--card-bg); box-shadow: 0 8px 24px rgba(31,35,40,.05); }
+      .top-actions { display: flex; gap: 8px; margin: 12px 0 14px; flex-wrap: wrap; }
+      .card { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; margin: 0 0 8px; padding: 14px; border: 1px solid var(--border); border-radius: 18px; background: var(--card-bg); box-shadow: 0 8px 24px rgba(31,35,40,.05); }
       .card.muted { opacity: .62; filter: grayscale(.35); }
       .avatar { flex: 0 0 58px; width: 58px; height: 58px; border-radius: 50%; object-fit: cover; background: #f2eadf; }
       .grow { min-width: 0; flex: 1; }
       .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .meta { margin-top: 8px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .meta { margin-top: 6px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .badge { margin-left: auto; border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 800; }
       .badge-active { background: #e6f4ea; color: var(--success); }
       .badge-muted { background: #fff0f1; color: var(--danger); }
       .chev { color: var(--hint); font-size: 20px; }
       .panel { display: none; }
       .panel.active { display: block; }
-      .box { padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--card-bg); }
-      .field { margin: 0 0 12px; }
+      .box { padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--card-bg); }
+      .field { margin: 0 0 14px; }
       label { display: block; margin-bottom: 5px; font-weight: 800; }
       input { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px; background: var(--card-bg); color: var(--text-main); font: 14px inherit; }
       input[readonly] { color: var(--hint); }
