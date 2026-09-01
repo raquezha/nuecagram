@@ -6,12 +6,17 @@ import java.security.SecureRandom
 import java.util.Base64
 import org.mindrot.jbcrypt.BCrypt
 
-internal fun String.redactedUrl(): String =
-    runCatching {
-        val uri = URI(this)
-        require(uri.scheme in setOf("http", "https") && uri.host != null)
+internal fun String.redactedUrl(): String {
+    val trimmed = trim()
+    if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
+        return this
+    }
+    return runCatching {
+        val uri = URI(trimmed)
+        require(uri.host != null)
         URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toString()
-    }.getOrDefault("[invalid URL]")
+    }.getOrDefault(trimmed)
+}
 
 data class StoredCredential(
     val digest: ByteArray,
