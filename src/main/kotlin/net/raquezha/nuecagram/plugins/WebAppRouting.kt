@@ -902,7 +902,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <div class="group">
           <div class="field" style="text-align:center;">
             <label style="text-align:center;">Webhook secret</label>
-            <div id="revSecret" class="secret hidden" style="margin:12px auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:15px;word-break:break-all;"></div>
+            <div id="revSecret" class="secret hidden" style="margin:12px auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc;color:#0f172a;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:15px;word-break:break-all;cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, document.getElementById('copyHelp'))"></div>
             <div id="copyHelp" class="helper ok" style="text-align:center;"></div>
             <div class="split" style="margin-top:12px;">
               <button id="btnReveal">Reveal</button>
@@ -911,7 +911,7 @@ private fun webAppShellHtml(basePath: String): String = """
           </div>
           <div class="field">
             <label>Webhook URL</label>
-            <div id="revUrl" class="codebox"></div>
+            <div id="revUrl" class="codebox" style="cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
           </div>
         </div>
         <div style="margin-top:16px;">
