@@ -60,7 +60,11 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         assertThat(response.headers["X-Frame-Options"]).isNull()
         assertThat(response.headers["Cache-Control"]).contains("no-store")
         val html = response.bodyAsText()
-        assertThat(html).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(html).contains("Telegram Access Required")
+
+        val shellResp = client.get("/nuecagram/webapp?startapp=test")
+        val shellHtml = shellResp.bodyAsText()
+        assertThat(shellHtml).contains("https://telegram.org/js/telegram-web-app.js")
     }
 
     @Test
