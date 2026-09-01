@@ -888,7 +888,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
-        <p style="font-size:12px;color:var(--hint);font-style:italic;opacity:.78;margin:-4px 0 16px;line-height:1.4;">To send notifications to a different topic,<br>open Management from that topic.</p>
+        <p style="font-size:11px;color:var(--hint);font-style:italic;opacity:.72;margin:-4px 0 16px;line-height:1.35;">To send notifications to a different topic,<br>open Management from that topic.</p>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
