@@ -6,6 +6,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
+import net.raquezha.nuecagram.db.AuditMetadataPatch
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 
@@ -109,7 +110,7 @@ class TelegramUpdateHandler(
         }
 
         installationRepository.recordInstallationAdmin(installation.id, userId)
-        executeCallbackAction(callbackQuery.id, userId, installation, payload.action)
+        executeCallbackAction(callbackQuery, userId, installation, payload.action)
     }
 
     private suspend fun answerCallbackError(
@@ -121,38 +122,41 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun executeCallbackAction(
-        callbackId: String,
+        callbackQuery: TelegramUpdate.CallbackQuery,
         userId: Long,
         installation: InstallationAdminContext,
         action: String,
     ) = when (action) {
         "mute" ->
             handleCallbackMute(
-                callbackId = callbackId,
+                callbackId = callbackQuery.id,
                 userId = userId,
                 installation = installation,
+                actor = callbackQuery.from,
                 muted = true,
                 text = "Installation muted.",
                 auditAction = "telegram_mute",
             )
         "unmute" ->
             handleCallbackMute(
-                callbackId = callbackId,
+                callbackId = callbackQuery.id,
                 userId = userId,
                 installation = installation,
+                actor = callbackQuery.from,
                 muted = false,
                 text = "Installation unmuted.",
                 auditAction = "telegram_unmute",
             )
-        "test" -> handleCallbackTest(callbackId, userId, installation)
-        "status" -> telegramService.answerCallbackQuery(callbackId, installation.statusText(), showAlert = true)
-        else -> telegramService.answerCallbackQuery(callbackId, "Unknown callback action.")
+        "test" -> handleCallbackTest(callbackQuery.id, userId, installation, callbackQuery.from)
+        "status" -> telegramService.answerCallbackQuery(callbackQuery.id, installation.statusText(), showAlert = true)
+        else -> telegramService.answerCallbackQuery(callbackQuery.id, "Unknown callback action.")
     }
 
     private suspend fun handleCallbackMute(
         callbackId: String,
         userId: Long,
         installation: InstallationAdminContext,
+        actor: TelegramUpdate.User,
         muted: Boolean,
         text: String,
         auditAction: String,
@@ -163,6 +167,10 @@ class TelegramUpdateHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = auditAction,
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = actor.username,
+                actorFirstName = actor.firstName,
+            ),
         )
         return telegramService.answerCallbackQuery(callbackId, text)
     }
@@ -171,6 +179,7 @@ class TelegramUpdateHandler(
         callbackId: String,
         userId: Long,
         installation: InstallationAdminContext,
+        actor: TelegramUpdate.User,
     ): Boolean {
         telegramService.sendMessage(
             Message(
@@ -184,6 +193,10 @@ class TelegramUpdateHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = "telegram_delivery_test",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = actor.username,
+                actorFirstName = actor.firstName,
+            ),
         )
         return telegramService.answerCallbackQuery(callbackId, "Test notification sent.")
     }
@@ -332,6 +345,13 @@ class TelegramUpdateHandler(
             actorType = "telegram",
             actorId = authorized.actorId.toString(),
             action = "telegram_webapp_launch",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = message.from?.username,
+                actorFirstName = message.from?.firstName,
+                chatId = message.chat.id,
+                topicId = message.messageThreadId,
+                nickname = message.chat.title,
+            ),
         )
         sendLauncherMessage(
             message.chat.id,
@@ -360,6 +380,13 @@ class TelegramUpdateHandler(
             actorType = "telegram",
             actorId = userId.toString(),
             action = "telegram_webapp_launch",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = message.from?.username,
+                actorFirstName = message.from?.firstName,
+                chatId = message.chat.id,
+                topicId = message.messageThreadId,
+                nickname = message.chat.title,
+            ),
         )
         sendLauncherMessage(
             message.chat.id,

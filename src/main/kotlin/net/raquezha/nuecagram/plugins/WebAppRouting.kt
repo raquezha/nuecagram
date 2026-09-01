@@ -19,6 +19,8 @@ import java.util.UUID
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.AuditIdentityDelta
+import net.raquezha.nuecagram.db.AuditMetadataPatch
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.WebAppSessionContext
@@ -403,12 +405,22 @@ private suspend fun ApplicationCall.handleUpdateIdentity(
         return
     }
 
-    installationRepository.updateIdentity(item.id, payload.repoName, payload.chatName)
+    val normalizedRepoName = payload.repoName.trim()
+    val normalizedChatName = payload.chatName?.trim()?.takeIf(String::isNotBlank)
+    installationRepository.updateIdentity(item.id, normalizedRepoName, normalizedChatName)
     installationRepository.writeAuditEvent(
         installationId = item.id,
         actorType = "webapp_session",
         actorId = session.telegramUserId.toString(),
         action = "webapp_identity_update",
+        metadataPatch = AuditMetadataPatch(
+            identityDelta = AuditIdentityDelta(
+                oldRepoName = item.repoName,
+                newRepoName = normalizedRepoName,
+                oldNickname = item.chatName,
+                newNickname = normalizedChatName,
+            ),
+        ),
     )
 
     appendWebAppSecurityHeaders()
