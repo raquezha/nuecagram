@@ -17,10 +17,27 @@ import io.ktor.server.testing.testApplication
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.runBlocking
+import net.raquezha.nuecagram.db.redactedUrl
 import org.junit.Test
 
 @Suppress("TooManyFunctions")
 class PlatformAdminUiTest : BaseEventTestHelper() {
+    @Test
+    fun redactedUrlPreservesPlainNamesAndSanitizesUrls() {
+        assertThat("Nuecagram Prod".redactedUrl()).isEqualTo("Nuecagram Prod")
+        assertThat("Project #1234".redactedUrl()).isEqualTo("Project #1234")
+        assertThat("nuecagram".redactedUrl()).isEqualTo("nuecagram")
+        assertThat("🎉 NUECAGRAM 🚀".redactedUrl()).isEqualTo("🎉 NUECAGRAM 🚀")
+        assertThat("<script>alert(1)</script>".redactedUrl()).isEqualTo("<script>alert(1)</script>")
+        assertThat("".redactedUrl()).isEqualTo("")
+        assertThat("https://user:pass@gitlab.com/group?token=abc#frag".redactedUrl())
+            .isEqualTo("https://gitlab.com/group")
+        assertThat("https://user:pass@gitlab.internal.corp:8443/org/repo?key=val#hash".redactedUrl())
+            .isEqualTo("https://gitlab.internal.corp:8443/org/repo")
+        assertThat("http://admin:secret@127.0.0.1:8080/path".redactedUrl())
+            .isEqualTo("http://127.0.0.1:8080/path")
+        assertThat("https://".redactedUrl()).isEqualTo("https://")
+    }
     @Test
     fun platformAdminLoginShowsRedactedInstallationAndAuditViews() =
         testApplication {
@@ -64,6 +81,8 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
             assertThat(body).contains("setup")
             assertThat(body).contains("@alice")
             assertThat(body).contains(installation.repoName)
+            assertThat(body).contains("Repository")
+            assertThat(body).contains("Notification Label")
             assertThat(body).contains("Active installations")
             assertThat(body).contains("Muted installations")
             assertThat(body).contains("24h Audit events")
@@ -94,6 +113,8 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
             val pageOneBody = pageOne.bodyAsText()
             assertThat(pageOneBody).contains("Installations directory")
             assertThat(pageOneBody).contains("Back to Overview")
+            assertThat(pageOneBody).contains("Repository")
+            assertThat(pageOneBody).contains("Notification Label")
             assertThat(pageOneBody).contains("1 / 2")
             assertThat(pageOneBody).contains("21 total")
             assertThat(pageOneBody).contains("Showing 1–20 of 21")
