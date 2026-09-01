@@ -855,7 +855,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <h1 id="listTitle">Repositories</h1>
         <p id="listSubtitle">Loading repositories...</p>
         <div class="top-actions">
-          <button id="btnAdd" class="primary">+ Add</button>
+          <button id="btnAdd" class="primary">+ Add repository</button>
           <button id="btnAll" style="display:none;">View all repositories</button>
         </div>
         <div id="installationsList"><div class="box">Loading repositories...</div></div>
@@ -1115,7 +1115,7 @@ async function saveIdentity() {
 }
 
 function openAdd() {
-  if (!(currentContext.chatId != null && currentContext.chatId < 0) || listMode === 'all') { showScreen('add-info'); return; }
+  if (currentContext.chatId == null || currentContext.chatId >= 0) { showScreen('add-info'); return; }
   document.getElementById('createDestinationName').innerText = destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId});
   document.getElementById('createDestinationMeta').innerText = destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId});
   document.getElementById('wizErr').innerText = '';
@@ -1128,9 +1128,14 @@ async function createInstallation() {
   const repoName = document.getElementById('inRepoName').value.trim();
   const chatName = document.getElementById('inChatName').value.trim();
   if (!url.startsWith('https://') || !pid || !repoName) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
+  const payload = { repoName: repoName, chatName: chatName, gitlabBaseUrl: url, gitlabProjectId: pid };
+  if (currentContext.chatId != null && currentContext.chatId < 0) {
+    payload.telegramChatId = currentContext.chatId;
+    if (currentContext.topicId != null) payload.telegramTopicId = currentContext.topicId;
+  }
   const res = await fetch('${basePath}/api/webapp/installations', {
     method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ repoName: repoName, chatName: chatName, gitlabBaseUrl: url, gitlabProjectId: pid })
+    body: JSON.stringify(payload)
   });
   if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
   const data = await res.json();
