@@ -1128,6 +1128,7 @@ function showReveal(token, url, title) {
   const secret = document.getElementById('revSecret');
   secret.innerText = token;
   secret.classList.add('hidden');
+  document.getElementById('btnReveal').innerText = 'Reveal';
   document.getElementById('revUrl').innerText = url || '';
   document.getElementById('copyHelp').innerText = '';
   showScreen('reveal');
@@ -1154,7 +1155,11 @@ function setupHandlers() {
   document.getElementById('btnSaveIdentity').addEventListener('click', saveIdentity);
   document.getElementById('btnCreate').addEventListener('click', createInstallation);
   document.getElementById('btnRevDone').addEventListener('click', loadInstallations);
-  document.getElementById('btnReveal').addEventListener('click', function() { document.getElementById('revSecret').classList.remove('hidden'); });
+  document.getElementById('btnReveal').addEventListener('click', function() {
+    const secret = document.getElementById('revSecret');
+    const hidden = secret.classList.toggle('hidden');
+    document.getElementById('btnReveal').innerText = hidden ? 'Reveal' : 'Hide';
+  });
   document.getElementById('btnCopy').addEventListener('click', function() { const val = document.getElementById('revSecret').innerText; if (navigator.clipboard) navigator.clipboard.writeText(val); document.getElementById('copyHelp').innerText = '✓ Copied'; });
 }
 
