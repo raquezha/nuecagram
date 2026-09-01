@@ -925,11 +925,18 @@ function getAuthHeaders(extra) {
   return h;
 }
 
+private val copyTimers = mutableMapOf<HTMLElement, Int>()
+
 function copyValue(val, el) {
   if (navigator.clipboard) navigator.clipboard.writeText(val);
-  const old = el.innerText;
+  if (!el.getAttribute('data-original')) el.setAttribute('data-original', el.innerText);
   el.innerText = '✓ Copied';
-  setTimeout(function() { el.innerText = old; }, 1800);
+  if (el._copyTimer) clearTimeout(el._copyTimer);
+  el._copyTimer = setTimeout(function() {
+    el.innerText = el.getAttribute('data-original');
+    el.removeAttribute('data-original');
+    delete el._copyTimer;
+  }, 1800);
 }
   return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
