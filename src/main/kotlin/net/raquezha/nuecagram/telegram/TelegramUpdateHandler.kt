@@ -26,8 +26,7 @@ private const val PRIVATE_START_MESSAGE =
         "• /unmute - Resume notifications for a project\n" +
         "• /digest - View summary text for a project\n" +
         "• /test - Send a test notification to a group\n\n" +
-        "<b>Setup & Help</b>\n" +
-        "• /setup - How to bind a new GitLab repository\n" +
+        "<b>Help</b>\n" +
         "• /help - View command reference and instructions\n\n" +
         "💡 <i>Tap the <b>OPEN</b> menu button beside the chat box anytime to launch the WebApp Dashboard.</i>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
@@ -36,10 +35,6 @@ private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
     "Continue in a private chat with the bot to manage this installation."
 private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
 private const val LAUNCH_NONCE_TTL_MINUTES = 10L
-
-private data class AuthorizedGroupAdmin(
-    val actorId: Long,
-)
 
 private data class AuthorizedInstallationCommand(
     val installation: InstallationAdminContext,
@@ -213,7 +208,6 @@ class TelegramUpdateHandler(
             "/test" -> handleDeliveryTest(message)
             "/mute" -> handleMute(message)
             "/unmute" -> handleUnmute(message)
-            "/setup" -> handleSetup(message)
             "/manage" -> handleManage(message)
             "/webapp" -> handleWebApp(message)
             "/rotate" -> handleRotate(message)
@@ -338,30 +332,6 @@ class TelegramUpdateHandler(
             ?.trim()
             ?.takeIf(String::isNotBlank)
 
-    private suspend fun handleSetup(message: TelegramUpdate.Message) {
-        val authorized = authorizeGroupAdmin(message, requireArguments = false) ?: return
-        installationRepository.writeAuditEvent(
-            installationId = null,
-            actorType = "telegram",
-            actorId = authorized.actorId.toString(),
-            action = "telegram_webapp_launch",
-            metadataPatch = AuditMetadataPatch(
-                actorUsername = message.from?.username,
-                actorFirstName = message.from?.firstName,
-                chatId = message.chat.id,
-                topicId = message.messageThreadId,
-                nickname = message.chat.title,
-            ),
-        )
-        sendLauncherMessage(
-            message.chat.id,
-            message.messageThreadId,
-            authorized.actorId,
-            "Open Nuecagram Web App to set up GitLab notifications:",
-            "Set Up GitLab Notifications",
-        )
-    }
-
 
 
     private suspend fun handleWebApp(message: TelegramUpdate.Message) {
@@ -398,39 +368,6 @@ class TelegramUpdateHandler(
     }
 
 
-
-    private suspend fun authorizeGroupAdmin(
-        message: TelegramUpdate.Message,
-        requireArguments: Boolean = true,
-    ): AuthorizedGroupAdmin? {
-        val text = message.text?.trim().orEmpty()
-        val userId = message.from?.id
-        val privateChatId = if (userId != null) installationRepository.telegramPrivateChatId(userId) else null
-        val status = if (userId != null) {
-            runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        } else {
-            null
-        }
-
-        val result = when {
-            message.chat.type == "private" -> {
-                send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
-                null
-            }
-            !isTelegramAdmin(status) -> {
-                send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
-                null
-            }
-            requireArguments && text.substringAfter(' ', "").isBlank() -> null
-            userId == null || privateChatId == null -> {
-                send(message.chat.id, PRIVATE_BOOTSTRAP_MESSAGE, message.messageThreadId)
-                null
-            }
-            else -> AuthorizedGroupAdmin(userId)
-        }
-
-        return result
-    }
 
     private suspend fun sendManagementDmRedirect(message: TelegramUpdate.Message) {
         val markup = InlineKeyboardMarkup(

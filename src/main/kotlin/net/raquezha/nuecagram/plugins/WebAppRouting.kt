@@ -168,6 +168,10 @@ fun Route.webAppRouting(basePath: String) {
         call.handleGetInstallationDetail(installationRepository, telegramService)
     }
 
+    get("$basePath/api/webapp/destinations") {
+        call.handleGetDestinations(installationRepository, telegramService)
+    }
+
     post("$basePath/api/webapp/installations/{id}/mute") {
         call.handleMuteInstallation(installationRepository, telegramService, json)
     }
@@ -345,6 +349,38 @@ private suspend fun ApplicationCall.handleGetInstallationDetail(
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, item.toResponsePayload())
 }
+
+private suspend fun ApplicationCall.handleGetDestinations(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+) {
+    val session = authenticateWebAppSession(installationRepository) ?: return
+    val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
+    val candidateContexts = if (recorded.isNotEmpty()) {
+        recorded.map { inst ->
+            val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+            val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
+            DestinationPayload(
+                id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
+                name = label,
+                telegramChatId = inst.telegramChatId,
+                telegramTopicId = inst.telegramTopicId,
+            )
+        }
+    } else {
+        emptyList()
+    }
+    appendWebAppSecurityHeaders()
+    respond(HttpStatusCode.OK, candidateContexts.distinctBy { it.id })
+}
+
+@Serializable
+private data class DestinationPayload(
+    val id: String,
+    val name: String,
+    val telegramChatId: Long,
+    val telegramTopicId: Long? = null,
+)
 
 private suspend fun ApplicationCall.handleMuteInstallation(
     installationRepository: InstallationRepository,
@@ -927,7 +963,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
-        <p style="font-size:11px;color:var(--hint);font-style:italic;opacity:.72;margin:-4px 0 16px;line-height:1.35;">To send notifications to a different topic,<br>open Management from that topic.</p>
+        <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
@@ -1177,9 +1213,13 @@ async function saveIdentity() {
 }
 
 function openAdd() {
-  if (currentContext.chatId == null || currentContext.chatId >= 0) { showScreen('add-info'); return; }
-  document.getElementById('createDestinationName').innerText = destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId});
-  document.getElementById('createDestinationMeta').innerText = destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId});
+  const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
+  document.getElementById('createDestinationName').innerText = isGroup
+    ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
+    : 'Selected Telegram Group';
+  document.getElementById('createDestinationMeta').innerText = isGroup
+    ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
+    : 'Fill in repository details below to connect your GitLab project.';
   document.getElementById('wizErr').innerText = '';
   showScreen('wizard');
 }
