@@ -167,13 +167,6 @@ class TelegramMenuHandler(
                     ),
                 )
                 send(message.chat.id, TelegramMenuMessages.managementLinkText(config, inst, managementLink.raw))
-                sendLauncherMessage(
-                    message.chat.id,
-                    message.messageThreadId,
-                    userId,
-                    PRIVATE_DELIVERY_MESSAGE,
-                    "Open Dashboard in Web App",
-                )
             }
         }
     }
@@ -498,7 +491,6 @@ class TelegramMenuHandler(
     private fun buildSubmenuMarkup(
         inst: InstallationAdminContext,
     ): Pair<String, InlineKeyboardMarkup> {
-        val webAppUrl = "${config.publicBaseUrl()}/webapp?startapp=inst_${inst.id.toString().take(SHORT_ID_LENGTH)}"
         val muteLabel = if (inst.muted) "Unmute" else "Mute"
         val muteAction = if (inst.muted) "inst:unmute:${inst.id}" else "inst:mute:${inst.id}"
 
@@ -515,7 +507,6 @@ class TelegramMenuHandler(
                 ),
                 listOf(
                     InlineKeyboardButton(text = "Rotate Secret", callbackData = "inst:rotate:confirm:${inst.id}"),
-                    InlineKeyboardButton(text = "Open Web App", webApp = WebAppInfo(url = webAppUrl)),
                 ),
                 listOf(
                     InlineKeyboardButton(text = "Back", callbackData = "inst:help_menu:all"),
@@ -953,34 +944,7 @@ class TelegramMenuHandler(
         )
     }
 
-    private suspend fun sendLauncherMessage(
-        chatId: Long,
-        topicId: Long?,
-        actorId: Long,
-        text: String,
-        buttonText: String,
-    ) {
-        val nonce = installationRepository.issueLaunchNonce(
-            telegramChatId = chatId,
-            telegramTopicId = topicId,
-            telegramUserId = actorId,
-            expiresAt = managementLinkExpiry(),
-        )
-        val url = "${config.publicBaseUrl()}/webapp?startapp=nonce_${nonce.raw}"
-        val markup = InlineKeyboardMarkup(
-            inlineKeyboard = listOf(
-                listOf(
-                    InlineKeyboardButton(
-                        text = buttonText,
-                        webApp = WebAppInfo(url = url),
-                    ),
-                ),
-            ),
-        )
-        send(chatId, text, topicId, replyMarkup = markup)
-    }
-
-    private fun managementLinkExpiry(): Instant = Instant.now().plus(Duration.ofMinutes(LAUNCH_NONCE_TTL_MINUTES))
+    private fun managementLinkExpiry(): Instant = Instant.now().plus(Duration.ofMinutes(MANAGEMENT_LINK_TTL_MINUTES))
 
     private suspend fun send(
         chatId: Long,
@@ -1000,10 +964,9 @@ class TelegramMenuHandler(
         )
 
     companion object {
-        private const val LAUNCH_NONCE_TTL_MINUTES = 10L
+        private const val MANAGEMENT_LINK_TTL_MINUTES = 10L
         private const val PAGE_SIZE = 8
         private const val DISPLAY_URL_MAX_LENGTH = 20
         private const val SHORT_ID_LENGTH = 8
-        private const val PRIVATE_DELIVERY_MESSAGE = "Private setup details sent."
     }
 }
