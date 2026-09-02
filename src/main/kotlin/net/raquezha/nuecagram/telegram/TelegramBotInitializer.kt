@@ -25,6 +25,12 @@ class TelegramBotInitializerImpl(
     }
 
     private suspend fun configureBotCommands() = runCatching {
+        // Clear stale commands from all group scopes (removes any leftover /setup etc.)
+        listOf("all_group_chats", "all_chat_administrators").forEach { scopeType ->
+            runCatching {
+                telegramService.deleteMyCommands(BotCommandScope(scopeType))
+            }.onFailure { logger.warn(it) { "Failed to delete bot commands for scope $scopeType" } }
+        }
         telegramService.setMyCommands(DEFAULT_BOT_COMMANDS)
     }.onFailure { logger.warn(it) { "Failed to configure Telegram bot commands" } }
 

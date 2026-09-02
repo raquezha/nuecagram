@@ -34,6 +34,12 @@ data class BotCommand(
 )
 
 @Serializable
+data class BotCommandScope(
+    @SerialName("type")
+    val type: String,
+)
+
+@Serializable
 data class WebAppInfo(
     @SerialName("url")
     val url: String,
