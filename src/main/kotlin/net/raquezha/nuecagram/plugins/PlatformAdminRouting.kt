@@ -532,6 +532,11 @@ private fun FlowContent.auditPaginationBtn(
     }
 }
 
+private const val CHAT_SVG_ICON =
+    """<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" """ +
+        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round">""" +
+        """<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>"""
+
 private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
     tr {
         td(classes = "audit-timestamp") {
@@ -553,7 +558,14 @@ private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRe
         }
         td(classes = "audit-details-cell") {
             if (event.chatDetails != "Unknown Chat") {
-                div(classes = "chat-details-title") { +event.chatDetails }
+                div(classes = "chat-target") {
+                    span(classes = "chat-icon") {
+                        unsafe {
+                            +CHAT_SVG_ICON
+                        }
+                    }
+                    span(classes = "chat-text") { +event.chatDetails }
+                }
             } else {
                 span(classes = "table-subtle") {
                     attributes["title"] = "Unknown Chat"
@@ -563,10 +575,31 @@ private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRe
             if (event.details.isNotEmpty()) {
                 div(classes = "detail-chips") {
                     event.details.forEach { line ->
-                        span(classes = "detail-chip") { +line.formatAuditDetailLine() }
+                        renderAuditDetailChip(line)
                     }
                 }
             }
+        }
+    }
+}
+
+private fun FlowContent.renderAuditDetailChip(line: String) {
+    span(classes = "detail-chip") {
+        if (line.contains(": ")) {
+            val key = line.substringBefore(": ")
+            val valStr = line.substringAfter(": ").replace("->", "→")
+            span(classes = "chip-key") { +"$key:" }
+            if (valStr.contains(" → ")) {
+                val from = valStr.substringBefore(" → ")
+                val to = valStr.substringAfter(" → ")
+                span(classes = "chip-val-old") { +from }
+                span(classes = "chip-arrow") { +"→" }
+                span(classes = "chip-val-new") { +to }
+            } else {
+                span(classes = "chip-val") { +valStr }
+            }
+        } else {
+            +line.replace("->", "→")
         }
     }
 }
@@ -578,7 +611,7 @@ private fun Instant.formatAuditTime(): String {
 }
 
 private fun Instant.formatAuditDate(): String {
-    val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.US)
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd", java.util.Locale.US)
         .withZone(java.time.ZoneOffset.UTC)
     return formatter.format(this)
 }
@@ -603,8 +636,7 @@ private fun String.formatAuditActionLabel(): String =
             }
     }
 
-private fun String.formatAuditDetailLine(): String =
-    replace("->", "→")
+
 
 private fun auditActionBadgeClass(action: String): String =
     when (action) {

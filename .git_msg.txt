@@ -1,5 +1,5 @@
-style(admin): convert audit timestamps to stacked time & date layout
+style(admin): align timestamp layout and polish chat details chips
 
-Stack time (00:05) over subtle date (SEP 2) in a 50px ultra-compact column, preserving full ISO timestamp precision in hover title attributes.
+Fixed timestamp column spacing by enforcing fixed-width MMM dd date format and tabular numerals, and formatted chat target badges with Telegram icon and structured delta chips (highlighting old/new values).
 
 Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]
