@@ -422,16 +422,9 @@ private fun onboardingHtml(basePath: String): String =
                 span(classes = "step-num") { +"3" }
                 h3 { +"Connect your GitLab Repository" }
             }
-            p { +"Inside your Telegram group or forum topic, send this command:" }
             p {
-                span(classes = "cmd-label") { +"Telegram Command" }
-                +" "
-                code(classes = "cmd") { +"/setup" }
-            }
-            p {
-                attributes["style"] = "margin-bottom: 0;"
-                +("Nuecagram replies with an inline button for that group or topic; " +
-                    "tap it to open the Web App wizard and reveal your webhook URL and token in-app.")
+                +("Open @NuecagramBot in Telegram and tap OPEN to launch the Web App. " +
+                    "Tap + Add repository and select your destination group or topic.")
             }
         }
 

@@ -21,9 +21,9 @@ Nuecagram features a **DM-first** management experience. Group administrators ta
 
 ## Setup Flow Notes
 
-Run `/setup` only inside the destination Telegram group or forum topic. The command captures the Telegram group ID, the initiating admin user ID, and the topic ID when present. GitLab URL and project ID are entered later in the Web App wizard.
+Group administrators open `@NuecagramBot` in DM and tap **OPEN** to launch the Web App. Target Telegram groups and topics are selected from the in-app destination dropdown.
 
-You still need private `/start` first so the Web App session can complete DM bootstrap checks.
+You need to send private `/start` to the bot first so the Web App session can complete DM bootstrap checks.
 
 ## Configure the GitLab webhook
 
@@ -47,7 +47,7 @@ Do not configure custom Nuecagram headers. Routing comes from the verified insta
 
 ## Manage an installation
 
-Telegram group administrators run `/setup` in the target group/topic, then manage installations from private DM commands.
+Telegram group administrators manage installations exclusively from private DM commands and the Web App portal.
 
 ### Command Reference Matrix
 
@@ -55,7 +55,6 @@ Telegram group administrators run `/setup` in the target group/topic, then manag
 |---------|----------|--------------|---------------------|------------------|--------------------------|
 | `/start` | Private DM | All Users | None | DM: BotFather-style command overview with OPEN menu guidance | Group: `Start a private chat with the bot first.` |
 | `/help` | Group or DM | All Users | None | Group: Short guidance + DM button<br>DM: Categorized inline menu | None |
-| `/setup` | Group / Topic | Group Admins | None | Group: Web App launcher button | No DM start: `Use /start in a private chat...`<br>Non-admin: `Only Telegram group administrators...` |
 | `/manage` | Private DM | Group Admins | Optional `<installation-id>` | DM: Installation picker or single-use management URL | Group: DM redirect button<br>Missing ID with picker unavailable: no installations found<br>Unauthorized: `Only Telegram group administrators...` |
 | `/test` | Private DM | Group Admins | None | DM: Repository picker, then stored group/topic receives test notification | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
 | `/status` | Private DM | Group Admins | None | DM: Repository picker, then status, GitLab URL, Project ID, Mute state | Group: DM redirect button<br>Unauthorized: `Only Telegram group administrators...` |
@@ -75,7 +74,7 @@ If you run a command and receive an error message in Telegram, follow the resolu
 * **Resolution**:
   1. Click [@NuecagramBot](https://t.me/NuecagramBot) to open a private message window.
   2. Click **Start** or send `/start`.
-  3. Use the **OPEN** menu button for the Web App Dashboard, or re-run `/setup` in your group/topic or management commands in DM.
+  3. Use the **OPEN** menu button for the Web App Dashboard, or management commands in DM.
 
 ### 2. `Only Telegram group administrators can use this command.`
 * **Cause**: Nuecagram verifies your admin privileges via Telegram API (`getChatMember`). Only group Creators and Administrators can run setup or management commands.
@@ -88,17 +87,16 @@ If you run a command and receive an error message in Telegram, follow the resolu
 * **Cause**: The provided `installation-id` does not exist or belongs to a different Telegram group chat.
 * **Resolution**:
   1. Verify the 8-character ID prefix or full UUID from your initial setup DM message.
-  2. Confirm you are running the command in the exact group/topic where `/setup` was performed.
+  2. Confirm you are managing a valid connected installation.
 
-### 4. `Run this command in the installation group.`
-* **Cause**: You ran a group-bound administrative command like `/setup` inside a private DM with the bot.
+### 4. `Continue in a private chat with @NuecagramBot`
+* **Cause**: You ran a management command inside a group or topic chat.
 * **Resolution**:
-  1. Go to your destination Telegram group or forum topic.
-  2. Run the command inside the group chat.
+  1. Open a private chat with [@NuecagramBot](https://t.me/NuecagramBot).
+  2. Run management commands in DM or tap **OPEN** to launch the Web App.
 
 ### 5. Usage Guidance
 * **Cause**: Some typed fallback commands can still accept an installation ID.
 * **Resolution**:
-  - For `/setup`: run `/setup` with no arguments inside the target group or topic.
   - For `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest`: run the command in DM and choose a repository from the picker.
 

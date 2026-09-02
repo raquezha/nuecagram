@@ -9,10 +9,10 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted i
 ## What it does
 
 - Sends GitLab push, tag, merge request, issue, note, wiki, deployment, release, pipeline, and job notifications to Telegram.
-- Provides a native **Telegram DM-first** management experience with group setup via Web App launcher, private command flows, one-time secret display, and mute/test controls inside Telegram.
+- Provides a native **Telegram DM-first** management experience with Web App setup, private command flows, one-time secret display, and mute/test controls inside Telegram.
 - Consolidates pipeline and job activity into an updating Telegram message per installation and pipeline.
 - Stores installation state in PostgreSQL; webhook secrets and management links are stored only as hashes.
-- Maintains full text slash command fallback (`/setup`, `/manage`, `/status`, `/rotate`, `/mute`, `/unmute`, `/test`, `/digest`) for recovery and power users.
+- Maintains full text slash command fallback (`/manage`, `/status`, `/rotate`, `/mute`, `/unmute`, `/test`, `/digest`) for recovery and power users.
 - Exposes liveness and DB-backed readiness under the configured public path, for example `/nuecagram/health/ready`.
 
 ## Quick start

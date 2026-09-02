@@ -887,8 +887,19 @@ private fun webAppShellHtml(basePath: String): String = """
         --button: var(--tg-theme-button-color, #0284c7);
         --button-text: var(--tg-theme-button-text-color, #ffffff);
         --border: #e2e8f0;
+        --input-bg: #f8fafc;
         --success: #16a34a;
         --danger: #dc2626;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: var(--tg-theme-bg-color, #0f172a);
+          --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+          --text-main: var(--tg-theme-text-color, #f8fafc);
+          --hint: var(--tg-theme-hint-color, #94a3b8);
+          --border: #334155;
+          --input-bg: #141c2e;
+        }
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -926,7 +937,13 @@ private fun webAppShellHtml(basePath: String): String = """
       .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
       .field:first-child { border-top: 0; }
       label { display: block; margin-bottom: 7px; font-weight: 800; }
-      input, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fafafa; color: var(--text-main); font: 15px inherit; }
+      #createDestinationMeta { font-size: 12px; font-style: italic; opacity: 0.85; display: inline-block; margin-top: 4px; }
+      input, select, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--input-bg); color: var(--text-main); font: 15px inherit; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06); }
+      input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+      input:focus, select:focus { outline: none; border-color: var(--button); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 3px rgba(2, 132, 199, 0.2); }
+      select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230284c7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
+      option { background: var(--card-bg); color: var(--text-main); }
       .codebox { min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       input[readonly] { color: var(--hint); }
       .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
@@ -1227,9 +1244,9 @@ async function openAdd() {
   document.getElementById('createDestinationName').innerText = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
     : 'Target Telegram Destination';
-  document.getElementById('createDestinationMeta').innerText = isGroup
+  document.getElementById('createDestinationMeta').innerHTML = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
-    : 'Select a destination group or topic below to connect your GitLab project.';
+    : 'Select a destination group or topic<br>below to connect your GitLab project.';
   document.getElementById('wizErr').innerText = '';
 
   if (isGroup) {
