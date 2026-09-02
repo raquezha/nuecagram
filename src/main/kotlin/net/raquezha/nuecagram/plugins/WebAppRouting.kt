@@ -215,7 +215,8 @@ private suspend fun ApplicationCall.handleWebAppAuth(
         return
     }
 
-    val verified = TelegramWebAppAuth.verifyInitData(payload.initData, config.botApi)
+    val sanitizedBotToken = config.botApi.trim().removePrefix("bot")
+    val verified = TelegramWebAppAuth.verifyInitData(payload.initData, sanitizedBotToken)
     if (verified == null) {
         respond(HttpStatusCode.Unauthorized, ErrorResponsePayload("Invalid or expired initData signature"))
         return
@@ -303,20 +304,18 @@ private suspend fun ApplicationCall.handleGetInstallations(
     val items = if (isGroupContext && scopedOnly) {
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
-        val adminChatIds = mutableMapOf<Long, Boolean>()
         val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
-        val candidates =
-            if (recorded.isNotEmpty()) {
-                recorded
-            } else {
-                installationRepository.listInstallationsForContext(null, null)
-            }
-        candidates.filter { inst ->
-            adminChatIds.getOrPut(inst.telegramChatId) {
-                val status = runCatching {
-                    telegramService.chatMemberStatus(inst.telegramChatId, session.telegramUserId)
-                }.getOrNull()
-                isTelegramAdmin(status)
+        if (recorded.isNotEmpty()) {
+            recorded
+        } else {
+            val adminChatIds = mutableMapOf<Long, Boolean>()
+            installationRepository.listInstallationsForContext(null, null).filter { inst ->
+                adminChatIds.getOrPut(inst.telegramChatId) {
+                    val status = runCatching {
+                        telegramService.chatMemberStatus(inst.telegramChatId, session.telegramUserId)
+                    }.getOrNull()
+                    isTelegramAdmin(status)
+                }
             }
         }
     }
@@ -980,8 +979,6 @@ function getAuthHeaders(extra) {
   return h;
 }
 
-private val copyTimers = mutableMapOf<HTMLElement, Int>()
-
 function copyValue(val, el) {
   if (navigator.clipboard) navigator.clipboard.writeText(val);
   if (el.getAttribute('data-copying') === 'true') return;
@@ -998,6 +995,8 @@ function copyValue(val, el) {
     delete el._copyTimer;
   }, 1800);
 }
+
+function escapeHtml(value) {
   return String(value == null ? '' : value).replace(/[&<>"']/g, function(c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
@@ -1113,7 +1112,18 @@ function renderList() {
 function renderError(title, body) {
   document.getElementById('listTitle').innerText = title;
   document.getElementById('listSubtitle').innerText = body;
-  document.getElementById('installationsList').innerHTML = '';
+  const topActions = document.querySelector('.top-actions');
+  if (topActions) topActions.style.display = 'none';
+  const el = document.getElementById('installationsList');
+  if (title === 'Telegram Access Required') {
+    el.innerHTML = '<div class="box" style="text-align:center;padding:28px 18px;">' +
+      '<h1 style="font-size:20px;margin-bottom:10px;">Telegram Access Required</h1>' +
+      '<p style="margin-bottom:20px;">This management portal must be opened inside Telegram.</p>' +
+      '<div class="codebox" style="margin-bottom:18px;font-weight:700;">Open @NuecagramBot and tap OPEN</div>' +
+      '<a href="https://t.me/NuecagramBot" class="primary" style="display:block;text-decoration:none;padding:12px;border-radius:12px;text-align:center;" target="_blank" rel="noopener">Open Telegram Bot</a></div>';
+  } else {
+    el.innerHTML = '<div class="box"><p>' + escapeHtml(body) + '</p></div>';
+  }
 }
 
 async function openDetail(id) {
