@@ -17,10 +17,67 @@ import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramUpdate
 import org.junit.Test
 
+private const val GROUP_DM_REDIRECT_MESSAGE =
+    "Continue in a private chat with <b>@NuecagramBot</b> to manage connected repositories."
+
 @Suppress("TooManyFunctions")
 class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
     @Test
-    fun setupRequiresPrivateBootstrap() =
+    fun helpCommandInGroupExplainsDmManagement() =
+        testApplication {
+            configureTestApplication()
+
+            val response = postTelegram(
+                groupUpdate(69, "/help", installation.telegramChatId, userId = 69, messageThreadId = 100),
+            )
+            assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+
+            val lastMessage = sentMessages().last()
+            assertThat(lastMessage.text).contains("Nuecagram is managed in private chat")
+            assertThat(lastMessage.text).contains("tap <b>OPEN</b>")
+            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(button.text).isEqualTo("Open @NuecagramBot")
+            assertThat(button.url).isEqualTo("https://t.me/NuecagramBot")
+        }
+
+    @Test
+    fun groupHelpRecordsKnownTelegramDestination() =
+        testApplication {
+            configureTestApplication()
+
+            assertThat(
+                postTelegram(
+                    groupUpdate(
+                        68,
+                        "/help",
+                        installation.telegramChatId,
+                        userId = 68,
+                        messageThreadId = 123,
+                        chatTitle = "Mobile Devs",
+                    ),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                postTelegram(
+                    groupUpdate(
+                        67,
+                        "/help",
+                        installation.telegramChatId,
+                        userId = 67,
+                        messageThreadId = 123,
+                        chatTitle = "Mobile Devs",
+                    ),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val destinations = runBlocking { installationRepository.knownTelegramDestinations() }
+                .filter { it.telegramChatId == installation.telegramChatId && it.telegramTopicId == 123L }
+            assertThat(destinations).hasSize(1)
+            assertThat(destinations.single().chatTitle).isEqualTo("Mobile Devs")
+        }
+
+    @Test
+    fun removedSetupCommandRedirectsGroupToDm() =
         testApplication {
             configureTestApplication()
             mockTelegramService().setChatMemberStatus(installation.telegramChatId, 70, "administrator")
@@ -32,15 +89,13 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     groupUpdate(70, "/setup", installation.telegramChatId, userId = 70),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(
-                sentMessages().last().text,
-            ).isEqualTo("Unknown command. Send <code>/help</code> for available commands.")
+            assertThat(sentMessages().last().text).isEqualTo(GROUP_DM_REDIRECT_MESSAGE)
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
         }
 
     @Test
-    fun setupRejectsNonAdminBeforePrivateBootstrap() =
+    fun removedSetupCommandDoesNotRequireGroupAdminCheck() =
         testApplication {
             configureTestApplication()
             val initialAuditCount = auditEventCount()
@@ -51,15 +106,14 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     groupUpdate(175, "/setup", installation.telegramChatId, userId = 75),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
-            val expectedUnknownMsg = "Unknown command. Send <code>/help</code> for available commands."
-            assertThat(sentMessages().last().text).isEqualTo(expectedUnknownMsg)
+            assertThat(sentMessages().last().text).isEqualTo(GROUP_DM_REDIRECT_MESSAGE)
             assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
         }
 
     @Test
-    fun setupRejectsNonAdminBeforeUsageMessage() =
+    fun removedSetupCommandRedirectsWithoutUsageMessage() =
         testApplication {
             configureTestApplication()
 
@@ -68,12 +122,11 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     groupUpdate(176, "/setup", installation.telegramChatId, userId = 76),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
-            val expectedUnknownMsg = "Unknown command. Send <code>/help</code> for available commands."
-            assertThat(sentMessages().last().text).isEqualTo(expectedUnknownMsg)
+            assertThat(sentMessages().last().text).isEqualTo(GROUP_DM_REDIRECT_MESSAGE)
         }
 
     @Test
-    fun setupReturnsUnknownCommandInGroup() =
+    fun removedSetupCommandIncludesDmButtonInGroup() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(77)
@@ -86,11 +139,14 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
 
             val lastMessage = sentMessages().last()
-            assertThat(lastMessage.text).isEqualTo("Unknown command. Send <code>/help</code> for available commands.")
+            assertThat(lastMessage.text).isEqualTo(GROUP_DM_REDIRECT_MESSAGE)
+            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(button.text).isEqualTo("Open @NuecagramBot")
+            assertThat(button.url).isEqualTo("https://t.me/NuecagramBot")
         }
 
     @Test
-    fun setupLaunchesWebAppWithoutCreatingInstallationOrSendingDmSecrets() {
+    fun removedSetupCommandDoesNotLaunchWebAppOrCreateInstallation() {
         val previous = System.getProperty("nuecagram.publicUrl")
         System.setProperty("nuecagram.publicUrl", "https://android.nweca.com/nuecagram")
         try {
@@ -115,8 +171,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 ).isEqualTo(HttpStatusCode.OK)
 
                 val groupMessage = messagesForChat(installation.telegramChatId).single()
-                val expectedUnknownMsg = "Unknown command. Send <code>/help</code> for available commands."
-                assertThat(groupMessage.text).isEqualTo(expectedUnknownMsg)
+                assertThat(groupMessage.text).isEqualTo(GROUP_DM_REDIRECT_MESSAGE)
                 assertThat(messagesForChat(71)).isEmpty()
                 assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
                 assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
@@ -179,7 +234,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun webappCommandAttachesInlineButtonWithNonce() =
+    fun webappCommandInGroupRedirectsToDm() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(74)
@@ -192,12 +247,10 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
 
             val lastMessage = sentMessages().last()
             assertThat(lastMessage.chatId).isEqualTo(installation.telegramChatId.toString())
-            assertThat(lastMessage.text).contains("Open Nuecagram Web App:")
-            assertThat(lastMessage.replyMarkup).isNotNull()
+            assertThat(lastMessage.text).isEqualTo(GROUP_DM_REDIRECT_MESSAGE)
             val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
-            assertThat(button.text).isEqualTo("Open Nuecagram Web App")
-            assertThat(button.webApp).isNotNull()
-            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+            assertThat(button.text).isEqualTo("Open @NuecagramBot")
+            assertThat(button.url).isEqualTo("https://t.me/NuecagramBot")
         }
 
     @Test
@@ -302,13 +355,14 @@ private fun groupUpdate(
     messageThreadId: Long? = null,
     username: String? = null,
     firstName: String? = null,
+    chatTitle: String? = null,
 ): String =
     Json.encodeToString(
         TelegramUpdate(
             updateId = updateId,
             message = TelegramUpdate.Message(
                 text = text,
-                chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                chat = TelegramUpdate.Chat(id = chatId, type = "group", title = chatTitle),
                 from = TelegramUpdate.User(id = userId, username = username, firstName = firstName),
                 messageThreadId = messageThreadId,
             ),

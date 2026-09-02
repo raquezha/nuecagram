@@ -23,7 +23,7 @@ src/main/kotlin/net/raquezha/nuecagram/
 ├── telegram/                   # Telegram bot integration adapter
 │   ├── TelegramService.kt      # Outbound port interface for Telegram API
 │   ├── TelegramServiceImpl.kt  # Implementation using HTTP client / vendeli bot
-│   ├── TelegramUpdateHandler.kt# Handling incoming Telegram bot updates (/setup, /start, etc.)
+│   ├── TelegramUpdateHandler.kt# Handling incoming Telegram bot updates (/help, /start, etc.)
 │   └── Message.kt              # Value objects for Telegram messages and formatting
 └── webhook/                    # GitLab Webhook handling & message formatting
     ├── WebhookRequestHandler.kt# Event processing channel consumer & dispatching logic

@@ -108,16 +108,16 @@ class TelegramDeterministicInlineKeyboardTest : BaseEventTestHelper() {
                 postTelegram(privateUpdate(1001, "/help", userId = userId)).status,
             ).isEqualTo(HttpStatusCode.OK)
             val helpMsg = sentMessages().last()
-            assertThat(helpMsg.text).contains("Nuecagram Assistant")
+            assertThat(helpMsg.text).contains("Nuecagram GitLab Notification Gateway")
 
-            // 2. Click Setup Instructions
-            val setupCb = callbackPrivateUpdate(1002, "cb_setup", "inst:help_setup:all", userId)
-            assertThat(postTelegram(setupCb).status).isEqualTo(HttpStatusCode.OK)
-            val setupMsg = sentMessages().last()
-            assertThat(setupMsg.text).contains("First-Time Setup Instructions")
-            val setupBackBtn = setupMsg.replyMarkup!!.inlineKeyboard.single().single()
-            assertThat(setupBackBtn.text).isEqualTo("Back")
-            assertThat(setupBackBtn.callbackData).isEqualTo("inst:help_menu:all")
+            // 2. Click Getting Started
+            val startedCb = callbackPrivateUpdate(1002, "cb_start", "inst:help_getting_started:all", userId)
+            assertThat(postTelegram(startedCb).status).isEqualTo(HttpStatusCode.OK)
+            val startedMsg = sentMessages().last()
+            assertThat(startedMsg.text).contains("Getting Started")
+            val startedBackBtn = startedMsg.replyMarkup!!.inlineKeyboard.single().single()
+            assertThat(startedBackBtn.text).isEqualTo("Back")
+            assertThat(startedBackBtn.callbackData).isEqualTo("inst:help_menu:all")
 
             // 3. Click « Main Menu back button
             val menuBackCb = callbackPrivateUpdate(1003, "cb_back_help", "inst:help_menu:all", userId)
@@ -131,7 +131,7 @@ class TelegramDeterministicInlineKeyboardTest : BaseEventTestHelper() {
 
             // Verify main help menu returned
             val returnedHelpMsg = sentMessages().last()
-            assertThat(returnedHelpMsg.text).contains("Nuecagram Assistant")
+            assertThat(returnedHelpMsg.text).contains("Nuecagram GitLab Notification Gateway")
         }
 
     @Test

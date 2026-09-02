@@ -14,8 +14,19 @@
         --button: var(--tg-theme-button-color, #0284c7);
         --button-text: var(--tg-theme-button-text-color, #ffffff);
         --border: #e2e8f0;
+        --input-bg: #f8fafc;
         --success: #16a34a;
         --danger: #dc2626;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: var(--tg-theme-bg-color, #0f172a);
+          --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+          --text-main: var(--tg-theme-text-color, #f8fafc);
+          --hint: var(--tg-theme-hint-color, #94a3b8);
+          --border: #334155;
+          --input-bg: #141c2e;
+        }
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -33,6 +44,7 @@
       .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; }
       .grow { min-width: 0; flex: 1; }
       .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 13px 14px; border-top: 1px solid var(--border); }
+      .card .row { padding: 0; border-top: 0; margin-bottom: 3px; }
       .row:first-child { border-top: 0; }
       .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -52,7 +64,13 @@
       .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
       .field:first-child { border-top: 0; }
       label { display: block; margin-bottom: 7px; font-weight: 800; }
-      input, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fafafa; color: var(--text-main); font: 15px inherit; }
+      #createDestinationMeta { font-size: 12px; font-style: italic; opacity: 0.85; display: inline-block; margin-top: 4px; }
+      input, select, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--input-bg); color: var(--text-main); font: 15px inherit; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06); }
+      input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+      input:focus, select:focus { outline: none; border-color: var(--button); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 3px rgba(2, 132, 199, 0.2); }
+      select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230284c7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
+      option { background: var(--card-bg); color: var(--text-main); }
       .codebox { min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       input[readonly] { color: var(--hint); }
       .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
@@ -93,19 +111,12 @@
         <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
       </section>
 
-      <section id="screen-add-info" class="panel">
-        <button class="link" data-screen="list">‹ Back to repositories</button>
-        <h1>Add repository</h1>
-        <p>Repositories must be added from the Telegram group or topic that will receive notifications.</p>
-        <div class="box"><p>How to add one:</p><p>1. Go to the target Telegram group or topic.<br>2. Open the group's Nuecagram menu and tap Management.<br>3. Tap + Add.</p><p>You can also run /setup in that group or topic.</p><p>No chat ID typing needed -- Nuecagram fills the destination automatically.</p></div>
-        <div class="top-actions"><button class="primary" data-screen="list">Got it</button></div>
-      </section>
-
       <section id="screen-wizard" class="panel">
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
-        <p style="font-size:11px;color:var(--hint);font-style:italic;opacity:.72;margin:-4px 0 16px;line-height:1.35;">To send notifications to a different topic,<br>open Management from that topic.</p>
+        <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
+        <div class="field" id="fieldDestination"><label>Target Telegram destination</label><select id="inDestination"><option value="">Loading destinations...</option></select></div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>

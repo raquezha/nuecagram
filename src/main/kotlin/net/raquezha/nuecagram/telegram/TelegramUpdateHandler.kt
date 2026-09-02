@@ -2,19 +2,16 @@
 
 package net.raquezha.nuecagram.telegram
 
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
-import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.db.AuditMetadataPatch
 import net.raquezha.nuecagram.db.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
 private const val GROUP_HELP_MESSAGE =
-    "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
-        "Run <code>/setup</code> in this group or topic to open the GitLab setup wizard.\n" +
-        "For status, management, and configuration options, open a private chat with the bot."
+    "<b>Nuecagram is managed in private chat</b>\n\n" +
+        "This group can receive GitLab notifications, but setup and repository management happen in DM.\n\n" +
+        "Open <b>@NuecagramBot</b> in a private chat and tap <b>OPEN</b> to connect repositories."
 private const val PRIVATE_START_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
         "I can help you deliver GitLab notifications directly to your Telegram groups and topics.\n\n" +
@@ -30,11 +27,9 @@ private const val PRIVATE_START_MESSAGE =
         "• /help - View command reference and instructions\n\n" +
         "💡 <i>Tap the <b>OPEN</b> menu button beside the chat box anytime to launch the WebApp Dashboard.</i>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
-private const val PRIVATE_COMMAND_MESSAGE = "Run this command in the installation group."
 private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
-    "Continue in a private chat with the bot to manage this installation."
+    "Continue in a private chat with <b>@NuecagramBot</b> to manage connected repositories."
 private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
-private const val LAUNCH_NONCE_TTL_MINUTES = 10L
 
 private data class AuthorizedInstallationCommand(
     val installation: InstallationAdminContext,
@@ -59,6 +54,7 @@ class TelegramUpdateHandler(
         }
 
         val message = update.message ?: return
+        recordKnownDestination(message)
         val command = message.text?.substringBefore(' ')?.substringBefore('@') ?: return
         dispatch(command, message)
     }
@@ -85,6 +81,7 @@ class TelegramUpdateHandler(
         payload: TelegramCallbackPayload,
         userId: Long,
     ) {
+        recordKnownDestination(message)
         val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
         if (!isTelegramAdmin(status)) {
             telegramService.answerCallbackQuery(
@@ -106,6 +103,16 @@ class TelegramUpdateHandler(
 
         installationRepository.recordInstallationAdmin(installation.id, userId)
         executeCallbackAction(callbackQuery, userId, installation, payload.action)
+    }
+
+    private suspend fun recordKnownDestination(message: TelegramUpdate.Message) {
+        if (message.chat.type != "private") {
+            installationRepository.upsertKnownTelegramDestination(
+                chatId = message.chat.id,
+                topicId = message.messageThreadId,
+                chatTitle = message.chat.title,
+            )
+        }
     }
 
     private suspend fun answerCallbackError(
@@ -209,8 +216,9 @@ class TelegramUpdateHandler(
             "/mute" -> handleMute(message)
             "/unmute" -> handleUnmute(message)
             "/manage" -> handleManage(message)
-            "/webapp" -> handleWebApp(message)
+            "/webapp" -> sendManagementDmRedirect(message)
             "/rotate" -> handleRotate(message)
+            "/setup" -> handleRemovedSetup(message)
             else ->
                 if (command.startsWith("/")) {
                     send(
@@ -228,7 +236,7 @@ class TelegramUpdateHandler(
         } else {
             val markup = InlineKeyboardMarkup(
                 inlineKeyboard = listOf(
-                    listOf(InlineKeyboardButton(text = "Open Private Chat", url = MANAGEMENT_DM_URL)),
+                    listOf(InlineKeyboardButton(text = "Open @NuecagramBot", url = MANAGEMENT_DM_URL)),
                 ),
             )
             send(message.chat.id, GROUP_HELP_MESSAGE, message.messageThreadId, replyMarkup = markup)
@@ -334,83 +342,23 @@ class TelegramUpdateHandler(
 
 
 
-    private suspend fun handleWebApp(message: TelegramUpdate.Message) {
-        val userId = message.from?.id ?: return
+    private suspend fun handleRemovedSetup(message: TelegramUpdate.Message) {
         if (message.chat.type == "private") {
-            send(message.chat.id, PRIVATE_COMMAND_MESSAGE)
-            return
+            send(
+                message.chat.id,
+                "Unknown command. Send <code>/help</code> for available commands.",
+                message.messageThreadId,
+            )
+        } else {
+            sendManagementDmRedirect(message)
         }
-        val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
-        if (!isTelegramAdmin(status)) {
-            send(message.chat.id, TELEGRAM_ADMIN_ONLY_MESSAGE, message.messageThreadId)
-            return
-        }
-        installationRepository.writeAuditEvent(
-            installationId = null,
-            actorType = "telegram",
-            actorId = userId.toString(),
-            action = "telegram_webapp_launch",
-            metadataPatch = AuditMetadataPatch(
-                actorUsername = message.from.username,
-                actorFirstName = message.from.firstName,
-                chatId = message.chat.id,
-                topicId = message.messageThreadId,
-                nickname = message.chat.title,
-            ),
-        )
-        sendLauncherMessage(
-            message.chat.id,
-            message.messageThreadId,
-            userId,
-            "Open Nuecagram Web App:",
-            "Open Nuecagram Web App",
-        )
     }
-
-
 
     private suspend fun sendManagementDmRedirect(message: TelegramUpdate.Message) {
         val markup = InlineKeyboardMarkup(
-            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = "Open bot DM", url = MANAGEMENT_DM_URL))),
+            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = "Open @NuecagramBot", url = MANAGEMENT_DM_URL))),
         )
         send(message.chat.id, MANAGEMENT_DM_REDIRECT_MESSAGE, message.messageThreadId, replyMarkup = markup)
-    }
-
-    private suspend fun sendLauncherMessage(
-        chatId: Long,
-        threadId: Long?,
-        userId: Long,
-        text: String,
-        buttonText: String = "Open Nuecagram Web App",
-    ) {
-        val nonce = installationRepository.issueLaunchNonce(
-            telegramChatId = chatId,
-            telegramTopicId = threadId,
-            telegramUserId = userId,
-            expiresAt = Instant.now().plus(LAUNCH_NONCE_TTL_MINUTES, ChronoUnit.MINUTES),
-        )
-        val url = "${config.publicBaseUrl()}/webapp?startapp=nonce_${nonce.raw}"
-        val webAppMarkup = InlineKeyboardMarkup(
-            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = buttonText, webApp = WebAppInfo(url = url)))),
-        )
-        val directUrlMarkup = InlineKeyboardMarkup(
-            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = buttonText, url = url))),
-        )
-        val cid = chatId.toString()
-        val textWithLink = "$text\n\n<a href=\"$url\">$buttonText</a>"
-
-        val attempts = listOfNotNull(
-            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = webAppMarkup),
-            Message(chatId = cid, text = text, threadId = threadId, replyMarkup = directUrlMarkup),
-            threadId?.let { Message(chatId = cid, text = text, threadId = null, replyMarkup = webAppMarkup) },
-            threadId?.let { Message(chatId = cid, text = text, threadId = null, replyMarkup = directUrlMarkup) },
-            Message(chatId = cid, text = textWithLink, threadId = threadId),
-            threadId?.let { Message(chatId = cid, text = textWithLink, threadId = null) },
-        )
-
-        attempts.firstNotNullOfOrNull { msg ->
-            runCatching { telegramService.sendMessage(msg) }.getOrNull()
-        }
     }
 
     private fun buildSendAttempts(
@@ -484,5 +432,3 @@ private fun InstallationAdminContext.statusText(): String =
         append("\nMuted: ")
         append(if (muted) "yes" else "no")
     }
-
-private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()

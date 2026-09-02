@@ -355,23 +355,39 @@ private suspend fun ApplicationCall.handleGetDestinations(
     telegramService: TelegramService,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
-    val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
-    val candidateContexts = if (recorded.isNotEmpty()) {
-        recorded.map { inst ->
-            val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
-            val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
-            DestinationPayload(
-                id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
-                name = label,
-                telegramChatId = inst.telegramChatId,
-                telegramTopicId = inst.telegramTopicId,
-            )
-        }
-    } else {
-        emptyList()
+    val userId = session.telegramUserId
+
+    val installed = installationRepository.installationsForAdmin(userId).map { inst ->
+        val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+        val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
+        DestinationPayload(
+            id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
+            name = label,
+            telegramChatId = inst.telegramChatId,
+            telegramTopicId = inst.telegramTopicId,
+        )
     }
+
+    val known = installationRepository.knownTelegramDestinations().mapNotNull { dest ->
+        val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+        val defaultTitle = "Chat #${dest.telegramChatId}$topicSuffix"
+        val label = dest.chatTitle?.takeIf(String::isNotBlank) ?: defaultTitle
+        val status = runCatching { telegramService.chatMemberStatus(dest.telegramChatId, userId) }.getOrNull()
+        if (isTelegramAdmin(status)) {
+            DestinationPayload(
+                id = dest.id,
+                name = label,
+                telegramChatId = dest.telegramChatId,
+                telegramTopicId = dest.telegramTopicId,
+            )
+        } else {
+            null
+        }
+    }
+
+    val combined = (installed + known).distinctBy { it.id }
     appendWebAppSecurityHeaders()
-    respond(HttpStatusCode.OK, candidateContexts.distinctBy { it.id })
+    respond(HttpStatusCode.OK, combined)
 }
 
 @Serializable
@@ -871,8 +887,19 @@ private fun webAppShellHtml(basePath: String): String = """
         --button: var(--tg-theme-button-color, #0284c7);
         --button-text: var(--tg-theme-button-text-color, #ffffff);
         --border: #e2e8f0;
+        --input-bg: #f8fafc;
         --success: #16a34a;
         --danger: #dc2626;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: var(--tg-theme-bg-color, #0f172a);
+          --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+          --text-main: var(--tg-theme-text-color, #f8fafc);
+          --hint: var(--tg-theme-hint-color, #94a3b8);
+          --border: #334155;
+          --input-bg: #141c2e;
+        }
       }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -910,7 +937,13 @@ private fun webAppShellHtml(basePath: String): String = """
       .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
       .field:first-child { border-top: 0; }
       label { display: block; margin-bottom: 7px; font-weight: 800; }
-      input, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fafafa; color: var(--text-main); font: 15px inherit; }
+      #createDestinationMeta { font-size: 12px; font-style: italic; opacity: 0.85; display: inline-block; margin-top: 4px; }
+      input, select, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--input-bg); color: var(--text-main); font: 15px inherit; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06); }
+      input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+      input:focus, select:focus { outline: none; border-color: var(--button); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 3px rgba(2, 132, 199, 0.2); }
+      select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230284c7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
+      option { background: var(--card-bg); color: var(--text-main); }
       .codebox { min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       input[readonly] { color: var(--hint); }
       .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
@@ -951,19 +984,12 @@ private fun webAppShellHtml(basePath: String): String = """
         <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
       </section>
 
-      <section id="screen-add-info" class="panel">
-        <button class="link" data-screen="list">‹ Back to repositories</button>
-        <h1>Add repository</h1>
-        <p>Repositories must be added from the Telegram group or topic that will receive notifications.</p>
-        <div class="box"><p>How to add one:</p><p>1. Go to the target Telegram group or topic.<br>2. Open the group's Nuecagram menu and tap Management.<br>3. Tap + Add.</p><p>You can also run /setup in that group or topic.</p><p>No chat ID typing needed -- Nuecagram fills the destination automatically.</p></div>
-        <div class="top-actions"><button class="primary" data-screen="list">Got it</button></div>
-      </section>
-
       <section id="screen-wizard" class="panel">
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
         <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
+        <div class="field" id="fieldDestination"><label>Target Telegram destination</label><select id="inDestination"><option value="">Loading destinations...</option></select></div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
@@ -1129,7 +1155,7 @@ function renderList() {
     const scoped = listMode !== 'all' && currentContext.chatId != null && currentContext.chatId < 0;
     el.innerHTML = scoped
       ? '<div class="box"><h1>No repositories here yet.</h1><p>Add a GitLab project to start notifications.</p><button class="primary" id="btnEmptyAdd">+ Add repository</button></div>'
-      : '<div class="box"><h1>No repositories found.</h1><p>Open Nuecagram from a Telegram group/topic or run /setup there.</p></div>';
+      : '<div class="box"><h1>No repositories found.</h1><p>Tap + Add repository to connect a project to one of your Telegram groups.</p></div>';
     const add = document.getElementById('btnEmptyAdd');
     if (add) add.addEventListener('click', openAdd);
     return;
@@ -1212,15 +1238,41 @@ async function saveIdentity() {
   showScreen('detail');
 }
 
-function openAdd() {
+async function openAdd() {
   const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
+  const selectEl = document.getElementById('inDestination');
   document.getElementById('createDestinationName').innerText = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
-    : 'Selected Telegram Group';
-  document.getElementById('createDestinationMeta').innerText = isGroup
+    : 'Target Telegram Destination';
+  document.getElementById('createDestinationMeta').innerHTML = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
-    : 'Fill in repository details below to connect your GitLab project.';
+    : 'Select a destination group or topic<br>below to connect your GitLab project.';
   document.getElementById('wizErr').innerText = '';
+
+  if (isGroup) {
+    document.getElementById('fieldDestination').style.display = 'none';
+  } else {
+    document.getElementById('fieldDestination').style.display = '';
+    selectEl.innerHTML = '<option value="">Loading destinations...</option>';
+    try {
+      const res = await fetch('${basePath}/api/webapp/destinations', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const dests = await res.json();
+        if (dests.length > 0) {
+          selectEl.innerHTML = dests.map(function(d) {
+            return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
+          }).join('');
+        } else {
+          selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
+        }
+      } else {
+        selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+      }
+    } catch (e) {
+      selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+    }
+  }
+
   showScreen('wizard');
 }
 
@@ -1234,6 +1286,15 @@ async function createInstallation() {
   if (currentContext.chatId != null && currentContext.chatId < 0) {
     payload.telegramChatId = currentContext.chatId;
     if (currentContext.topicId != null) payload.telegramTopicId = currentContext.topicId;
+  } else {
+    const destVal = document.getElementById('inDestination').value;
+    if (!destVal) { document.getElementById('wizErr').innerText = 'Target Telegram group destination required.'; return; }
+    const parts = destVal.split(':');
+    const destChatId = parseInt(parts[0], 10);
+    const destTopicId = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+    if (!destChatId || destChatId >= 0) { document.getElementById('wizErr').innerText = 'Target Telegram group destination required.'; return; }
+    payload.telegramChatId = destChatId;
+    if (destTopicId !== 0) payload.telegramTopicId = destTopicId;
   }
   const res = await fetch('${basePath}/api/webapp/installations', {
     method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),

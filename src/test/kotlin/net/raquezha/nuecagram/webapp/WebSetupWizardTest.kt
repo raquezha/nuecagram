@@ -1,6 +1,7 @@
 package net.raquezha.nuecagram.webapp
 
 import com.google.common.truth.Truth.assertThat
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -51,6 +52,7 @@ private data class WizardRotatePayload(val id: String, val credential: String)
 @Serializable
 private data class WizardErrPayload(val error: String)
 
+@Suppress("TooManyFunctions")
 class WebSetupWizardTest : BaseEventTestHelper() {
     private val testConfig: ConfigWithSecrets by inject()
     private val json = Json { ignoreUnknownKeys = true }
@@ -340,5 +342,86 @@ class WebSetupWizardTest : BaseEventTestHelper() {
         assertThat(resp.status).isEqualTo(HttpStatusCode.Created)
         val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
         assertThat(body.installation.telegramChatId).isEqualTo(targetChatId)
+    }
+
+    @Test
+    fun getDestinationsReturnsKnownGroupDestinationsForAdmin() = testApplication {
+        configureTestApplication()
+        val userId = 7020L
+        val targetChatId = -1007020L
+        val topicId = 42L
+        mockTelegram.setChatMemberStatus(targetChatId, userId, "administrator")
+        runBlocking {
+            installationRepository.upsertTelegramPrivateChat(userId, userId)
+            installationRepository.upsertKnownTelegramDestination(targetChatId, topicId, "Devs Group")
+        }
+
+        val iData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$iData"}""")
+        }
+        val token = json.decodeFromString<WizardAuthPayload>(authResp.bodyAsText()).sessionToken!!
+
+        val resp = client.get("/nuecagram/api/webapp/destinations") {
+            header("X-Session-Token", token)
+        }
+        assertThat(resp.status).isEqualTo(HttpStatusCode.OK)
+        val body = resp.bodyAsText()
+        assertThat(body).contains("-1007020:42")
+        assertThat(body).contains("Devs Group")
+    }
+
+    @Test
+    fun getDestinationsExcludesGroupsWhereUserIsNotAdmin() = testApplication {
+        configureTestApplication()
+        val userId = 7021L
+        val unauthChatId = -1007021L
+        mockTelegram.setChatMemberStatus(unauthChatId, userId, "member")
+        runBlocking {
+            installationRepository.upsertTelegramPrivateChat(userId, userId)
+            installationRepository.upsertKnownTelegramDestination(unauthChatId, null, "Private Group")
+        }
+
+        val iData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$iData"}""")
+        }
+        val token = json.decodeFromString<WizardAuthPayload>(authResp.bodyAsText()).sessionToken!!
+
+        val resp = client.get("/nuecagram/api/webapp/destinations") {
+            header("X-Session-Token", token)
+        }
+        assertThat(resp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(resp.bodyAsText()).doesNotContain("-1007021:0")
+    }
+
+    @Test
+    fun createInstallationInDmRejectsUnauthorizedTargetChatId() = testApplication {
+        configureTestApplication()
+        val userId = 7022L
+        val unauthChatId = -1007022L
+        mockTelegram.setChatMemberStatus(unauthChatId, userId, "member")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(userId, userId) }
+
+        val iData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$iData"}""")
+        }
+        val authPayload = json.decodeFromString<WizardAuthPayload>(authResp.bodyAsText())
+
+        val createBody =
+            """{"repoName":"Project #70022","gitlabBaseUrl":"https://gitlab.com",""" +
+                """"gitlabProjectId":70022,"telegramChatId":$unauthChatId}"""
+        val resp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("X-Session-Token", authPayload.sessionToken!!)
+            header("X-CSRF-Token", authPayload.csrf)
+            setBody(createBody)
+        }
+        assertThat(resp.status).isEqualTo(HttpStatusCode.Forbidden)
+        assertThat(resp.bodyAsText()).contains("administrator permissions required")
     }
 }

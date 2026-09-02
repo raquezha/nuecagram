@@ -6,9 +6,9 @@ Nuecagram hosts multiple GitLab project notification installs behind one Telegra
 
 1. Deploy the app with PostgreSQL using `compose.yaml` and a private `.env` based on `env.example`.
 2. Put Nuecagram behind a path-preserving reverse proxy that matches `NUECAGRAM_PUBLIC_URL`.
-3. Add the bot to a Telegram group, make it an administrator, and send the bot a private `/start`.
-4. Run `/setup https://gitlab.com <project-id>` in the destination group or notification topic as a Telegram administrator.
-5. Use the private setup message to create the GitLab webhook with GitLab's native secret token.
+3. Add the bot to your target Telegram group/topic and make it an administrator.
+4. Open `@NuecagramBot` in Telegram and tap the **OPEN** menu button to launch the Web App portal.
+5. Tap **+ Add repository** to connect a new GitLab project and copy your webhook token.
 
 ## Architecture
 
