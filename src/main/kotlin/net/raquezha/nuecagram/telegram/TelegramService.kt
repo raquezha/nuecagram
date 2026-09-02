@@ -12,7 +12,8 @@ interface TelegramService {
         menuButton: MenuButton? = null,
     ): Boolean
 
-    suspend fun setMyCommands(commands: List<BotCommand>): Boolean
+    suspend fun setMyCommands(commands: List<BotCommand>, scope: BotCommandScope? = null): Boolean
+    suspend fun deleteMyCommands(scope: BotCommandScope): Boolean
 
     suspend fun sendMessage(message: Message): String
 

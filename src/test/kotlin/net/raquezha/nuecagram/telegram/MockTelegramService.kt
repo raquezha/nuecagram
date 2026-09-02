@@ -53,9 +53,15 @@ class MockTelegramService : TelegramService {
         return true
     }
 
-    override suspend fun setMyCommands(commands: List<BotCommand>): Boolean {
-        botCommands.clear()
-        botCommands.addAll(commands)
+    override suspend fun setMyCommands(commands: List<BotCommand>, scope: BotCommandScope?): Boolean {
+        if (scope == null) {
+            botCommands.clear()
+            botCommands.addAll(commands)
+        }
+        return true
+    }
+
+    override suspend fun deleteMyCommands(scope: BotCommandScope): Boolean {
         return true
     }
 

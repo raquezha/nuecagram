@@ -23,6 +23,7 @@ private const val METHOD_SET_WEBHOOK = "setWebhook"
 private const val METHOD_SET_CHAT_MENU_BUTTON = "setChatMenuButton"
 private const val METHOD_GET_CHAT_MEMBER = "getChatMember"
 private const val METHOD_SET_MY_COMMANDS = "setMyCommands"
+private const val METHOD_DELETE_MY_COMMANDS = "deleteMyCommands"
 private const val METHOD_SEND_MESSAGE = "sendMessage"
 private const val METHOD_EDIT_MESSAGE_TEXT = "editMessageText"
 private const val METHOD_ANSWER_CALLBACK_QUERY = "answerCallbackQuery"
@@ -67,6 +68,12 @@ private data class SetChatMenuButtonPayload(
 @Serializable
 private data class SetMyCommandsPayload(
     val commands: List<BotCommand>,
+    val scope: BotCommandScope? = null,
+)
+
+@Serializable
+private data class DeleteMyCommandsPayload(
+    val scope: BotCommandScope,
 )
 
 @Serializable
@@ -100,9 +107,15 @@ class TelegramServiceImpl(
         return true
     }
 
-    override suspend fun setMyCommands(commands: List<BotCommand>): Boolean {
-        client.postJson(endpoint(METHOD_SET_MY_COMMANDS), SetMyCommandsPayload(commands))
+    override suspend fun setMyCommands(commands: List<BotCommand>, scope: BotCommandScope?): Boolean {
+        client.postJson(endpoint(METHOD_SET_MY_COMMANDS), SetMyCommandsPayload(commands, scope))
             .requireOk("Failed to set bot commands")
+        return true
+    }
+
+    override suspend fun deleteMyCommands(scope: BotCommandScope): Boolean {
+        client.postJson(endpoint(METHOD_DELETE_MY_COMMANDS), DeleteMyCommandsPayload(scope))
+            .requireOk("Failed to delete bot commands")
         return true
     }
 
