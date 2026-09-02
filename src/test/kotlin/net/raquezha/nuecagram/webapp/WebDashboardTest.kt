@@ -369,6 +369,20 @@ class WebDashboardTest : BaseEventTestHelper() {
         val js = response.bodyAsText()
         assertThat(js).contains("initWebApp()")
         assertThat(js).contains("loadInstallations()")
+
+        val tempJsFile = java.io.File.createTempFile("app", ".js")
+        try {
+            tempJsFile.writeText(js)
+            val process = ProcessBuilder("node", "--check", tempJsFile.absolutePath)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().readText()
+            val exitCode = process.waitFor()
+            check(exitCode == 0) { "JS Syntax error in app.js:\n$output" }
+            assertThat(exitCode).isEqualTo(0)
+        } finally {
+            tempJsFile.delete()
+        }
     }
 
     @Test
