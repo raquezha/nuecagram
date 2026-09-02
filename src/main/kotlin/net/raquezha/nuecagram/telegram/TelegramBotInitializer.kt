@@ -25,13 +25,14 @@ class TelegramBotInitializerImpl(
     }
 
     private suspend fun configureBotCommands() = runCatching {
-        // Clear stale commands from all group scopes (removes any leftover /setup etc.)
-        listOf("all_group_chats", "all_chat_administrators").forEach { scopeType ->
-            runCatching {
-                telegramService.deleteMyCommands(BotCommandScope(scopeType))
-            }.onFailure { logger.warn(it) { "Failed to delete bot commands for scope $scopeType" } }
-        }
-        telegramService.setMyCommands(DEFAULT_BOT_COMMANDS)
+        // Set full command list for DM only
+        telegramService.setMyCommands(DEFAULT_BOT_COMMANDS, BotCommandScope("all_private_chats"))
+        // Groups/topics: /help only — all other commands redirect to DM anyway
+        telegramService.setMyCommands(GROUP_BOT_COMMANDS, BotCommandScope("all_group_chats"))
+        // Clear any stale entries from admin scope (e.g. leftover /setup)
+        runCatching {
+            telegramService.deleteMyCommands(BotCommandScope("all_chat_administrators"))
+        }.onFailure { logger.warn(it) { "Failed to delete bot commands for scope all_chat_administrators" } }
     }.onFailure { logger.warn(it) { "Failed to configure Telegram bot commands" } }
 
     private suspend fun validateBotToken() = runCatching {
@@ -69,6 +70,9 @@ class TelegramBotInitializerImpl(
             BotCommand("mute", "Choose a repository and pause notifications"),
             BotCommand("unmute", "Choose a repository and resume notifications"),
             BotCommand("digest", "Choose a repository and view summary"),
+            BotCommand("help", "View command reference and instructions"),
+        )
+        private val GROUP_BOT_COMMANDS = listOf(
             BotCommand("help", "View command reference and instructions"),
         )
     }
