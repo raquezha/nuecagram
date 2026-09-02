@@ -58,7 +58,7 @@ class TelegramBotInitializerImpl(
             BotCommand("manage", "View and manage connected repositories"),
             BotCommand("status", "Choose a repository and view status"),
             BotCommand("test", "Choose a repository and send a test"),
-            BotCommand("rotate", "Choose a repository and rotate key"),
+            BotCommand("rotate", "Choose a repository and rotate secret"),
             BotCommand("mute", "Choose a repository and pause notifications"),
             BotCommand("unmute", "Choose a repository and resume notifications"),
             BotCommand("digest", "Choose a repository and view summary"),
