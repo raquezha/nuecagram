@@ -21,7 +21,11 @@ Nuecagram features a **DM-first** management experience. Group administrators ta
 
 ## Setup Flow Notes
 
-Group administrators open `@NuecagramBot` in DM and tap **OPEN** to launch the Web App. Target Telegram groups and topics are selected from the in-app destination dropdown.
+When `@NuecagramBot` is added to a Telegram group or supergroup, Telegram automatically notifies the bot via a silent `my_chat_member` update event. Nuecagram records the group destination silently in the background without sending any chat messages or notifications to the group.
+
+For existing groups where the bot was added previously, sending `/help` in the group or receiving any group update automatically registers the destination. Existing connected groups are always included automatically in your Web App destination picker.
+
+Group administrators open `@NuecagramBot` in DM and tap **OPEN** to launch the Web App. Target Telegram groups and topics are selected directly from the in-app destination dropdown.
 
 You need to send private `/start` to the bot first so the Web App session can complete DM bootstrap checks.
 
