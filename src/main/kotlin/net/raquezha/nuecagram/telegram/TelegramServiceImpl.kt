@@ -151,6 +151,8 @@ class TelegramServiceImpl(
         return true
     }
 
-    private fun telegramEndpoint(method: String): String =
-        "$TELEGRAM_API_BASE_URL${config.botApi}/$method"
+    private fun telegramEndpoint(method: String): String {
+        val sanitizedToken = config.botApi.trim().removePrefix("bot")
+        return "$TELEGRAM_API_BASE_URL$sanitizedToken/$method"
+    }
 }

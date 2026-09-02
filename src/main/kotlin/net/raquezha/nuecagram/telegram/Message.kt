@@ -8,16 +8,20 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class TelegramUser(
+    @param:JsonProperty("id")
     @get:JsonProperty("id")
     @SerialName("id")
-    val id: Long,
+    val id: Long = 0L,
+    @param:JsonProperty("is_bot")
     @get:JsonProperty("is_bot")
     @SerialName("is_bot")
     val isBot: Boolean = false,
+    @param:JsonProperty("first_name")
     @get:JsonProperty("first_name")
     @SerialName("first_name")
     val firstName: String = "",
     @JsonInclude(Include.NON_NULL)
+    @param:JsonProperty("username")
     @get:JsonProperty("username")
     @SerialName("username")
     val username: String? = null,
@@ -25,14 +29,17 @@ data class TelegramUser(
 
 @Serializable
 data class MenuButton(
+    @param:JsonProperty("type")
     @get:JsonProperty("type")
     @SerialName("type")
     val type: String = "web_app",
     @JsonInclude(Include.NON_NULL)
+    @param:JsonProperty("text")
     @get:JsonProperty("text")
     @SerialName("text")
     val text: String? = null,
     @JsonInclude(Include.NON_NULL)
+    @param:JsonProperty("web_app")
     @get:JsonProperty("web_app")
     @SerialName("web_app")
     val webApp: WebAppInfo? = null,
