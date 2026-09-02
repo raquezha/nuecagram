@@ -57,6 +57,8 @@ private data class SetWebhookPayload(
     val url: String,
     @SerialName("secret_token")
     val secretToken: String? = null,
+    @SerialName("allowed_updates")
+    val allowedUpdates: List<String> = listOf("message", "callback_query", "my_chat_member"),
 )
 
 @Serializable
