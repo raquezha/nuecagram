@@ -532,24 +532,111 @@ private fun FlowContent.auditPaginationBtn(
     }
 }
 
+private const val CHAT_SVG_ICON =
+    """<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" """ +
+        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round">""" +
+        """<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>"""
+
 private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
     tr {
-        td { +event.createdAt.toString() }
-        td { +event.repository }
+        td(classes = "audit-timestamp") {
+            attributes["title"] = event.createdAt.formatAuditFullTooltip()
+            div(classes = "ts-time") { +event.createdAt.formatAuditTime() }
+            div(classes = "ts-date") { +event.createdAt.formatAuditDate() }
+        }
+        td(classes = "audit-repo") {
+            +event.repository
+        }
         td {
             span(classes = auditActionBadgeClass(event.action)) {
-                +event.action
+                attributes["data-action"] = event.action
+                +event.action.formatAuditActionLabel()
             }
         }
-        td { +event.actor }
-        td {
-            div { +event.chatDetails }
-            event.details.forEach { line ->
-                div(classes = "table-subtle") { +line }
+        td(classes = "audit-actor") {
+            +event.actor
+        }
+        td(classes = "audit-details-cell") {
+            if (event.chatDetails != "Unknown Chat") {
+                div(classes = "chat-target") {
+                    span(classes = "chat-icon") {
+                        unsafe {
+                            +CHAT_SVG_ICON
+                        }
+                    }
+                    span(classes = "chat-text") { +event.chatDetails }
+                }
+            } else {
+                span(classes = "table-subtle") {
+                    attributes["title"] = "Unknown Chat"
+                    +"—"
+                }
+            }
+            if (event.details.isNotEmpty()) {
+                div(classes = "detail-chips") {
+                    event.details.forEach { line ->
+                        renderAuditDetailChip(line)
+                    }
+                }
             }
         }
     }
 }
+
+private fun FlowContent.renderAuditDetailChip(line: String) {
+    span(classes = "detail-chip") {
+        if (line.contains(": ")) {
+            val key = line.substringBefore(": ")
+            val valStr = line.substringAfter(": ").replace("->", "→")
+            span(classes = "chip-key") { +"$key:" }
+            if (valStr.contains(" → ")) {
+                val from = valStr.substringBefore(" → ")
+                val to = valStr.substringAfter(" → ")
+                span(classes = "chip-val-old") { +from }
+                span(classes = "chip-arrow") { +"→" }
+                span(classes = "chip-val-new") { +to }
+            } else {
+                span(classes = "chip-val") { +valStr }
+            }
+        } else {
+            +line.replace("->", "→")
+        }
+    }
+}
+
+private fun Instant.formatAuditTime(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.US)
+        .withZone(java.time.ZoneOffset.UTC)
+    return formatter.format(this)
+}
+
+private fun Instant.formatAuditDate(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd", java.util.Locale.US)
+        .withZone(java.time.ZoneOffset.UTC)
+    return formatter.format(this)
+}
+
+private fun Instant.formatAuditFullTooltip(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        .withZone(java.time.ZoneOffset.UTC)
+    return formatter.format(this) + " UTC"
+}
+
+private fun String.formatAuditActionLabel(): String =
+    when (this) {
+        "telegram_setup", "webapp_setup" -> "Setup"
+        "telegram_webapp_launch" -> "Web App Launch"
+        "telegram_rotate", "management_rotate", "webapp_rotate" -> "Rotate Token"
+        "telegram_mute", "management_mute", "webapp_mute" -> "Muted"
+        "telegram_unmute", "management_unmute", "webapp_unmute" -> "Unmuted"
+        "webapp_identity_update" -> "Identity Update"
+        else -> replace('_', ' ').replace('-', ' ').lowercase()
+            .split(' ').joinToString(" ") { word ->
+                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+    }
+
+
 
 private fun auditActionBadgeClass(action: String): String =
     when (action) {
@@ -842,56 +929,12 @@ private fun platformAdminHtml(
                                 }
                             }
                         } else {
-                            previewInstallations.forEach { installation ->
-                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
-                                tr {
-                                    td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
-                                    td { +installation.repoName.redactedUrl() }
-                                    td {
-                                        val label = installation.chatName?.takeIf(String::isNotBlank)
-                                        if (label != null) {
-                                            +label
-                                        } else {
-                                            span(classes = "table-subtle") { +"(none)" }
-                                        }
-                                    }
-                                    td {
-                                        if (gitlabUrl.startsWith("http")) {
-                                            a(href = gitlabUrl, target = "_blank", classes = "table-link") {
-                                                rel = "noopener"
-                                                span { +gitlabUrl }
-                                            }
-                                        } else {
-                                            +gitlabUrl
-                                        }
-                                    }
-                                    td {
-                                        if (installation.gitlabProjectId != null) {
-                                            code { +installation.gitlabProjectId.toString() }
-                                        } else {
-                                            span { +"Group-level" }
-                                        }
-                                    }
-                                    td {
-                                        if (installation.muted) {
-                                            span(classes = "status-badge status-muted") {
-                                                span(classes = "status-dot")
-                                                +"Muted"
-                                            }
-                                        } else {
-                                            span(classes = "status-badge status-active") {
-                                                span(classes = "status-dot")
-                                                +"Active"
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            previewInstallations.forEach(::platformAdminInstallationRow)
                         }
                     }
                 }
             }
-            div {
+            div(classes = "panel-link-bar") {
                 a(href = "$basePath/admin/installations", classes = "table-link") {
                     +"View all installations →"
                 }
@@ -921,17 +964,26 @@ private fun platformAdminHtml(
                         } else {
                             previewAuditEvents.forEach { event ->
                                 tr {
-                                    td { +event.createdAt.toString() }
-                                    td { +event.repository }
-                                    td { +event.action }
-                                    td { +event.actor }
+                                    td(classes = "audit-timestamp") {
+                                        attributes["title"] = event.createdAt.formatAuditFullTooltip()
+                                        div(classes = "ts-time") { +event.createdAt.formatAuditTime() }
+                                        div(classes = "ts-date") { +event.createdAt.formatAuditDate() }
+                                    }
+                                    td(classes = "audit-repo") { +event.repository }
+                                    td {
+                                        span(classes = auditActionBadgeClass(event.action)) {
+                                            attributes["data-action"] = event.action
+                                            +event.action.formatAuditActionLabel()
+                                        }
+                                    }
+                                    td(classes = "audit-actor") { +event.actor }
                                 }
                             }
                         }
                     }
                 }
             }
-            div {
+            div(classes = "panel-link-bar") {
                 a(href = "$basePath/admin/audit", classes = "table-link") {
                     +"Explore audit logs →"
                 }

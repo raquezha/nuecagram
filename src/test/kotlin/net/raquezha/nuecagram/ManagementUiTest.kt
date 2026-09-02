@@ -294,25 +294,140 @@ class ManagementUiTest : BaseEventTestHelper() {
             assertThat(setCookie).contains("Secure")
         }
 
+    @Suppress("LongMethod")
     @Test
     fun dumpSampleHtmlFiles() =
         testApplication {
             configureTestApplication()
             val session = exchangeSessionCookie(client.config { followRedirects = false })
 
-            val onboarding = client.get("${basePath()}/setup").bodyAsText()
-            val dashboard =
+            val webAppGuidance = client.get("${basePath()}/webapp").bodyAsText()
+            val webAppShell = client.get("${basePath()}/webapp?startapp=sample").bodyAsText()
+            val setup = client.get("${basePath()}/setup").bodyAsText()
+            val manageDashboard =
                 client.get("${basePath()}/manage") {
                     header(HttpHeaders.Cookie, session)
                     header("X-Forwarded-Proto", "https")
                 }.bodyAsText()
-            val recovery = client.get("${basePath()}/manage/invalid-token").bodyAsText()
+            val manageRecovery = client.get("${basePath()}/manage/invalid-token").bodyAsText()
+            val adminLogin = client.get("${basePath()}/admin/login").bodyAsText()
+
+            val noRedirectClient = client.config { followRedirects = false }
+            val adminForm = noRedirectClient.get("${basePath()}/admin/login")
+            val adminCsrf = hiddenValue(adminForm.bodyAsText(), "csrf")
+            val adminLoginResp = noRedirectClient.post("${basePath()}/admin/login") {
+                header(HttpHeaders.Cookie, adminForm.headers[HttpHeaders.SetCookie].orEmpty().substringBefore(';'))
+                setBody(
+                    io.ktor.client.request.forms.FormDataContent(
+                        Parameters.build {
+                            append("csrf", adminCsrf)
+                            append("password", PlatformAdminUiTest.TEST_ADMIN_PASSWORD)
+                        },
+                    ),
+                )
+            }
+            val adminSession = adminLoginResp.headers.getAll(HttpHeaders.SetCookie).orEmpty()
+                .filterNot { it.startsWith("nuecagram_admin_login_csrf=") }
+                .joinToString("; ") { it.substringBefore(';') }
+
+            val adminDashboard = client.get("${basePath()}/admin") {
+                header(HttpHeaders.Cookie, adminSession)
+            }.bodyAsText()
+            val adminInstallations = client.get("${basePath()}/admin/installations") {
+                header(HttpHeaders.Cookie, adminSession)
+            }.bodyAsText()
+            val adminAudit = client.get("${basePath()}/admin/audit") {
+                header(HttpHeaders.Cookie, adminSession)
+            }.bodyAsText()
 
             runCatching {
                 val dir = java.io.File("samples").apply { mkdirs() }
-                java.io.File(dir, "manage-onboarding.html").writeText(onboarding)
-                java.io.File(dir, "manage-dashboard.html").writeText(dashboard)
-                java.io.File(dir, "manage-recovery.html").writeText(recovery)
+                java.io.File(dir, "webapp-guidance.html").writeText(webAppGuidance)
+                java.io.File(dir, "webapp-shell.html").writeText(webAppShell)
+                java.io.File(dir, "manage-onboarding.html").writeText(setup)
+                java.io.File(dir, "manage-dashboard.html").writeText(manageDashboard)
+                java.io.File(dir, "manage-recovery.html").writeText(manageRecovery)
+                java.io.File(dir, "admin-login.html").writeText(adminLogin)
+                java.io.File(dir, "admin-dashboard.html").writeText(adminDashboard)
+                java.io.File(dir, "admin-installations.html").writeText(adminInstallations)
+                java.io.File(dir, "admin-audit.html").writeText(adminAudit)
+
+                val indexHtml = """
+                <!doctype html>
+                <html lang="en">
+                <head>
+                  <meta charset="utf-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1">
+                  <title>Nuecagram UI Review Gallery</title>
+                  <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 40px 20px; }
+                    .container { max-width: 800px; margin: 0 auto; }
+                    h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; color: #38bdf8; }
+                    p { color: #94a3b8; font-size: 15px; margin-bottom: 24px; }
+                    .card { background: #1e293b; border-radius: 12px; border: 1px solid #334155; padding: 20px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+                    .card-title { font-weight: 700; font-size: 16px; margin-bottom: 4px; color: #f1f5f9; }
+                    .card-desc { font-size: 13px; color: #94a3b8; }
+                    a.btn { background: #0284c7; color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+                    a.btn:hover { background: #0369a1; }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <h1>Nuecagram UI Review Gallery</h1>
+                    <p>Click any view to open and review the rendered HTML page in your browser.</p>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">1. WebApp Direct Browser Guidance</div>
+                        <div class="card-desc">"Telegram Access Required" guidance page served when accessing /webapp outside Telegram</div>
+                      </div>
+                      <a class="btn" href="webapp-guidance.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">2. WebApp Management Shell</div>
+                        <div class="card-desc">User-facing Telegram WebApp card layout and management UI</div>
+                      </div>
+                      <a class="btn" href="webapp-shell.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">3. Platform Admin Operations Dashboard</div>
+                        <div class="card-desc">/admin operations overview with installations and 24h audit metrics</div>
+                      </div>
+                      <a class="btn" href="admin-dashboard.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">4. Platform Admin Installations Directory</div>
+                        <div class="card-desc">/admin/installations showing Repository Name, Notification Label, GitLab, Project, Status</div>
+                      </div>
+                      <a class="btn" href="admin-installations.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">5. Platform Admin Audit Explorer</div>
+                        <div class="card-desc">/admin/audit explorer showing trace of repository identity, actor, and action deltas</div>
+                      </div>
+                      <a class="btn" href="admin-audit.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">6. Platform Admin Login Page</div>
+                        <div class="card-desc">/admin/login browser authentication interface</div>
+                      </div>
+                      <a class="btn" href="admin-login.html" target="_blank">Preview</a>
+                    </div>
+                  </div>
+                </body>
+                </html>
+                """.trimIndent()
+                java.io.File(dir, "index.html").writeText(indexHtml)
             }
         }
 

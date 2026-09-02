@@ -1,0 +1,5 @@
+style(admin): unify overview dashboard and audit explorer table styling
+
+Apply stacked timestamps, action badges, right-aligned panel action links, and updated sample previews across platform admin views.
+
+Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]

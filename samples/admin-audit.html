@@ -1,687 +1,3 @@
-@file:Suppress("TooManyFunctions")
-
-package net.raquezha.nuecagram.plugins
-
-import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.receiveParameters
-import io.ktor.server.response.respondRedirect
-import io.ktor.server.response.respondText
-import io.ktor.server.routing.Route
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import java.time.Instant
-import java.time.temporal.ChronoUnit
-import kotlinx.html.a
-import kotlinx.html.button
-import kotlinx.html.code
-import kotlinx.html.details
-import kotlinx.html.div
-import kotlinx.html.form
-import kotlinx.html.h1
-import kotlinx.html.h2
-import kotlinx.html.h3
-import kotlinx.html.h4
-import kotlinx.html.hiddenInput
-import kotlinx.html.p
-import kotlinx.html.section
-import kotlinx.html.span
-import kotlinx.html.stream.createHTML
-import kotlinx.html.strong
-import kotlinx.html.summary
-import kotlinx.html.table
-import kotlinx.html.tbody
-import kotlinx.html.td
-import kotlinx.html.th
-import kotlinx.html.thead
-import kotlinx.html.tr
-import kotlinx.html.unsafe
-import net.raquezha.nuecagram.db.InstallationAdminContext
-import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.db.redactedUrl
-import org.koin.ktor.ext.inject
-
-private const val SESSION_COOKIE_NAME = "nuecagram_manage_session"
-private const val CSRF_COOKIE_NAME = "nuecagram_manage_csrf"
-private const val SESSION_TTL_HOURS = 8L
-private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
-private const val ROTATION_GRACE_MINUTES = 0L
-private const val SHORT_ID_LENGTH = 8
-
-@Suppress("LongMethod", "CyclomaticComplexMethod")
-fun Route.managementRouting(basePath: String) {
-    val installationRepository by inject<InstallationRepository>()
-
-    val rootPath = basePath.ifEmpty { "/" }
-    get(rootPath) {
-        call.respondManagementHtml(
-            title = "Nuecagram setup",
-            body = onboardingHtml(basePath),
-        )
-    }
-
-    if (basePath.isNotEmpty()) {
-        get("$basePath/") {
-            call.respondManagementHtml(
-                title = "Nuecagram setup",
-                body = onboardingHtml(basePath),
-            )
-        }
-    }
-
-    get("$basePath/setup") {
-        call.respondManagementHtml(
-            title = "Nuecagram setup",
-            body = onboardingHtml(basePath),
-        )
-    }
-
-    get("$basePath/manage/{token}") {
-        val token = call.parameters["token"]?.trim().orEmpty()
-        if (token.isBlank()) {
-            call.respondManagementHtml(
-                status = HttpStatusCode.NotFound,
-                title = "Link unavailable",
-                body = recoveryHtml(basePath),
-            )
-            return@get
-        }
-        val session =
-            installationRepository.exchangeManagementLinkForSession(
-                raw = token,
-                sessionExpiresAt = managementSessionExpiry(),
-            )
-        if (session == null) {
-            call.respondManagementHtml(
-                status = HttpStatusCode.Gone,
-                title = "Link expired",
-                body = recoveryHtml(basePath),
-            )
-            return@get
-        }
-        call.response.headers.append(
-            HttpHeaders.SetCookie,
-            buildSessionCookie(basePath, session.raw, call.isHttps()),
-        )
-        call.response.headers.append(
-            HttpHeaders.SetCookie,
-            buildCsrfCookie(basePath, session.csrf, call.isHttps()),
-        )
-        call.appendSecurityHeaders()
-        call.respondRedirect("$basePath/manage")
-    }
-
-    get("$basePath/manage") {
-        val session = call.managementSession(installationRepository)
-        if (session == null) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.Unauthorized,
-                title = "Session required",
-                body = recoveryHtml(basePath),
-            )
-            return@get
-        }
-        val csrf = call.request.cookies[CSRF_COOKIE_NAME].orEmpty()
-        if (!installationRepository.verifyManagementCsrf(session, csrf)) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.Unauthorized,
-                title = "Session required",
-                body = recoveryHtml(basePath),
-            )
-            return@get
-        }
-        val installation = installationRepository.installationAdminContext(session.installationId)
-        if (installation == null) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.NotFound,
-                title = "Installation unavailable",
-                body = recoveryHtml(basePath),
-            )
-            return@get
-        }
-        call.respondManagementHtml(
-            title = "Manage installation",
-            body = manageHtml(basePath, installation, csrf),
-            rightHeaderHtml = manageLogoutHeaderButton(basePath, csrf),
-        )
-    }
-
-    post("$basePath/manage/rotate") {
-        val session = call.managementSession(installationRepository)
-        if (session == null) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.Unauthorized,
-                title = "Session required",
-                body = recoveryHtml(basePath),
-            )
-            return@post
-        }
-        val csrf = call.receiveParameters()["csrf"].orEmpty()
-        if (!installationRepository.verifyManagementCsrf(session, csrf)) {
-            call.respondManagementHtml(
-                status = HttpStatusCode.Forbidden,
-                title = "Request rejected",
-                body = rejectionHtml("Request rejected", "The CSRF token is invalid."),
-            )
-            return@post
-        }
-        val installation = installationRepository.installationAdminContext(session.installationId)
-        if (installation == null) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.NotFound,
-                title = "Installation unavailable",
-                body = recoveryHtml(basePath),
-            )
-            return@post
-        }
-        val credential =
-            installationRepository.rotateWebhookSecret(
-                installationId = installation.id,
-                graceUntil = Instant.now().plus(ROTATION_GRACE_MINUTES, ChronoUnit.MINUTES),
-            )
-        installationRepository.writeAuditEvent(
-            installationId = installation.id,
-            actorType = "management_session",
-            actorId = session.sessionId.toString(),
-            action = "management_rotate",
-        )
-        call.respondManagementHtml(
-            title = "Credential rotated",
-            body = rotatedHtml(basePath, installation, credential.raw),
-        )
-    }
-
-    post("$basePath/manage/mute") {
-        val session = call.managementSession(installationRepository)
-        if (session == null) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.Unauthorized,
-                title = "Session required",
-                body = recoveryHtml(basePath),
-            )
-            return@post
-        }
-        val form = call.receiveParameters()
-        val csrf = form["csrf"].orEmpty()
-        if (!installationRepository.verifyManagementCsrf(session, csrf)) {
-            call.respondManagementHtml(
-                status = HttpStatusCode.Forbidden,
-                title = "Request rejected",
-                body = rejectionHtml("Request rejected", "The CSRF token is invalid."),
-            )
-            return@post
-        }
-        val installation = installationRepository.installationAdminContext(session.installationId)
-        if (installation == null) {
-            call.clearManagementSession(basePath)
-            call.respondManagementHtml(
-                status = HttpStatusCode.NotFound,
-                title = "Installation unavailable",
-                body = recoveryHtml(basePath),
-            )
-            return@post
-        }
-        val muted = form["muted"]?.lowercase() == "true"
-        installationRepository.setMuted(installation.id, muted)
-        installationRepository.writeAuditEvent(
-            installationId = installation.id,
-            actorType = "management_session",
-            actorId = session.sessionId.toString(),
-            action = if (muted) "management_mute" else "management_unmute",
-        )
-        call.appendSecurityHeaders()
-        call.respondRedirect("$basePath/manage")
-    }
-
-    post("$basePath/manage/logout") {
-        val session = call.managementSession(installationRepository)
-        val csrf = call.receiveParameters()["csrf"].orEmpty()
-        if (session == null || !installationRepository.verifyManagementCsrf(session, csrf)) {
-            call.respondManagementHtml(
-                status = HttpStatusCode.Forbidden,
-                title = "Request rejected",
-                body = rejectionHtml("Request rejected", "The session or CSRF token is invalid."),
-            )
-            return@post
-        }
-        installationRepository.deleteManagementSession(session.sessionId)
-        call.clearManagementSession(basePath)
-        call.appendSecurityHeaders()
-        call.respondRedirect(basePath.ifEmpty { "/" })
-    }
-}
-
-private suspend fun ApplicationCall.managementSession(
-    installationRepository: InstallationRepository,
-) =
-    request.cookies[SESSION_COOKIE_NAME]
-        ?.takeIf(String::isNotBlank)
-        ?.let { installationRepository.verifyManagementSession(it) }
-
-private fun ApplicationCall.clearManagementSession(basePath: String) {
-    response.headers.append(HttpHeaders.SetCookie, buildExpiredSessionCookie(basePath, isHttps()))
-    response.headers.append(HttpHeaders.SetCookie, buildExpiredCsrfCookie(basePath, isHttps()))
-}
-
-internal suspend fun ApplicationCall.respondManagementHtml(
-    title: String,
-    body: String,
-    status: HttpStatusCode = HttpStatusCode.OK,
-    rightHeaderHtml: String? = null,
-) {
-    appendSecurityHeaders()
-    respondText(
-        managementDocument(title, body, rightHeaderHtml),
-        ContentType.Text.Html,
-        status,
-    )
-}
-
-internal fun ApplicationCall.appendSecurityHeaders() {
-    response.headers.append("Cache-Control", "no-store")
-    response.headers.append("Pragma", "no-cache")
-    response.headers.append("Referrer-Policy", "no-referrer")
-    response.headers.append("X-Frame-Options", "DENY")
-    response.headers.append("X-Content-Type-Options", "nosniff")
-    response.headers.append(
-        "Content-Security-Policy",
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-    )
-    if (isHttps()) {
-        response.headers.append(
-            "Strict-Transport-Security",
-            "max-age=31536000; includeSubDomains",
-        )
-    }
-}
-
-internal fun ApplicationCall.isHttps(): Boolean =
-    request.headers["X-Forwarded-Proto"]?.substringBefore(',')?.trim().equals("https", ignoreCase = true)
-
-private fun buildSessionCookie(
-    basePath: String,
-    value: String,
-    secure: Boolean,
-): String =
-    buildString {
-        append(SESSION_COOKIE_NAME)
-        append('=')
-        append(value)
-        append("; Path=")
-        append(basePath)
-        append("/manage; Max-Age=")
-        append(SESSION_TTL_SECONDS)
-        append("; HttpOnly; SameSite=Strict")
-        if (secure) append("; Secure")
-    }
-
-private fun buildCsrfCookie(
-    basePath: String,
-    value: String,
-    secure: Boolean,
-): String = buildCookie(CSRF_COOKIE_NAME, value, basePath, SESSION_TTL_SECONDS, secure)
-
-private fun buildExpiredCsrfCookie(basePath: String, secure: Boolean): String =
-    buildCookie(CSRF_COOKIE_NAME, "", basePath, 0, secure)
-
-private fun buildCookie(
-    name: String,
-    value: String,
-    basePath: String,
-    maxAge: Long,
-    secure: Boolean,
-): String =
-    buildString {
-        append("$name=$value; Path=$basePath/manage; Max-Age=$maxAge; HttpOnly; SameSite=Lax")
-        if (secure) append("; Secure")
-    }
-
-private fun buildExpiredSessionCookie(basePath: String, secure: Boolean): String =
-    buildString {
-        append(SESSION_COOKIE_NAME)
-        append("=; Path=")
-        append(basePath)
-        append("/manage; Max-Age=0; HttpOnly; SameSite=Lax")
-        if (secure) append("; Secure")
-    }
-
-private fun managementSessionExpiry(): Instant = Instant.now().plus(SESSION_TTL_HOURS, ChronoUnit.HOURS)
-
-private const val EXTERNAL_LINK_SVG_ICON =
-    """<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" """ +
-        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem;">""" +
-        """<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>""" +
-        """<polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>"""
-
-private fun manageLogoutHeaderButton(basePath: String, csrf: String): String =
-    """
-    <form method="post" action="${(basePath + "/manage/logout").html()}" class="header-form">
-      <input type="hidden" name="csrf" value="${csrf.html()}">
-      <button type="submit" class="header-btn btn-logout" aria-label="Log out">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        <span>Log out</span>
-      </button>
-    </form>
-    """.trimIndent()
-
-private fun rejectionHtml(title: String, message: String): String =
-    createHTML().div(classes = "auth-card") {
-        h2 { +title }
-        p(classes = "auth-desc") { +message }
-    }
-
-@Suppress("LongMethod")
-private fun onboardingHtml(basePath: String): String =
-    createHTML().div {
-        h2 { +"How to Start in 3 Easy Steps" }
-
-        div(classes = "step-card") {
-            div(classes = "step-header") {
-                span(classes = "step-num") { +"1" }
-                h3 { +"Add Bot to Telegram Group" }
-            }
-            p {
-                +"Add "
-                a(href = "https://t.me/NuecagramBot", classes = "table-link") {
-                    target = "_blank"
-                    rel = "noopener"
-                    strong { +"@NuecagramBot" }
-                }
-                +" to your destination Telegram group or forum topic, then promote it to "
-                strong { +"Administrator" }
-                +"."
-            }
-        }
-
-        div(classes = "step-card") {
-            div(classes = "step-header") {
-                span(classes = "step-num") { +"2" }
-                h3 { +"Start Private Onboarding" }
-            }
-            p {
-                +"Send a private message to "
-                strong { +"@NuecagramBot" }
-                +" and click "
-                strong { +"Start" }
-                +" (or send "
-                code(classes = "cmd") { +"/start" }
-                +")."
-            }
-        }
-
-        div(classes = "step-card") {
-            div(classes = "step-header") {
-                span(classes = "step-num") { +"3" }
-                h3 { +"Connect your GitLab Repository" }
-            }
-            p { +"Inside your Telegram group or forum topic, send this command:" }
-            p {
-                span(classes = "cmd-label") { +"Telegram Command" }
-                +" "
-                code(classes = "cmd") { +"/setup" }
-            }
-            p {
-                attributes["style"] = "margin-bottom: 0;"
-                +("Nuecagram replies with an inline button for that group or topic; " +
-                    "tap it to open the Web App wizard and reveal your webhook URL and token in-app.")
-            }
-        }
-
-        h2 { +"Managing Your Notifications" }
-        p {
-            +"To rotate secrets, check status, or mute notifications, send "
-            code(classes = "cmd") { +"/manage <installation-id>" }
-            +" inside your Telegram group. "
-            +"The bot will privately send you a single-use link to your web management dashboard."
-        }
-
-        h2 { +"Documentation & Resources" }
-        div(classes = "docs-card") {
-            div(classes = "docs-info") {
-                h4 { +"Operations & Setup Guide" }
-                p { +"Complete self-hosting guide, webhook configuration, and system architecture." }
-            }
-            a(href = "$basePath/docs", classes = "btn-docs") {
-                span { +"View Documentation" }
-                unsafe {
-                    +("""<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" """ +
-                        """stroke-width="2" stroke-linecap="round" stroke-linejoin="round" """ +
-                        """style="margin-left: 0.4rem;"><line x1="5" y1="12" x2="19" y2="12"/>""" +
-                        """<polyline points="12 5 19 12 12 19"/></svg>""")
-                }
-            }
-        }
-    }
-
-private fun recoveryHtml(basePath: String): String =
-    createHTML().section(classes = "auth-card recovery-card") {
-        h1 { +"Recovery" }
-        p(classes = "auth-desc") { +"This link is missing, expired, or already used." }
-        p {
-            +"Use Telegram private "
-            code { +"/start" }
-            +", then run "
-            code { +"/manage <installation-id>" }
-            +" or "
-            code { +"/rotate <installation-id>" }
-            +" in the installation group for a fresh management link."
-        }
-        p {
-            a(href = basePath.ifEmpty { "/" }) { +"Back to setup" }
-        }
-    }
-
-@Suppress("LongMethod")
-private fun manageHtml(
-    basePath: String,
-    installation: InstallationAdminContext,
-    csrf: String,
-): String =
-    createHTML().section(classes = "admin-shell") {
-        div(classes = "admin-hero") {
-            span(classes = "admin-kicker") { +"Installation Workstation" }
-            h1 { +"Manage Installation" }
-            p { +"Review active target metadata, rotate GitLab webhook credentials, or toggle delivery mute state." }
-        }
-
-        div(classes = "admin-panel") {
-            h3 { +"Management Controls" }
-            div(classes = "control-rows") {
-                div(classes = "control-row") {
-                    div(classes = "control-info") {
-                        strong { +"Rotate Webhook Credential" }
-                        p {
-                            +"Revoke existing GitLab secret and issue a fresh token. "
-                            +"Displayed once immediately after rotation."
-                        }
-                    }
-                    div(classes = "control-action") {
-                        details(classes = "confirm-dialog") {
-                            summary(classes = "btn-primary") {
-                                +"Rotate credential"
-                            }
-                            div(classes = "confirm-content") {
-                                p {
-                                    +"Are you sure you want to rotate the credential? "
-                                    +"The existing secret token will be revoked immediately."
-                                }
-                                div(classes = "confirm-actions") {
-                                    form(action = "$basePath/manage/rotate", method = kotlinx.html.FormMethod.post) {
-                                        hiddenInput { name = "csrf"; value = csrf }
-                                        button(classes = "btn-primary btn-danger") {
-                                            type = kotlinx.html.ButtonType.submit
-                                            +"Confirm Rotation"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                div(classes = "control-row") {
-                    div(classes = "control-info") {
-                        strong { +"Notification Delivery" }
-                        p {
-                            if (installation.muted) {
-                                +"Notifications are currently muted. Unmute to resume alert dispatches."
-                            } else {
-                                +"Temporarily pause notification dispatches without revoking credentials."
-                            }
-                        }
-                    }
-                    div(classes = "control-action") {
-                        details(classes = "confirm-dialog") {
-                            summary(classes = if (installation.muted) "btn-primary" else "btn-secondary") {
-                                +if (installation.muted) "Unmute notifications" else "Mute notifications"
-                            }
-                            div(classes = "confirm-content") {
-                                p {
-                                    if (installation.muted) {
-                                        +"Are you sure you want to unmute notifications for this installation?"
-                                    } else {
-                                        +"Are you sure you want to mute notifications for this installation?"
-                                    }
-                                }
-                                div(classes = "confirm-actions") {
-                                    form(action = "$basePath/manage/mute", method = kotlinx.html.FormMethod.post) {
-                                        hiddenInput { name = "csrf"; value = csrf }
-                                        hiddenInput {
-                                            name = "muted"
-                                            value = if (installation.muted) "false" else "true"
-                                        }
-                                        button(classes = "btn-primary btn-danger") {
-                                            type = kotlinx.html.ButtonType.submit
-                                            +if (installation.muted) "Confirm Unmute" else "Confirm Mute"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            div(classes = "recovery-notice") {
-                span {
-                    +"Need access to this session later? Run "
-                    code { +"/manage ${installation.id.toString().take(SHORT_ID_LENGTH)}" }
-                    +" inside your Telegram group to issue a new single-use link."
-                }
-            }
-        }
-
-        div(classes = "admin-panel") {
-            h3 { +"Installation Details" }
-            div(classes = "table-wrapper") {
-                table {
-                    thead {
-                        tr {
-                            th { +"ID" }
-                            th { +"GitLab Base URL" }
-                            th { +"Project ID" }
-                            th { +"Telegram Destination" }
-                            th { +"State" }
-                        }
-                    }
-                    tbody {
-                        tr {
-                            td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
-                            td {
-                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
-                                if (gitlabUrl.startsWith("http")) {
-                                    a(href = gitlabUrl, target = "_blank", classes = "table-link") {
-                                        rel = "noopener"
-                                        span { +gitlabUrl }
-                                        unsafe {
-                                            +EXTERNAL_LINK_SVG_ICON
-                                        }
-                                    }
-                                } else {
-                                    +gitlabUrl
-                                }
-                            }
-                            td {
-                                if (installation.gitlabProjectId != null) {
-                                    code { +installation.gitlabProjectId.toString() }
-                                } else {
-                                    span { +"Group-level" }
-                                }
-                            }
-                            td {
-                                if (installation.telegramTopicId != null) {
-                                    code { +"Topic #${installation.telegramTopicId}" }
-                                } else {
-                                    span { +"Group Chat" }
-                                }
-                            }
-                            td {
-                                if (installation.muted) {
-                                    span(classes = "status-badge status-muted") {
-                                        span(classes = "status-dot")
-                                        +"Muted"
-                                    }
-                                } else {
-                                    span(classes = "status-badge status-active") {
-                                        span(classes = "status-dot")
-                                        +"Active"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-
-    }
-
-
-
-private fun rotatedHtml(
-    basePath: String,
-    installation: InstallationAdminContext,
-    credential: String,
-): String =
-    createHTML().section(classes = "admin-shell") {
-        div(classes = "admin-panel") {
-            attributes["style"] = "border-left: 4px solid #3b8b68;"
-            h3 { +"Credential Rotated" }
-            p {
-                strong { +"Installation:" }
-                +" "
-                code { +installation.id.toString() }
-            }
-            p {
-                strong { +"GitLab credential:" }
-                +" "
-                code { +credential }
-            }
-            p { +"Store it now. This page is the only place the raw credential is shown." }
-            p {
-                a(href = "$basePath/manage", classes = "btn-docs") { +"Return to management" }
-            }
-        }
-    }
-
-
-@Suppress("LongMethod")
-internal fun managementDocument(
-    title: String,
-    body: String,
-    rightHeaderHtml: String? = null,
-): String {
-    val version = net.raquezha.nuecagram.appVersion()
-    return """
     <!doctype html>
     <html lang="en">
       <head>
@@ -689,7 +5,7 @@ internal fun managementDocument(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#eee4d5">
         <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232c251e'/%3E%3Cpath d='M10 22V10l12 12V10' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
-        <title>${title.html()}</title>
+        <title>Platform audit log</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Reddit+Mono:ital,wght@0,200..900;1,200..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
@@ -894,25 +210,174 @@ internal fun managementDocument(
               </a>
               <a href="https://github.com/raquezha/nuecagram" target="_blank" rel="noopener" class="header-btn btn-github" aria-label="GitHub Repository">
                 <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-                <span>v${version.html()}</span>
+                <span>v0.16.0</span>
               </a>
-              ${rightHeaderHtml.orEmpty()}
+              <form method="post" action="/nuecagram/admin/logout" class="header-form">
+  <input type="hidden" name="csrf" value="HJ78TtmG8X7TYx2ocroecj8c6YvfhPOAyNCa9ki5USo">
+  <button type="submit" class="header-btn btn-logout" aria-label="Log out">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <span>Log out</span>
+  </button>
+</form>
             </div>
           </div>
           <div class="subtitle">Instant GitLab alerts in Telegram.</div>
         </header>
         <hr>
-        $body
+        <section class="admin-shell">
+  <div class="admin-hero"><span class="admin-kicker">Platform administration</span>
+    <h1>Audit log explorer</h1>
+    <p>Inspect historical audit events, filter by activity type, and trace platform state changes.</p>
+    <div><a href="/nuecagram/admin" class="table-link">← Back to Overview</a></div>
+  </div>
+  <div class="admin-panel table-panel">
+    <div class="segmented-control" style="margin-bottom: 1rem;"><a href="/nuecagram/admin/audit" class="segmented-btn segmented-btn-active">All</a><a href="/nuecagram/admin/audit?action=setup" class="segmented-btn">Setup</a><a href="/nuecagram/admin/audit?action=rotate" class="segmented-btn">Rotate</a><a href="/nuecagram/admin/audit?action=status_change" class="segmented-btn">Status Change</a></div>
+    <div class="table-header-bar">
+      <h3>Audit Log</h3>
+<span class="results-count">10 total</span></div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Repository</th>
+            <th>Action</th>
+            <th>Actor</th>
+            <th>Chat &amp; Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">System</td>
+            <td><span class="status-badge" data-action="system_ping">System Ping</span></td>
+            <td class="audit-actor">Unknown Actor</td>
+            <td class="audit-details-cell"><span class="table-subtle" title="Unknown Chat">—</span></td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge" data-action="webapp_identity_update">Identity Update</span></td>
+            <td class="audit-actor">Alice</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+              <div class="detail-chips"><span class="detail-chip"><span class="chip-key">repo:</span><span class="chip-val-old">old/repo</span><span class="chip-arrow">→</span><span class="chip-val-new">new/repo</span></span><span class="detail-chip"><span class="chip-key">chat:</span><span class="chip-val-old">old room</span><span class="chip-arrow">→</span><span class="chip-val-new">(blank)</span></span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-muted" data-action="management_mute">Muted</span></td>
+            <td class="audit-actor">2</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-muted" data-action="telegram_mute">Muted</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-degraded" data-action="webapp_rotate">Rotate Token</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-degraded" data-action="management_rotate">Rotate Token</span></td>
+            <td class="audit-actor">2</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-degraded" data-action="telegram_rotate">Rotate Token</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-active" data-action="webapp_setup">Setup</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-active" data-action="telegram_setup">Setup</span></td>
+            <td class="audit-actor">@alice</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">222</span></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp" title="2026-09-02 00:38:51 UTC">
+              <div class="ts-time">00:38</div>
+              <div class="ts-date">Sep 02</div>
+            </td>
+            <td class="audit-repo">Project #3</td>
+            <td><span class="status-badge" data-action="rotation.confirmed">Rotation.confirmed</span></td>
+            <td class="audit-actor">@alice</td>
+            <td class="audit-details-cell">
+              <div class="chat-target"><span class="chat-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="chat-text">300 / topic 7</span></div>
+              <div class="detail-chips"><span class="detail-chip"><span class="chip-key">repo:</span><span class="chip-val-old">old/repo</span><span class="chip-arrow">→</span><span class="chip-val-new">new/repo</span></span><span class="detail-chip"><span class="chip-key">chat:</span><span class="chip-val-old">old room</span><span class="chip-arrow">→</span><span class="chip-val-new">new room</span></span></div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-footer-bar"><span class="pagination-info">Showing 1–10 of 10</span>
+      <div class="pagination-controls"><span class="btn-pag btn-pag-disabled">‹ Prev</span><span class="page-indicator">1 / 1</span><span class="btn-pag btn-pag-disabled">Next ›</span></div>
+    </div>
+  </div>
+</section>
+
         <footer class="site-footer">
           Crafted by <a href="https://github.com/raquezha" target="_blank" rel="noopener">@raquezha</a> &bull; &copy; 2026 Nuecagram &bull; Open Source under MIT License
         </footer>
       </body>
     </html>
-    """.trimIndent()
-}
-
-internal fun String.html(): String =
-    replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
