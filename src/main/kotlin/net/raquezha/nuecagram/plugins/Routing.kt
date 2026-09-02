@@ -18,10 +18,7 @@ import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.configuredRoute
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.telegram.BotCommand
-import net.raquezha.nuecagram.telegram.MenuButton
-import net.raquezha.nuecagram.telegram.TelegramService
-import net.raquezha.nuecagram.telegram.WebAppInfo
+import net.raquezha.nuecagram.telegram.TelegramBotInitializer
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestException
@@ -31,17 +28,6 @@ import org.koin.ktor.ext.inject
 
 private const val QUEUE_RESTART_DELAY_MS = 5000L
 private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
-private val BOT_COMMANDS = listOf(
-    BotCommand("manage", "View and manage connected repositories"),
-    BotCommand("status", "Choose a repository and view status"),
-    BotCommand("test", "Choose a repository and send a test"),
-    BotCommand("rotate", "Choose a repository and rotate secret"),
-    BotCommand("mute", "Choose a repository and pause notifications"),
-    BotCommand("unmute", "Choose a repository and resume notifications"),
-    BotCommand("digest", "Choose a repository and view summary"),
-    BotCommand("setup", "How to bind a new GitLab repository"),
-    BotCommand("help", "View command reference and instructions"),
-)
 
 private fun Application.healthPath() = configuredRoute("/health")
 
@@ -83,38 +69,16 @@ fun Application.configureRouting() {
     val databaseFactory by inject<DatabaseFactory>()
     val webhookService by inject<WebHookService>()
     val installationRepository by inject<InstallationRepository>()
-    val telegramService by inject<TelegramService>()
+    val telegramBotInitializer by inject<TelegramBotInitializer>()
     val config by inject<ConfigWithSecrets>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
 
     launch {
-        runCatching {
-            val user = telegramService.getMe()
-            if (user != null) {
-                logger.info { "Telegram Bot token validated for bot @${user.username ?: user.firstName}" }
-            }
-        }.onFailure { logger.warn(it) { "Failed to validate Telegram Bot token on startup" } }
-
-        runCatching { telegramService.setMyCommands(BOT_COMMANDS) }
-            .onFailure { logger.warn(it) { "Failed to configure Telegram bot commands" } }
-
-        val publicUrl = configuredPublicUrl()
-        runCatching {
-            val webhookUrl = "$publicUrl/telegram/webhook"
-            telegramService.setWebhook(url = webhookUrl, headerToken = config.telegramWebhookSecret)
-        }.onFailure { logger.warn(it) { "Failed to auto-sync Telegram webhook URL on startup" } }
-
-        runCatching {
-            val webAppUrl = "$publicUrl/webapp"
-            telegramService.setChatMenuButton(
-                MenuButton(
-                    type = "web_app",
-                    text = "OPEN",
-                    webApp = WebAppInfo(url = webAppUrl),
-                ),
-            )
-        }.onFailure { logger.warn(it) { "Failed to auto-sync Telegram chat menu button on startup" } }
+        telegramBotInitializer.initialize(
+            configuredPublicUrl(),
+            config.telegramWebhookSecret,
+        )
     }
 
     routing {

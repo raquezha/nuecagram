@@ -2,6 +2,8 @@ package net.raquezha.nuecagram.di
 
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.telegram.MockTelegramService
+import net.raquezha.nuecagram.telegram.TelegramBotInitializer
+import net.raquezha.nuecagram.telegram.TelegramBotInitializerImpl
 import net.raquezha.nuecagram.telegram.TelegramService
 import org.koin.dsl.module
 
@@ -21,6 +23,7 @@ fun testAppModule() =
 val testModule =
     module {
         single<TelegramService> { MockTelegramService() }
+        single<TelegramBotInitializer> { TelegramBotInitializerImpl(get(), get()) }
         single<ConfigWithSecrets> {
             ConfigWithSecrets(
                 name = "TestConfig",
