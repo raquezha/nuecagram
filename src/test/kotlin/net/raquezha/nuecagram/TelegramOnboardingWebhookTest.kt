@@ -41,6 +41,42 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun groupHelpRecordsKnownTelegramDestination() =
+        testApplication {
+            configureTestApplication()
+
+            assertThat(
+                postTelegram(
+                    groupUpdate(
+                        68,
+                        "/help",
+                        installation.telegramChatId,
+                        userId = 68,
+                        messageThreadId = 123,
+                        chatTitle = "Mobile Devs",
+                    ),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+            assertThat(
+                postTelegram(
+                    groupUpdate(
+                        67,
+                        "/help",
+                        installation.telegramChatId,
+                        userId = 67,
+                        messageThreadId = 123,
+                        chatTitle = "Mobile Devs",
+                    ),
+                ).status,
+            ).isEqualTo(HttpStatusCode.OK)
+
+            val destinations = runBlocking { installationRepository.knownTelegramDestinations() }
+                .filter { it.telegramChatId == installation.telegramChatId && it.telegramTopicId == 123L }
+            assertThat(destinations).hasSize(1)
+            assertThat(destinations.single().chatTitle).isEqualTo("Mobile Devs")
+        }
+
+    @Test
     fun removedSetupCommandRedirectsGroupToDm() =
         testApplication {
             configureTestApplication()
@@ -319,13 +355,14 @@ private fun groupUpdate(
     messageThreadId: Long? = null,
     username: String? = null,
     firstName: String? = null,
+    chatTitle: String? = null,
 ): String =
     Json.encodeToString(
         TelegramUpdate(
             updateId = updateId,
             message = TelegramUpdate.Message(
                 text = text,
-                chat = TelegramUpdate.Chat(id = chatId, type = "group"),
+                chat = TelegramUpdate.Chat(id = chatId, type = "group", title = chatTitle),
                 from = TelegramUpdate.User(id = userId, username = username, firstName = firstName),
                 messageThreadId = messageThreadId,
             ),

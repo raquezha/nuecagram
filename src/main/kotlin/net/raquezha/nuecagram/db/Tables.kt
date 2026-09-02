@@ -93,6 +93,17 @@ object TelegramPrivateChats : Table("telegram_private_chats") {
     override val primaryKey = PrimaryKey(telegramUserId)
 }
 
+object KnownTelegramDestinations : Table("known_telegram_destinations") {
+    val id = text("id")
+    val telegramChatId = long("telegram_chat_id")
+    val telegramTopicId = long("telegram_topic_id").nullable()
+    val chatTitle = text("chat_title").nullable()
+    val firstSeenAt = timestampWithTimeZone("first_seen_at").databaseGenerated()
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 object InstallationAdmins : Table("installation_admins") {
     val installationId = javaUUID("installation_id")
     val telegramUserId = long("telegram_user_id")

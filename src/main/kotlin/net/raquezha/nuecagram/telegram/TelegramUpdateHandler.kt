@@ -54,6 +54,7 @@ class TelegramUpdateHandler(
         }
 
         val message = update.message ?: return
+        recordKnownDestination(message)
         val command = message.text?.substringBefore(' ')?.substringBefore('@') ?: return
         dispatch(command, message)
     }
@@ -80,6 +81,7 @@ class TelegramUpdateHandler(
         payload: TelegramCallbackPayload,
         userId: Long,
     ) {
+        recordKnownDestination(message)
         val status = runCatching { telegramService.chatMemberStatus(message.chat.id, userId) }.getOrNull()
         if (!isTelegramAdmin(status)) {
             telegramService.answerCallbackQuery(
@@ -101,6 +103,16 @@ class TelegramUpdateHandler(
 
         installationRepository.recordInstallationAdmin(installation.id, userId)
         executeCallbackAction(callbackQuery, userId, installation, payload.action)
+    }
+
+    private suspend fun recordKnownDestination(message: TelegramUpdate.Message) {
+        if (message.chat.type != "private") {
+            installationRepository.upsertKnownTelegramDestination(
+                chatId = message.chat.id,
+                topicId = message.messageThreadId,
+                chatTitle = message.chat.title,
+            )
+        }
     }
 
     private suspend fun answerCallbackError(

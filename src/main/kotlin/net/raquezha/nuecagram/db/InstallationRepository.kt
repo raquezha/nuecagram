@@ -89,6 +89,13 @@ data class LaunchNonceContext(
     val telegramUserId: Long,
 )
 
+data class KnownTelegramDestination(
+    val id: String,
+    val telegramChatId: Long,
+    val telegramTopicId: Long?,
+    val chatTitle: String?,
+)
+
 data class PlatformAdminAuditRecord(
     val installationId: UUID?,
     val action: String,
@@ -322,6 +329,37 @@ class InstallationRepository(
         TelegramPrivateChats.selectAll()
             .where { TelegramPrivateChats.telegramUserId eq userId }
             .firstOrNull()?.get(TelegramPrivateChats.telegramChatId)
+    }
+
+    suspend fun upsertKnownTelegramDestination(
+        chatId: Long,
+        topicId: Long?,
+        chatTitle: String?,
+    ) {
+        if (chatId >= 0) return
+        val destinationId = destinationId(chatId, topicId)
+        databaseFactory.dbTransaction {
+            KnownTelegramDestinations.upsert(KnownTelegramDestinations.id) {
+                it[KnownTelegramDestinations.id] = destinationId
+                it[KnownTelegramDestinations.telegramChatId] = chatId
+                it[KnownTelegramDestinations.telegramTopicId] = topicId
+                it[KnownTelegramDestinations.chatTitle] = chatTitle?.trim()?.takeIf(String::isNotBlank)
+                it[KnownTelegramDestinations.lastSeenAt] = Instant.now().databaseTime()
+            }
+        }
+    }
+
+    suspend fun knownTelegramDestinations(): List<KnownTelegramDestination> = databaseFactory.dbTransaction {
+        KnownTelegramDestinations.selectAll()
+            .orderBy(KnownTelegramDestinations.lastSeenAt to SortOrder.DESC)
+            .map {
+                KnownTelegramDestination(
+                    id = it[KnownTelegramDestinations.id],
+                    telegramChatId = it[KnownTelegramDestinations.telegramChatId],
+                    telegramTopicId = it[KnownTelegramDestinations.telegramTopicId],
+                    chatTitle = it[KnownTelegramDestinations.chatTitle],
+                )
+            }
     }
 
     suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
@@ -833,6 +871,8 @@ class InstallationRepository(
     private fun MutableMap<String, JsonElement>.putLong(key: String, value: Long?) {
         value?.let { put(key, JsonPrimitive(it)) }
     }
+
+    private fun destinationId(chatId: Long, topicId: Long?): String = "$chatId:${topicId ?: 0}"
 
     private companion object {
         val ACTOR_ID_REQUIRED_TYPES = setOf("telegram", "webapp_session")
