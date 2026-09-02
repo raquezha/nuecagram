@@ -967,19 +967,12 @@ private fun webAppShellHtml(basePath: String): String = """
         <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
       </section>
 
-      <section id="screen-add-info" class="panel">
-        <button class="link" data-screen="list">‹ Back to repositories</button>
-        <h1>Add repository</h1>
-        <p>Repositories must be added from the Telegram group or topic that will receive notifications.</p>
-        <div class="box"><p>How to add one:</p><p>1. Go to the target Telegram group or topic.<br>2. Open the group's Nuecagram menu and tap Management.<br>3. Tap + Add.</p><p>You can also run /setup in that group or topic.</p><p>No chat ID typing needed -- Nuecagram fills the destination automatically.</p></div>
-        <div class="top-actions"><button class="primary" data-screen="list">Got it</button></div>
-      </section>
-
       <section id="screen-wizard" class="panel">
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
         <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
+        <div class="field" id="fieldDestination"><label>Target Telegram destination</label><select id="inDestination"><option value="">Loading destinations...</option></select></div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
@@ -1145,7 +1138,7 @@ function renderList() {
     const scoped = listMode !== 'all' && currentContext.chatId != null && currentContext.chatId < 0;
     el.innerHTML = scoped
       ? '<div class="box"><h1>No repositories here yet.</h1><p>Add a GitLab project to start notifications.</p><button class="primary" id="btnEmptyAdd">+ Add repository</button></div>'
-      : '<div class="box"><h1>No repositories found.</h1><p>Open Nuecagram from a Telegram group/topic or run /setup there.</p></div>';
+      : '<div class="box"><h1>No repositories found.</h1><p>Tap + Add repository to connect a project to one of your Telegram groups.</p></div>';
     const add = document.getElementById('btnEmptyAdd');
     if (add) add.addEventListener('click', openAdd);
     return;
@@ -1228,15 +1221,41 @@ async function saveIdentity() {
   showScreen('detail');
 }
 
-function openAdd() {
+async function openAdd() {
   const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
+  const selectEl = document.getElementById('inDestination');
   document.getElementById('createDestinationName').innerText = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
-    : 'Selected Telegram Group';
+    : 'Target Telegram Destination';
   document.getElementById('createDestinationMeta').innerText = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
-    : 'Fill in repository details below to connect your GitLab project.';
+    : 'Select a destination group or topic below to connect your GitLab project.';
   document.getElementById('wizErr').innerText = '';
+
+  if (isGroup) {
+    document.getElementById('fieldDestination').style.display = 'none';
+  } else {
+    document.getElementById('fieldDestination').style.display = '';
+    selectEl.innerHTML = '<option value="">Loading destinations...</option>';
+    try {
+      const res = await fetch('${basePath}/api/webapp/destinations', { headers: getAuthHeaders() });
+      if (res.ok) {
+        const dests = await res.json();
+        if (dests.length > 0) {
+          selectEl.innerHTML = dests.map(function(d) {
+            return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
+          }).join('');
+        } else {
+          selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
+        }
+      } else {
+        selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+      }
+    } catch (e) {
+      selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+    }
+  }
+
   showScreen('wizard');
 }
 
@@ -1250,6 +1269,15 @@ async function createInstallation() {
   if (currentContext.chatId != null && currentContext.chatId < 0) {
     payload.telegramChatId = currentContext.chatId;
     if (currentContext.topicId != null) payload.telegramTopicId = currentContext.topicId;
+  } else {
+    const destVal = document.getElementById('inDestination').value;
+    if (!destVal) { document.getElementById('wizErr').innerText = 'Target Telegram group destination required.'; return; }
+    const parts = destVal.split(':');
+    const destChatId = parseInt(parts[0], 10);
+    const destTopicId = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+    if (!destChatId || destChatId >= 0) { document.getElementById('wizErr').innerText = 'Target Telegram group destination required.'; return; }
+    payload.telegramChatId = destChatId;
+    if (destTopicId !== 0) payload.telegramTopicId = destTopicId;
   }
   const res = await fetch('${basePath}/api/webapp/installations', {
     method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
