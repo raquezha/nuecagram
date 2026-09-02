@@ -920,7 +920,20 @@ class TelegramMenuHandler(
     }
 
     private suspend fun getAuthorizedInstallations(userId: Long): List<InstallationAdminContext> {
-        val candidates = installationRepository.installationsForAdmin(userId)
+        val recorded = installationRepository.installationsForAdmin(userId)
+        val candidates = if (recorded.isNotEmpty()) {
+            recorded
+        } else {
+            val all = installationRepository.listInstallationsForContext(null, null)
+            val discovered = all.filter { inst ->
+                val status = runCatching { telegramService.chatMemberStatus(inst.telegramChatId, userId) }.getOrNull()
+                isTelegramAdmin(status)
+            }
+            discovered.forEach { inst ->
+                runCatching { installationRepository.recordInstallationAdmin(inst.id, userId) }
+            }
+            discovered
+        }
         return candidates.filter { inst ->
             val status = runCatching { telegramService.chatMemberStatus(inst.telegramChatId, userId) }.getOrNull()
             isTelegramAdmin(status)

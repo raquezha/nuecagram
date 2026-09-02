@@ -854,6 +854,7 @@ private fun webAppShellHtml(basePath: String): String = """
       .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; }
       .grow { min-width: 0; flex: 1; }
       .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 13px 14px; border-top: 1px solid var(--border); }
+      .card .row { padding: 0; border-top: 0; margin-bottom: 3px; }
       .row:first-child { border-top: 0; }
       .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
