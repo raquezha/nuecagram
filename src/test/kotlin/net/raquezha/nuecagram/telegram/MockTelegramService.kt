@@ -10,6 +10,7 @@ data class AnsweredCallback(
     val showAlert: Boolean,
 )
 
+@Suppress("TooManyFunctions")
 class MockTelegramService : TelegramService {
     private val messageCounter = AtomicInteger(0)
     private val sentMessages = CopyOnWriteArrayList<Message>()
@@ -18,6 +19,39 @@ class MockTelegramService : TelegramService {
     private val botCommands = CopyOnWriteArrayList<BotCommand>()
     @Volatile
     private var failChatMemberLookup = false
+    @Volatile
+    private var failGetMe = false
+
+    @Volatile
+    private var webhookUrl: String? = null
+    @Volatile
+    private var webhookHeader: String? = null
+    @Volatile
+    private var menuButton: MenuButton? = null
+
+    override suspend fun getMe(): TelegramUser? {
+        check(!failGetMe) { "getMe failed" }
+        return TelegramUser(
+            id = 10001L,
+            isBot = true,
+            firstName = "NuecagramBot",
+            username = "NuecagramBot",
+        )
+    }
+
+    override suspend fun setWebhook(
+        url: String,
+        headerToken: String?,
+    ): Boolean {
+        webhookUrl = url
+        webhookHeader = headerToken
+        return true
+    }
+
+    override suspend fun setChatMenuButton(menuButton: MenuButton?): Boolean {
+        this.menuButton = menuButton
+        return true
+    }
 
     override suspend fun setMyCommands(commands: List<BotCommand>): Boolean {
         botCommands.clear()
@@ -51,6 +85,16 @@ class MockTelegramService : TelegramService {
         failChatMemberLookup = true
     }
 
+    fun failGetMe() {
+        failGetMe = true
+    }
+
+    fun configuredWebhookUrl(): String? = webhookUrl
+
+    fun configuredWebhookHeader(): String? = webhookHeader
+
+    fun configuredMenuButton(): MenuButton? = menuButton
+
     fun setChatMemberStatus(
         chatId: Long,
         userId: Long,
@@ -71,6 +115,10 @@ class MockTelegramService : TelegramService {
         answeredCallbacks.clear()
         botCommands.clear()
         failChatMemberLookup = false
+        failGetMe = false
+        webhookUrl = null
+        webhookHeader = null
+        menuButton = null
         messageCounter.set(0)
     }
 }

@@ -7,6 +7,38 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class TelegramUser(
+    @get:JsonProperty("id")
+    @SerialName("id")
+    val id: Long,
+    @get:JsonProperty("is_bot")
+    @SerialName("is_bot")
+    val isBot: Boolean = false,
+    @get:JsonProperty("first_name")
+    @SerialName("first_name")
+    val firstName: String = "",
+    @JsonInclude(Include.NON_NULL)
+    @get:JsonProperty("username")
+    @SerialName("username")
+    val username: String? = null,
+)
+
+@Serializable
+data class MenuButton(
+    @get:JsonProperty("type")
+    @SerialName("type")
+    val type: String = "web_app",
+    @JsonInclude(Include.NON_NULL)
+    @get:JsonProperty("text")
+    @SerialName("text")
+    val text: String? = null,
+    @JsonInclude(Include.NON_NULL)
+    @get:JsonProperty("web_app")
+    @SerialName("web_app")
+    val webApp: WebAppInfo? = null,
+)
+
+@Serializable
 data class BotCommand(
     @get:JsonProperty("command")
     @SerialName("command")

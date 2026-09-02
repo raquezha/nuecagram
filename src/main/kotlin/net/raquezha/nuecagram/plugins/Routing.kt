@@ -13,11 +13,15 @@ import io.ktor.server.routing.routing
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.configuredPublicUrl
 import net.raquezha.nuecagram.configuredRoute
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.telegram.BotCommand
+import net.raquezha.nuecagram.telegram.MenuButton
 import net.raquezha.nuecagram.telegram.TelegramService
+import net.raquezha.nuecagram.telegram.WebAppInfo
 import net.raquezha.nuecagram.webhook.SkipEventException
 import net.raquezha.nuecagram.webhook.WebHookService
 import net.raquezha.nuecagram.webhook.WebhookRequestException
@@ -80,12 +84,37 @@ fun Application.configureRouting() {
     val webhookService by inject<WebHookService>()
     val installationRepository by inject<InstallationRepository>()
     val telegramService by inject<TelegramService>()
+    val config by inject<ConfigWithSecrets>()
     val webhookRequestHandler by inject<WebhookRequestHandler> { parametersOf(this) }
     val logger by inject<KLogger>()
 
     launch {
+        runCatching {
+            val user = telegramService.getMe()
+            if (user != null) {
+                logger.info { "Telegram Bot token validated for bot @${user.username ?: user.firstName}" }
+            }
+        }.onFailure { logger.warn(it) { "Failed to validate Telegram Bot token on startup" } }
+
         runCatching { telegramService.setMyCommands(BOT_COMMANDS) }
             .onFailure { logger.warn(it) { "Failed to configure Telegram bot commands" } }
+
+        val publicUrl = configuredPublicUrl()
+        runCatching {
+            val webhookUrl = "$publicUrl/telegram/webhook"
+            telegramService.setWebhook(url = webhookUrl, headerToken = config.telegramWebhookSecret)
+        }.onFailure { logger.warn(it) { "Failed to auto-sync Telegram webhook URL on startup" } }
+
+        runCatching {
+            val webAppUrl = "$publicUrl/webapp"
+            telegramService.setChatMenuButton(
+                MenuButton(
+                    type = "web_app",
+                    text = "OPEN",
+                    webApp = WebAppInfo(url = webAppUrl),
+                ),
+            )
+        }.onFailure { logger.warn(it) { "Failed to auto-sync Telegram chat menu button on startup" } }
     }
 
     routing {
