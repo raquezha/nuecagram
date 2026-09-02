@@ -16,15 +16,14 @@ import org.junit.Test
 class WebAppBrowserIsolationTest : BaseEventTestHelper() {
 
     @Test
-    fun directBrowserAccessServesTelegramAccessRequiredGuidancePage() = testApplication {
+    fun directBrowserAccessServesWebAppShellHtmlWhichDynamicallyEnforcesAuth() = testApplication {
         configureTestApplication()
         val response = client.get("/nuecagram/webapp")
         assertThat(response.status).isEqualTo(HttpStatusCode.OK)
         assertThat(response.headers["Content-Type"]).contains("text/html")
         val body = response.bodyAsText()
-        assertThat(body).contains("Telegram Access Required")
-        assertThat(body).contains("This management portal must be opened inside Telegram.")
-        assertThat(body).contains("Open @NuecagramBot and tap OPEN")
+        assertThat(body).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(body).contains("Nuecagram Management")
     }
 
     @Test
