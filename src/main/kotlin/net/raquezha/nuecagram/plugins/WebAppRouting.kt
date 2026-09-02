@@ -355,23 +355,39 @@ private suspend fun ApplicationCall.handleGetDestinations(
     telegramService: TelegramService,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
-    val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
-    val candidateContexts = if (recorded.isNotEmpty()) {
-        recorded.map { inst ->
-            val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
-            val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
-            DestinationPayload(
-                id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
-                name = label,
-                telegramChatId = inst.telegramChatId,
-                telegramTopicId = inst.telegramTopicId,
-            )
-        }
-    } else {
-        emptyList()
+    val userId = session.telegramUserId
+
+    val installed = installationRepository.installationsForAdmin(userId).map { inst ->
+        val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+        val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
+        DestinationPayload(
+            id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
+            name = label,
+            telegramChatId = inst.telegramChatId,
+            telegramTopicId = inst.telegramTopicId,
+        )
     }
+
+    val known = installationRepository.knownTelegramDestinations().mapNotNull { dest ->
+        val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+        val defaultTitle = "Chat #${dest.telegramChatId}$topicSuffix"
+        val label = dest.chatTitle?.takeIf(String::isNotBlank) ?: defaultTitle
+        val status = runCatching { telegramService.chatMemberStatus(dest.telegramChatId, userId) }.getOrNull()
+        if (isTelegramAdmin(status)) {
+            DestinationPayload(
+                id = dest.id,
+                name = label,
+                telegramChatId = dest.telegramChatId,
+                telegramTopicId = dest.telegramTopicId,
+            )
+        } else {
+            null
+        }
+    }
+
+    val combined = (installed + known).distinctBy { it.id }
     appendWebAppSecurityHeaders()
-    respond(HttpStatusCode.OK, candidateContexts.distinctBy { it.id })
+    respond(HttpStatusCode.OK, combined)
 }
 
 @Serializable
