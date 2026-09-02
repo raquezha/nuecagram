@@ -929,6 +929,10 @@ private fun webAppShellHtml(basePath: String): String = """
       .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
       .panel { display: none; }
       .panel.active { display: block; }
+      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 18px; }
+      .spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--button); border-radius: 50%; animation: spin 0.75s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .spinner-label { color: var(--hint); font-size: 14px; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
       .section { margin: 18px 0; }
@@ -959,14 +963,19 @@ private fun webAppShellHtml(basePath: String): String = """
   </head>
   <body>
     <div class="container">
-      <section id="screen-list" class="panel active">
+      <section id="screen-loading" class="panel active">
+        <div class="spinner"></div>
+        <span class="spinner-label">Loading…</span>
+      </section>
+
+      <section id="screen-list" class="panel">
         <h1 id="listTitle">Repositories</h1>
-        <p id="listSubtitle">Loading repositories...</p>
+        <p id="listSubtitle"></p>
         <div class="top-actions">
           <button id="btnAdd" class="primary">+ Add repository</button>
           <button id="btnAll" style="display:none;">View all repositories</button>
         </div>
-        <div id="installationsList"><div class="box">Loading repositories...</div></div>
+        <div id="installationsList"></div>
       </section>
 
       <section id="screen-detail" class="panel">
@@ -1100,6 +1109,7 @@ function extractStartParam() {
 async function initWebApp() {
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
+  showScreen('loading');
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
       method: 'POST',
@@ -1127,10 +1137,8 @@ async function initWebApp() {
 }
 
 async function loadInstallations() {
-  showScreen('list');
-  renderHeader();
   const el = document.getElementById('installationsList');
-  el.innerHTML = '<div class="box">Loading repositories...</div>';
+  el.innerHTML = '';
   try {
     const qs = listMode === 'all' ? '?scope=all' : '';
     const res = await fetch('${basePath}/api/webapp/installations' + qs, { headers: getAuthHeaders() });
@@ -1150,6 +1158,8 @@ function renderHeader() {
 }
 
 function renderList() {
+  renderHeader();
+  showScreen('list');
   const el = document.getElementById('installationsList');
   if (!items.length) {
     const scoped = listMode !== 'all' && currentContext.chatId != null && currentContext.chatId < 0;
