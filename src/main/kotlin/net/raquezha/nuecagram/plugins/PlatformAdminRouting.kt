@@ -535,8 +535,9 @@ private fun FlowContent.auditPaginationBtn(
 private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
     tr {
         td(classes = "audit-timestamp") {
-            attributes["title"] = event.createdAt.toString()
-            +event.createdAt.formatAuditTimestamp()
+            attributes["title"] = event.createdAt.formatAuditFullTooltip()
+            div(classes = "ts-time") { +event.createdAt.formatAuditTime() }
+            div(classes = "ts-date") { +event.createdAt.formatAuditDate() }
         }
         td(classes = "audit-repo") {
             +event.repository
@@ -570,10 +571,22 @@ private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRe
     }
 }
 
-private fun Instant.formatAuditTimestamp(): String {
-    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private fun Instant.formatAuditTime(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.US)
         .withZone(java.time.ZoneOffset.UTC)
     return formatter.format(this)
+}
+
+private fun Instant.formatAuditDate(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.US)
+        .withZone(java.time.ZoneOffset.UTC)
+    return formatter.format(this)
+}
+
+private fun Instant.formatAuditFullTooltip(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        .withZone(java.time.ZoneOffset.UTC)
+    return formatter.format(this) + " UTC"
 }
 
 private fun String.formatAuditActionLabel(): String =

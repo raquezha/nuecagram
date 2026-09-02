@@ -822,7 +822,9 @@ internal fun managementDocument(
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
           .table-subtle { font-size: 0.8rem; color: #8c7f70; }
-          .audit-timestamp { white-space: nowrap; font-family: 'Reddit Mono', monospace; font-size: 0.8rem; color: #6e6154; }
+          .audit-timestamp { white-space: nowrap; vertical-align: middle; line-height: 1.25; }
+          .ts-time { font-family: 'Reddit Mono', monospace; font-size: 0.85rem; font-weight: 700; color: #1a1612; }
+          .ts-date { font-family: 'Space Grotesk', sans-serif; font-size: 0.725rem; font-weight: 600; color: #8c7f70; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
           .audit-repo { font-weight: 700; color: #1a1612; }
           .audit-actor { font-family: 'Reddit Mono', monospace; font-size: 0.825rem; color: #2b7fa1; }
           .audit-details-cell { line-height: 1.4; }

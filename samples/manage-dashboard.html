@@ -138,7 +138,9 @@
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
           .table-subtle { font-size: 0.8rem; color: #8c7f70; }
-          .audit-timestamp { white-space: nowrap; font-family: 'Reddit Mono', monospace; font-size: 0.8rem; color: #6e6154; }
+          .audit-timestamp { white-space: nowrap; vertical-align: middle; line-height: 1.25; }
+          .ts-time { font-family: 'Reddit Mono', monospace; font-size: 0.85rem; font-weight: 700; color: #1a1612; }
+          .ts-date { font-family: 'Space Grotesk', sans-serif; font-size: 0.725rem; font-weight: 600; color: #8c7f70; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
           .audit-repo { font-weight: 700; color: #1a1612; }
           .audit-actor { font-family: 'Reddit Mono', monospace; font-size: 0.825rem; color: #2b7fa1; }
           .audit-details-cell { line-height: 1.4; }
@@ -203,7 +205,7 @@
                 <span>v0.16.0</span>
               </a>
               <form method="post" action="/nuecagram/manage/logout" class="header-form">
-  <input type="hidden" name="csrf" value="0dQsh6RYYXObxbfkXTaL6yvLljD7GCB-3eRdQ_ZNBdg">
+  <input type="hidden" name="csrf" value="eDMHQgYLpXZXmaSyXUAKk8Zf1O4ceWObpF5ZhbFUgqI">
   <button type="submit" class="header-btn btn-logout" aria-label="Log out">
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     <span>Log out</span>
@@ -231,7 +233,7 @@
             <div class="confirm-content">
               <p>Are you sure you want to rotate the credential? The existing secret token will be revoked immediately.</p>
               <div class="confirm-actions">
-                <form action="/nuecagram/manage/rotate" method="post"><input type="hidden" name="csrf" value="0dQsh6RYYXObxbfkXTaL6yvLljD7GCB-3eRdQ_ZNBdg"><button class="btn-primary btn-danger" type="submit">Confirm Rotation</button></form>
+                <form action="/nuecagram/manage/rotate" method="post"><input type="hidden" name="csrf" value="eDMHQgYLpXZXmaSyXUAKk8Zf1O4ceWObpF5ZhbFUgqI"><button class="btn-primary btn-danger" type="submit">Confirm Rotation</button></form>
               </div>
             </div>
           </details>
@@ -246,14 +248,14 @@
             <div class="confirm-content">
               <p>Are you sure you want to mute notifications for this installation?</p>
               <div class="confirm-actions">
-                <form action="/nuecagram/manage/mute" method="post"><input type="hidden" name="csrf" value="0dQsh6RYYXObxbfkXTaL6yvLljD7GCB-3eRdQ_ZNBdg"><input type="hidden" name="muted" value="true"><button class="btn-primary btn-danger" type="submit">Confirm Mute</button></form>
+                <form action="/nuecagram/manage/mute" method="post"><input type="hidden" name="csrf" value="eDMHQgYLpXZXmaSyXUAKk8Zf1O4ceWObpF5ZhbFUgqI"><input type="hidden" name="muted" value="true"><button class="btn-primary btn-danger" type="submit">Confirm Mute</button></form>
               </div>
             </div>
           </details>
         </div>
       </div>
     </div>
-    <div class="recovery-notice"><span>Need access to this session later? Run <code>/manage 0635bc3e</code> inside your Telegram group to issue a new single-use link.</span></div>
+    <div class="recovery-notice"><span>Need access to this session later? Run <code>/manage 81d82668</code> inside your Telegram group to issue a new single-use link.</span></div>
   </div>
   <div class="admin-panel">
     <h3>Installation Details</h3>
@@ -270,7 +272,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>0635bc3e</code></td>
+            <td><code>81d82668</code></td>
             <td><a href="https://gitlab.com" target="_blank" class="table-link" rel="noopener"><span>https://gitlab.com</span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></td>
             <td><code>10011</code></td>
             <td><code>Topic #210011</code></td>

@@ -1,5 +1,5 @@
-refactor(admin): compact audit timestamp format to YYYY-MM-DD HH:mm with hover title
+style(admin): convert audit timestamps to stacked time & date layout
 
-Shorten visible audit timestamps from 23 chars (2026-09-02 00:05:48 UTC) to 16 chars (2026-09-02 00:05) and preserve full ISO instant precision in hover title attributes.
+Stack time (00:05) over subtle date (SEP 2) in a 50px ultra-compact column, preserving full ISO timestamp precision in hover title attributes.
 
 Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]
