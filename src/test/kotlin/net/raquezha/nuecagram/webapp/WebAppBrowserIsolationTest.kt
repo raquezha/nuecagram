@@ -58,6 +58,25 @@ class WebAppBrowserIsolationTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun telegramWebAppMenuButtonLaunchesServeWebAppShellHtml() = testApplication {
+        configureTestApplication()
+
+        val withTgWebAppVersion = client.get("/nuecagram/webapp?tgWebAppVersion=7.10&tgWebAppPlatform=android")
+        assertThat(withTgWebAppVersion.status).isEqualTo(HttpStatusCode.OK)
+        val bodyVersion = withTgWebAppVersion.bodyAsText()
+        assertThat(bodyVersion).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(bodyVersion).contains("Nuecagram Management")
+
+        val withUserAgent = client.get("/nuecagram/webapp") {
+            header(HttpHeaders.UserAgent, "TelegramBot (like TwitterBot)")
+        }
+        assertThat(withUserAgent.status).isEqualTo(HttpStatusCode.OK)
+        val bodyUserAgent = withUserAgent.bodyAsText()
+        assertThat(bodyUserAgent).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(bodyUserAgent).contains("Nuecagram Management")
+    }
+
+    @Test
     fun apiWebappEndpointsFailClosedWithJson401() = testApplication {
         configureTestApplication()
         val response = client.get("/nuecagram/api/webapp/installations")

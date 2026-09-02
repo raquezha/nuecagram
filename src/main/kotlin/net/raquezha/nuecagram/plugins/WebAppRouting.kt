@@ -197,9 +197,12 @@ private suspend fun ApplicationCall.handleWebAppShell(
     val sessionCookie = request.cookies[WEBAPP_SESSION_COOKIE_NAME]?.takeIf(String::isNotBlank)
     val hasValidSession = sessionCookie != null &&
         installationRepository.verifyWebAppSession(sessionCookie) != null
-    val hasStartParam = request.queryParameters["startapp"]?.isNotBlank() == true ||
-        request.queryParameters["tgWebAppStartParam"]?.isNotBlank() == true
-    if (hasValidSession || hasStartParam) {
+    val isTelegramClient = request.queryParameters["startapp"]?.isNotBlank() == true ||
+        request.queryParameters["tgWebAppStartParam"]?.isNotBlank() == true ||
+        request.queryParameters["tgWebAppVersion"]?.isNotBlank() == true ||
+        request.queryParameters["tgWebAppPlatform"]?.isNotBlank() == true ||
+        request.headers[HttpHeaders.UserAgent]?.contains("Telegram", ignoreCase = true) == true
+    if (hasValidSession || isTelegramClient) {
         respondText(
             webAppShellHtml(basePath),
             ContentType.Text.Html,
