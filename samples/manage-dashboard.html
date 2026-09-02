@@ -144,13 +144,15 @@
           .audit-details-cell { line-height: 1.4; }
           .chat-details-title { font-weight: 600; color: #2c251e; margin-bottom: 0.2rem; }
           .detail-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
-          .detail-chip { font-family: 'Reddit Mono', monospace; font-size: 0.75rem; background: #f1ebd9; color: #5c5146; padding: 0.15rem 0.5rem; border-radius: 0.25rem; border: 1px solid #e2d7c5; display: inline-block; }
+          .detail-chip { font-family: 'Reddit Mono', monospace; font-size: 0.775rem; background: #f4f0e6; color: #4a4035; padding: 0.2rem 0.55rem; border-radius: 0.35rem; border: 1px solid #dfd5c6; display: inline-block; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02); }
+          .table-link { color: #2b7fa1; text-decoration: none; font-weight: 600; transition: color 0.15s ease; }
+          .table-link:hover { color: #1c8bc0; text-decoration: underline; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
           .site-footer a:hover { text-decoration: underline; }
           .admin-page { max-width: 56rem; }
           .admin-spacer { height: 0.25rem; }
           .admin-shell { display: grid; gap: 1rem; }
-          .admin-hero { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
+          .admin-hero { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-top: 3px solid #2b7fa1; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
           .admin-kicker { display: inline-block; margin-bottom: 0.4rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2b7fa1; }
           .admin-hero h1, .admin-hero h2 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; color: #1a1612; }
           .admin-hero p { margin: 0.4rem 0 0 0; font-size: 0.9rem; color: #6e6154; }
@@ -201,7 +203,7 @@
                 <span>v0.16.0</span>
               </a>
               <form method="post" action="/nuecagram/manage/logout" class="header-form">
-  <input type="hidden" name="csrf" value="yfvCG5iQ4AehdquAZ1KJXPA_zxrJbdq-IaXBQopOXJI">
+  <input type="hidden" name="csrf" value="z7JU9zkPfXAqKuSPgk8fD4dIuGecCPXRpKcsx7gXnO0">
   <button type="submit" class="header-btn btn-logout" aria-label="Log out">
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     <span>Log out</span>
@@ -229,7 +231,7 @@
             <div class="confirm-content">
               <p>Are you sure you want to rotate the credential? The existing secret token will be revoked immediately.</p>
               <div class="confirm-actions">
-                <form action="/nuecagram/manage/rotate" method="post"><input type="hidden" name="csrf" value="yfvCG5iQ4AehdquAZ1KJXPA_zxrJbdq-IaXBQopOXJI"><button class="btn-primary btn-danger" type="submit">Confirm Rotation</button></form>
+                <form action="/nuecagram/manage/rotate" method="post"><input type="hidden" name="csrf" value="z7JU9zkPfXAqKuSPgk8fD4dIuGecCPXRpKcsx7gXnO0"><button class="btn-primary btn-danger" type="submit">Confirm Rotation</button></form>
               </div>
             </div>
           </details>
@@ -244,14 +246,14 @@
             <div class="confirm-content">
               <p>Are you sure you want to mute notifications for this installation?</p>
               <div class="confirm-actions">
-                <form action="/nuecagram/manage/mute" method="post"><input type="hidden" name="csrf" value="yfvCG5iQ4AehdquAZ1KJXPA_zxrJbdq-IaXBQopOXJI"><input type="hidden" name="muted" value="true"><button class="btn-primary btn-danger" type="submit">Confirm Mute</button></form>
+                <form action="/nuecagram/manage/mute" method="post"><input type="hidden" name="csrf" value="z7JU9zkPfXAqKuSPgk8fD4dIuGecCPXRpKcsx7gXnO0"><input type="hidden" name="muted" value="true"><button class="btn-primary btn-danger" type="submit">Confirm Mute</button></form>
               </div>
             </div>
           </details>
         </div>
       </div>
     </div>
-    <div class="recovery-notice"><span>Need access to this session later? Run <code>/manage e02f8675</code> inside your Telegram group to issue a new single-use link.</span></div>
+    <div class="recovery-notice"><span>Need access to this session later? Run <code>/manage 868416c6</code> inside your Telegram group to issue a new single-use link.</span></div>
   </div>
   <div class="admin-panel">
     <h3>Installation Details</h3>
@@ -268,7 +270,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>e02f8675</code></td>
+            <td><code>868416c6</code></td>
             <td><a href="https://gitlab.com" target="_blank" class="table-link" rel="noopener"><span>https://gitlab.com</span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></td>
             <td><code>10011</code></td>
             <td><code>Topic #210011</code></td>

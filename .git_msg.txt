@@ -1,5 +1,5 @@
-refactor(admin): polish audit log explorer UI and timestamp formatting
+style(admin): final UI polish for platform admin headers and badge chips
 
-Format audit log timestamps as UTC date-time strings, render human-friendly action badges (Setup, Rotate Token, Mute, Web App Launch), format detail deltas into clean badge chips, and update static sample gallery.
+Add top accent border to hero card, refine detail chip styling and table link hover transitions, and regenerate static review gallery.
 
 Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]
