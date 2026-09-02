@@ -76,7 +76,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
                 ).isEqualTo(HttpStatusCode.OK)
                 val message = sentMessages().last()
                 assertThat(message.text).isEqualTo(
-                    "Continue in a private chat with the bot to manage this installation.",
+                    "Continue in a private chat with <b>@NuecagramBot</b> to manage connected repositories.",
                 )
                 assertThat(message.replyMarkup!!.inlineKeyboard.first().first().url).isEqualTo(
                     "https://t.me/NuecagramBot",
@@ -95,7 +95,7 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
 
             val message = sentMessages().last()
-            assertThat(message.text).contains("open the GitLab setup wizard")
+            assertThat(message.text).contains("Nuecagram is managed in private chat")
             assertThat(message.text).doesNotContain("Open Web App")
             assertThat(message.replyMarkup).isNotNull()
             val button = message.replyMarkup!!.inlineKeyboard.first().first()
@@ -114,26 +114,26 @@ class TelegramWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
 
             val helpMsg = sentMessages().last()
-            assertThat(helpMsg.text).contains("Nuecagram Assistant")
+            assertThat(helpMsg.text).contains("Nuecagram GitLab Notification Gateway")
             assertThat(helpMsg.replyMarkup).isNotNull()
             val rows = helpMsg.replyMarkup!!.inlineKeyboard
             assertThat(rows).hasSize(3)
             assertThat(rows[0][0].text).isEqualTo("My Installations")
             assertThat(rows[0][0].callbackData).isEqualTo("inst:list:page=0")
-            assertThat(rows[1][0].text).isEqualTo("Setup Instructions")
-            assertThat(rows[1][0].callbackData).isEqualTo("inst:help_setup:all")
+            assertThat(rows[1][0].text).isEqualTo("Getting Started")
+            assertThat(rows[1][0].callbackData).isEqualTo("inst:help_getting_started:all")
             assertThat(rows[2][0].text).isEqualTo("Command List")
             assertThat(rows[2][0].callbackData).isEqualTo("inst:help_commands:all")
 
             val setupCallback = callbackPrivateUpdate(
                 updateId = 502,
                 callbackId = "cb_help_setup",
-                data = "inst:help_setup:all",
+                data = "inst:help_getting_started:all",
                 userId = 501,
             )
             assertThat(postTelegram(setupCallback).status).isEqualTo(HttpStatusCode.OK)
             val setupMsg = sentMessages().last()
-            assertThat(setupMsg.text).contains("First-Time Setup Instructions")
+            assertThat(setupMsg.text).contains("Getting Started")
 
             val commandsCallback = callbackPrivateUpdate(
                 updateId = 503,
