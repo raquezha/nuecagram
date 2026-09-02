@@ -437,10 +437,12 @@ private fun onboardingHtml(basePath: String): String =
 
         h2 { +"Managing Your Notifications" }
         p {
-            +"To rotate secrets, check status, or mute notifications, send "
-            code(classes = "cmd") { +"/manage <installation-id>" }
-            +" inside your Telegram group. "
-            +"The bot will privately send you a single-use link to your web management dashboard."
+            +"To manage repositories, rotate credentials, or mute notifications, tap the "
+            strong { +"OPEN" }
+            +(" button in the Telegram chat menu to launch the Web App portal, " +
+                "or start a private chat with the bot and send ")
+            code(classes = "cmd") { +"/manage" }
+            +" to manage your connected repositories."
         }
 
         h2 { +"Documentation & Resources" }
@@ -572,9 +574,10 @@ private fun manageHtml(
 
             div(classes = "recovery-notice") {
                 span {
-                    +"Need access to this session later? Run "
+                    +("Need access to this session later? Open the Web App management portal " +
+                        "from the bot chat menu or send ")
                     code { +"/manage ${installation.id.toString().take(SHORT_ID_LENGTH)}" }
-                    +" inside your Telegram group to issue a new single-use link."
+                    +" in a private chat with the bot."
                 }
             }
         }
