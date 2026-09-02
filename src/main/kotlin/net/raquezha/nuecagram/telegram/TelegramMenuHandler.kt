@@ -26,7 +26,7 @@ sealed interface PrivateCallbackAction {
     data class RotateExecute(val targetId: String) : PrivateCallbackAction
     data class Back(val page: Int) : PrivateCallbackAction
     data object HelpMenu : PrivateCallbackAction
-    data object HelpSetup : PrivateCallbackAction
+    data object HelpGettingStarted : PrivateCallbackAction
     data object HelpCommands : PrivateCallbackAction
     data object Unknown : PrivateCallbackAction
 
@@ -47,7 +47,7 @@ sealed interface PrivateCallbackAction {
                 "rotate:execute" -> RotateExecute(payload.targetId)
                 "back" -> Back(parsePageIndex(payload.targetId))
                 "help_menu" -> HelpMenu
-                "help_setup" -> HelpSetup
+                "help_getting_started" -> HelpGettingStarted
                 "help_commands" -> HelpCommands
                 else -> Unknown
             }
@@ -109,11 +109,11 @@ object TelegramMenuMessages {
     }
     const val LIST_HEADER = "Select an installation to manage:"
 
-    const val HELP_SETUP_TEXT =
-        "⚙️ <b>First-Time Setup Instructions</b>\n\n" +
-            "1. Send <code>/start</code> in a private chat with the bot.\n" +
-            "2. Add the bot as an Administrator to your Telegram group or topic.\n" +
-            "3. Run <code>/setup</code> in your group/topic, then finish GitLab setup in the Web App wizard."
+    const val HELP_GETTING_STARTED_TEXT =
+        "⚙️ <b>Getting Started</b>\n\n" +
+            "1. Add the bot as an Administrator to your Telegram group or topic.\n" +
+            "2. Open this private chat and tap <b>OPEN</b>.\n" +
+            "3. In the WebApp, tap <b>+ Add repository</b> and choose the target destination."
 
     const val HELP_COMMANDS_TEXT =
         "📖 <b>Command Reference</b>\n\n" +
@@ -124,7 +124,7 @@ object TelegramMenuMessages {
             "• <code>/rotate</code> (DM) : Rotate secret token\n" +
             "• <code>/mute</code> / <code>/unmute</code> (DM) : Pause / resume notifications\n" +
             "• <code>/digest</code> (DM) : View digest summary\n" +
-            "• <code>/setup</code> (Group) : Open setup wizard"
+            "• <code>/help</code> (DM or Group) : View help"
 }
 
 private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
@@ -199,7 +199,7 @@ class TelegramMenuHandler(
             is PrivateCallbackAction.RotateExecute ->
                 handlePrivateRotateExecuteCallback(callbackQuery, message, userId, action.targetId)
             PrivateCallbackAction.HelpMenu -> handlePrivateHelpMenuCallback(callbackQuery, message)
-            PrivateCallbackAction.HelpSetup -> handlePrivateHelpSetupCallback(callbackQuery, message)
+            PrivateCallbackAction.HelpGettingStarted -> handlePrivateHelpGettingStartedCallback(callbackQuery, message)
             PrivateCallbackAction.HelpCommands -> handlePrivateHelpCommandsCallback(callbackQuery, message)
             PrivateCallbackAction.Unknown -> answerCallbackError(callbackQuery.id, "Unknown callback action.")
         }
@@ -530,12 +530,13 @@ class TelegramMenuHandler(
         messageId: String? = null,
     ) {
         val text =
-            "<b>Nuecagram Assistant</b>\n\n" +
-                "Select an option below to manage notification installations or view command instructions:"
+            "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
+                "Manage GitLab notifications for your Telegram groups and topics from here.\n\n" +
+                "Tap <b>OPEN</b> beside the chat box to launch the WebApp dashboard."
         val markup = InlineKeyboardMarkup(
             inlineKeyboard = listOf(
                 listOf(InlineKeyboardButton(text = "My Installations", callbackData = "inst:list:page=0")),
-                listOf(InlineKeyboardButton(text = "Setup Instructions", callbackData = "inst:help_setup:all")),
+                listOf(InlineKeyboardButton(text = "Getting Started", callbackData = "inst:help_getting_started:all")),
                 listOf(InlineKeyboardButton(text = "Command List", callbackData = "inst:help_commands:all")),
             ),
         )
@@ -556,7 +557,7 @@ class TelegramMenuHandler(
         telegramService.answerCallbackQuery(callbackQuery.id)
     }
 
-    private suspend fun handlePrivateHelpSetupCallback(
+    private suspend fun handlePrivateHelpGettingStartedCallback(
         callbackQuery: TelegramUpdate.CallbackQuery,
         message: TelegramUpdate.Message,
     ) {
@@ -567,7 +568,7 @@ class TelegramMenuHandler(
         )
         send(
             chatId = message.chat.id,
-            text = TelegramMenuMessages.HELP_SETUP_TEXT,
+            text = TelegramMenuMessages.HELP_GETTING_STARTED_TEXT,
             replyMarkup = markup,
             messageId = message.messageId?.toString(),
         )
