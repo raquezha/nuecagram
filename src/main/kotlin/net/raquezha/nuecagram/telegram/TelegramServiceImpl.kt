@@ -5,8 +5,11 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.*
-import io.ktor.http.*
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -80,93 +83,47 @@ class TelegramServiceImpl(
     private val config: ConfigWithSecrets,
 ) : TelegramService {
 
-    override suspend fun getMe(): TelegramUser? {
-        val response = client.get(telegramEndpoint(METHOD_GET_ME))
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to validate bot token: ${response.status}")
-        }
-        val apiResponse = telegramJson.decodeFromString<TelegramApiResponse<TelegramUser>>(response.bodyAsText())
-        return apiResponse.result
-    }
+    override suspend fun getMe(): TelegramUser? =
+        client.get(endpoint(METHOD_GET_ME))
+            .requireOk("Failed to validate bot token")
+            .decodeResult<TelegramUser>()
 
-    override suspend fun setWebhook(
-        url: String,
-        headerToken: String?,
-    ): Boolean {
-        val payload = SetWebhookPayload(url = url, secretToken = headerToken?.takeIf(String::isNotBlank))
-        val response = client.post(telegramEndpoint(METHOD_SET_WEBHOOK)) {
-            contentType(ContentType.Application.Json)
-            setBody(telegramJson.encodeToString(payload))
-        }
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to set webhook URL: ${response.status}")
-        }
+    override suspend fun setWebhook(url: String, headerToken: String?): Boolean {
+        client.postJson(endpoint(METHOD_SET_WEBHOOK), SetWebhookPayload(url, headerToken?.takeIf(String::isNotBlank)))
+            .requireOk("Failed to set webhook URL")
         return true
     }
 
     override suspend fun setChatMenuButton(menuButton: MenuButton?): Boolean {
-        val payload = SetChatMenuButtonPayload(menuButton = menuButton)
-        val response = client.post(telegramEndpoint(METHOD_SET_CHAT_MENU_BUTTON)) {
-            contentType(ContentType.Application.Json)
-            setBody(telegramJson.encodeToString(payload))
-        }
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to set chat menu button: ${response.status}")
-        }
+        client.postJson(endpoint(METHOD_SET_CHAT_MENU_BUTTON), SetChatMenuButtonPayload(menuButton))
+            .requireOk("Failed to set chat menu button")
         return true
     }
 
     override suspend fun setMyCommands(commands: List<BotCommand>): Boolean {
-        val payload = SetMyCommandsPayload(commands = commands)
-        val response = client.post(telegramEndpoint(METHOD_SET_MY_COMMANDS)) {
-            contentType(ContentType.Application.Json)
-            setBody(telegramJson.encodeToString(payload))
-        }
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to set bot commands: ${response.status}")
-        }
+        client.postJson(endpoint(METHOD_SET_MY_COMMANDS), SetMyCommandsPayload(commands))
+            .requireOk("Failed to set bot commands")
         return true
     }
 
-    override suspend fun chatMemberStatus(
-        chatId: Long,
-        userId: Long,
-    ): String? {
-        val response = client.get(telegramEndpoint(METHOD_GET_CHAT_MEMBER)) {
+    override suspend fun chatMemberStatus(chatId: Long, userId: Long): String? =
+        client.get(endpoint(METHOD_GET_CHAT_MEMBER)) {
             parameter("chat_id", chatId)
             parameter("user_id", userId)
-        }
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to get chat member: ${response.status}")
-        }
-
-        val apiResponse =
-            telegramJson.decodeFromString<TelegramApiResponse<TelegramChatMemberResult>>(response.bodyAsText())
-        return apiResponse.result?.status
-    }
+        }.requireOk("Failed to get chat member")
+            .decodeResult<TelegramChatMemberResult>()
+            ?.status
 
     override suspend fun sendMessage(message: Message): String {
-        val endpoint = if (message.messageId.isNullOrBlank()) METHOD_SEND_MESSAGE else METHOD_EDIT_MESSAGE_TEXT
-        val response = client.post(telegramEndpoint(endpoint)) {
-            contentType(ContentType.Application.Json)
-            setBody(telegramJson.encodeToString(message))
-        }
-
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to send message: ${response.status}")
-        }
-
-        val responseBody = response.bodyAsText()
+        val method = if (message.messageId.isNullOrBlank()) METHOD_SEND_MESSAGE else METHOD_EDIT_MESSAGE_TEXT
+        val response = client.postJson(endpoint(method), message)
+            .requireOk("Failed to send message")
+        val bodyText = response.bodyAsText()
         val apiResponse = runCatching {
-            telegramJson.decodeFromString<TelegramApiResponse<TelegramMessageResult>>(responseBody)
-        }.getOrElse {
-            throw HttpException("Telegram API response error: $responseBody", it)
-        }
-
-        val result = apiResponse.result
-            ?: throw HttpException("Telegram API response missing 'result' field: $responseBody")
-
-        return result.messageId.toString()
+            telegramJson.decodeFromString<TelegramApiResponse<TelegramMessageResult>>(bodyText)
+        }.getOrElse { throw HttpException("Telegram API response error: $bodyText", it) }
+        return apiResponse.result?.messageId?.toString()
+            ?: throw HttpException("Telegram API response missing 'result' field: $bodyText")
     }
 
     override suspend fun answerCallbackQuery(
@@ -174,25 +131,27 @@ class TelegramServiceImpl(
         text: String?,
         showAlert: Boolean,
     ): Boolean {
-        val payload = AnswerCallbackQueryPayload(
-            callbackQueryId = callbackQueryId,
-            text = text,
-            showAlert = showAlert,
-        )
-        val response = client.post(telegramEndpoint(METHOD_ANSWER_CALLBACK_QUERY)) {
-            contentType(ContentType.Application.Json)
-            setBody(telegramJson.encodeToString(payload))
-        }
-
-        if (response.status != HttpStatusCode.OK) {
-            throw HttpException("Failed to answer callback query: ${response.status}")
-        }
-
+        val payload = AnswerCallbackQueryPayload(callbackQueryId, text, showAlert)
+        client.postJson(endpoint(METHOD_ANSWER_CALLBACK_QUERY), payload)
+            .requireOk("Failed to answer callback query")
         return true
     }
 
-    private fun telegramEndpoint(method: String): String {
-        val sanitizedToken = config.botApi.trim().removePrefix("bot")
-        return "$TELEGRAM_API_BASE_URL$sanitizedToken/$method"
-    }
+    private fun endpoint(method: String): String =
+        "$TELEGRAM_API_BASE_URL${config.botApi.trim().removePrefix("bot")}/$method"
+
+    private suspend inline fun <reified T> HttpResponse.decodeApiResponse(): TelegramApiResponse<T> =
+        telegramJson.decodeFromString(bodyAsText())
+
+    private suspend inline fun <reified T> HttpResponse.decodeResult(): T? =
+        decodeApiResponse<T>().result
+
+    private fun HttpResponse.requireOk(context: String): HttpResponse =
+        apply { if (status != HttpStatusCode.OK) throw HttpException("$context: $status") }
+
+    private suspend inline fun <reified T : Any> HttpClient.postJson(url: String, payload: T): HttpResponse =
+        post(url) {
+            contentType(ContentType.Application.Json)
+            setBody(telegramJson.encodeToString(payload))
+        }
 }
