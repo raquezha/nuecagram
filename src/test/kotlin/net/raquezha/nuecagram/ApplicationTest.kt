@@ -54,6 +54,32 @@ class ApplicationTest : KoinTest {
         }
 
     @Test
+    fun startupSyncsWebhookAndMenuButton() =
+        testApplication {
+            val mockService = telegramService as MockTelegramService
+            mockService.reset()
+            application {
+                configureRouting()
+            }
+            client.get("/")
+
+            kotlinx.coroutines.runBlocking {
+                var attempts = 0
+                while (mockService.configuredWebhookUrl() == null && attempts < 20) {
+                    kotlinx.coroutines.delay(50)
+                    attempts++
+                }
+            }
+
+            assertEquals("http://localhost:8080/nuecagram/telegram/webhook", mockService.configuredWebhookUrl())
+            val menu = mockService.configuredMenuButton()
+            org.junit.Assert.assertNotNull(menu)
+            assertEquals("web_app", menu?.type)
+            assertEquals("OPEN", menu?.text)
+            assertEquals("http://localhost:8080/nuecagram/webapp", menu?.webApp?.url)
+        }
+
+    @Test
     fun testHealthRoutes() =
         testApplication {
             application {

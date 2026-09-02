@@ -53,6 +53,24 @@ example.com {
 
 Allow public traffic only to SSH, HTTP, and HTTPS as required. Production Compose binds the app to `127.0.0.1:18080`, so clients must use the reverse proxy.
 
+## Telegram Bot Token Rotation
+
+To rotate the `TELEGRAM_BOT_TOKEN`:
+1. Request a new bot token from Telegram's `@BotFather` using `/revoke` or by creating a new token for your bot.
+2. Update `TELEGRAM_BOT_TOKEN` in `/opt/nuecagram/.env` (or local `.env`) with the new token string.
+3. Restart the Nuecagram container or service:
+   ```bash
+   docker compose restart app
+   ```
+4. On startup, Nuecagram automatically:
+   - Validates the new bot token via Telegram Bot API (`getMe`).
+   - Re-registers the Telegram webhook URL (`/telegram/webhook`).
+   - Re-registers the chat menu button (`OPEN` -> `/webapp`).
+5. Check container logs to verify successful token validation and sync:
+   ```bash
+   docker compose logs app | grep "Telegram Bot token validated"
+   ```
+
 ## Secret handling
 
 - Do not commit environment files, database dumps, Telegram tokens, GitLab personal access tokens, webhook tokens, management links, SSH private keys, or plain-text admin passwords.

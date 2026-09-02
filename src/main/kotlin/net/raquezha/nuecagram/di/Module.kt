@@ -20,6 +20,8 @@ import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.configWithSecrets
+import net.raquezha.nuecagram.telegram.TelegramBotInitializer
+import net.raquezha.nuecagram.telegram.TelegramBotInitializerImpl
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramServiceImpl
 import net.raquezha.nuecagram.telegram.TelegramUpdateHandler
@@ -106,6 +108,9 @@ val provideTelegramService =
     module {
         single<TelegramService> {
             TelegramServiceImpl(get(), get())
+        }
+        single<TelegramBotInitializer> {
+            TelegramBotInitializerImpl(get(), get())
         }
     }
 
