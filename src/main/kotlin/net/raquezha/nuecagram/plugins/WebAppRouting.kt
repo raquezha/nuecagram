@@ -930,8 +930,12 @@ private fun webAppShellHtml(basePath: String): String = """
       .panel { display: none; }
       .panel.active { display: block; }
       #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 18px; }
-      .spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--button); border-radius: 50%; animation: spin 0.75s linear infinite; }
-      @keyframes spin { to { transform: rotate(360deg); } }
+      .dots { display: flex; gap: 10px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--button); animation: bounce 1.2s infinite ease-in-out; }
+      .dot:nth-child(1) { animation-delay: 0s; }
+      .dot:nth-child(2) { animation-delay: 0.2s; }
+      .dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes bounce { 0%, 80%, 100% { transform: scale(0); opacity: 0.3; } 40% { transform: scale(1); opacity: 1; } }
       .spinner-label { color: var(--hint); font-size: 14px; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
@@ -964,7 +968,7 @@ private fun webAppShellHtml(basePath: String): String = """
   <body>
     <div class="container">
       <section id="screen-loading" class="panel active">
-        <div class="spinner"></div>
+        <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
         <span class="spinner-label">Loading…</span>
       </section>
 
