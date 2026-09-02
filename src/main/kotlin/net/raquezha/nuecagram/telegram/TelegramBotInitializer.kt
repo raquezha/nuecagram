@@ -17,10 +17,11 @@ class TelegramBotInitializerImpl(
         publicUrl: String,
         appHeader: String,
     ) {
+        val cleanUrl = publicUrl.removeSuffix("/")
         validateBotToken()
         configureBotCommands()
-        configureWebhookUrl(publicUrl, appHeader)
-        configureChatMenuButton(publicUrl)
+        configureWebhookUrl(cleanUrl, appHeader)
+        configureChatMenuButton(cleanUrl)
     }
 
     private suspend fun configureBotCommands() = runCatching {

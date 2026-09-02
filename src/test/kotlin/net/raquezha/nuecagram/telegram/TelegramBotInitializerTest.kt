@@ -47,4 +47,18 @@ class TelegramBotInitializerTest {
 
         assertEquals("https://example.com/nuecagram/telegram/webhook", mockService.configuredWebhookUrl())
     }
+
+    @Test
+    fun initializeNormalizesPublicUrlTrailingSlash() = runBlocking {
+        mockService.reset()
+
+        initializer.initialize(
+            publicUrl = "https://example.com/nuecagram/",
+            appHeader = "test-secret-token",
+        )
+
+        assertEquals("https://example.com/nuecagram/telegram/webhook", mockService.configuredWebhookUrl())
+        val menu = mockService.configuredMenuButton()
+        assertEquals("https://example.com/nuecagram/webapp", menu?.webApp?.url)
+    }
 }
