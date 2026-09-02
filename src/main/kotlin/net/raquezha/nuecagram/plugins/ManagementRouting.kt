@@ -821,6 +821,14 @@ internal fun managementDocument(
           tr:last-child td { border-bottom: none; }
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
+          .table-subtle { font-size: 0.8rem; color: #8c7f70; }
+          .audit-timestamp { white-space: nowrap; font-family: 'Reddit Mono', monospace; font-size: 0.8rem; color: #6e6154; }
+          .audit-repo { font-weight: 700; color: #1a1612; }
+          .audit-actor { font-family: 'Reddit Mono', monospace; font-size: 0.825rem; color: #2b7fa1; }
+          .audit-details-cell { line-height: 1.4; }
+          .chat-details-title { font-weight: 600; color: #2c251e; margin-bottom: 0.2rem; }
+          .detail-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
+          .detail-chip { font-family: 'Reddit Mono', monospace; font-size: 0.75rem; background: #f1ebd9; color: #5c5146; padding: 0.15rem 0.5rem; border-radius: 0.25rem; border: 1px solid #e2d7c5; display: inline-block; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
           .site-footer a:hover { text-decoration: underline; }
           .admin-page { max-width: 56rem; }

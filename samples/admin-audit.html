@@ -137,6 +137,14 @@
           tr:last-child td { border-bottom: none; }
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
+          .table-subtle { font-size: 0.8rem; color: #8c7f70; }
+          .audit-timestamp { white-space: nowrap; font-family: 'Reddit Mono', monospace; font-size: 0.8rem; color: #6e6154; }
+          .audit-repo { font-weight: 700; color: #1a1612; }
+          .audit-actor { font-family: 'Reddit Mono', monospace; font-size: 0.825rem; color: #2b7fa1; }
+          .audit-details-cell { line-height: 1.4; }
+          .chat-details-title { font-weight: 600; color: #2c251e; margin-bottom: 0.2rem; }
+          .detail-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
+          .detail-chip { font-family: 'Reddit Mono', monospace; font-size: 0.75rem; background: #f1ebd9; color: #5c5146; padding: 0.15rem 0.5rem; border-radius: 0.25rem; border: 1px solid #e2d7c5; display: inline-block; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
           .site-footer a:hover { text-decoration: underline; }
           .admin-page { max-width: 56rem; }
@@ -193,7 +201,7 @@
                 <span>v0.16.0</span>
               </a>
               <form method="post" action="/nuecagram/admin/logout" class="header-form">
-  <input type="hidden" name="csrf" value="h0NVyRkh1S7gik6cxwXLnDJyxc2tbdg4dw_gdYFjccM">
+  <input type="hidden" name="csrf" value="OB-_w-eAElxI5qP8JkZceayKek-WlZk-W-Ti_fY20Gw">
   <button type="submit" class="header-btn btn-logout" aria-label="Log out">
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     <span>Log out</span>
@@ -228,97 +236,93 @@
         </thead>
         <tbody>
           <tr>
-            <td>2026-09-01T09:05:45.773715Z</td>
-            <td>System</td>
-            <td><span class="status-badge">system_ping</span></td>
-            <td>Unknown Actor</td>
-            <td>
-              <div>Unknown Chat</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">System</td>
+            <td><span class="status-badge" data-action="system_ping">System Ping</span></td>
+            <td class="audit-actor">Unknown Actor</td>
+            <td class="audit-details-cell"><span class="table-subtle" title="Unknown Chat">—</span></td>
+          </tr>
+          <tr>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge" data-action="webapp_identity_update">Identity Update</span></td>
+            <td class="audit-actor">Alice</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
+              <div class="detail-chips"><span class="detail-chip">repo: old/repo → new/repo</span><span class="detail-chip">chat: old room → (blank)</span></div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.772438Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge">webapp_identity_update</span></td>
-            <td>Alice</td>
-            <td>
-              <div>222</div>
-              <div class="table-subtle">repo: old/repo -&gt; new/repo</div>
-              <div class="table-subtle">chat: old room -&gt; (blank)</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-muted" data-action="management_mute">Muted</span></td>
+            <td class="audit-actor">2</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.771046Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-muted">management_mute</span></td>
-            <td>2</td>
-            <td>
-              <div>222</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-muted" data-action="telegram_mute">Muted</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.769768Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-muted">telegram_mute</span></td>
-            <td>1</td>
-            <td>
-              <div>222</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-degraded" data-action="webapp_rotate">Rotate Token</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.768534Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-degraded">webapp_rotate</span></td>
-            <td>1</td>
-            <td>
-              <div>222</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-degraded" data-action="management_rotate">Rotate Token</span></td>
+            <td class="audit-actor">2</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.767176Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-degraded">management_rotate</span></td>
-            <td>2</td>
-            <td>
-              <div>222</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-degraded" data-action="telegram_rotate">Rotate Token</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.765635Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-degraded">telegram_rotate</span></td>
-            <td>1</td>
-            <td>
-              <div>222</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-active" data-action="webapp_setup">Setup</span></td>
+            <td class="audit-actor">1</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.764173Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-active">webapp_setup</span></td>
-            <td>1</td>
-            <td>
-              <div>222</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #111</td>
+            <td><span class="status-badge status-active" data-action="telegram_setup">Setup</span></td>
+            <td class="audit-actor">@alice</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">222</div>
             </td>
           </tr>
           <tr>
-            <td>2026-09-01T09:05:45.762713Z</td>
-            <td>Project #111</td>
-            <td><span class="status-badge status-active">telegram_setup</span></td>
-            <td>@alice</td>
-            <td>
-              <div>222</div>
-            </td>
-          </tr>
-          <tr>
-            <td>2026-09-01T09:05:45.690036Z</td>
-            <td>Project #3</td>
-            <td><span class="status-badge">rotation.confirmed</span></td>
-            <td>@alice</td>
-            <td>
-              <div>300 / topic 7</div>
-              <div class="table-subtle">repo: old/repo -&gt; new/repo</div>
-              <div class="table-subtle">chat: old room -&gt; new room</div>
+            <td class="audit-timestamp">2026-09-01 23:59:40 UTC</td>
+            <td class="audit-repo">Project #3</td>
+            <td><span class="status-badge" data-action="rotation.confirmed">Rotation.confirmed</span></td>
+            <td class="audit-actor">@alice</td>
+            <td class="audit-details-cell">
+              <div class="chat-details-title">300 / topic 7</div>
+              <div class="detail-chips"><span class="detail-chip">repo: old/repo → new/repo</span><span class="detail-chip">chat: old room → new room</span></div>
             </td>
           </tr>
         </tbody>

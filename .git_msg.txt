@@ -1,0 +1,5 @@
+refactor(admin): polish audit log explorer UI and timestamp formatting
+
+Format audit log timestamps as UTC date-time strings, render human-friendly action badges (Setup, Rotate Token, Mute, Web App Launch), format detail deltas into clean badge chips, and update static sample gallery.
+
+Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]

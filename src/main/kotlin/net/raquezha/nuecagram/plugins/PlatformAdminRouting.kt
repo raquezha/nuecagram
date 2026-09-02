@@ -534,22 +534,63 @@ private fun FlowContent.auditPaginationBtn(
 
 private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
     tr {
-        td { +event.createdAt.toString() }
-        td { +event.repository }
+        td(classes = "audit-timestamp") {
+            +event.createdAt.formatAuditTimestamp()
+        }
+        td(classes = "audit-repo") {
+            +event.repository
+        }
         td {
             span(classes = auditActionBadgeClass(event.action)) {
-                +event.action
+                attributes["data-action"] = event.action
+                +event.action.formatAuditActionLabel()
             }
         }
-        td { +event.actor }
-        td {
-            div { +event.chatDetails }
-            event.details.forEach { line ->
-                div(classes = "table-subtle") { +line }
+        td(classes = "audit-actor") {
+            +event.actor
+        }
+        td(classes = "audit-details-cell") {
+            if (event.chatDetails != "Unknown Chat") {
+                div(classes = "chat-details-title") { +event.chatDetails }
+            } else {
+                span(classes = "table-subtle") {
+                    attributes["title"] = "Unknown Chat"
+                    +"—"
+                }
+            }
+            if (event.details.isNotEmpty()) {
+                div(classes = "detail-chips") {
+                    event.details.forEach { line ->
+                        span(classes = "detail-chip") { +line.formatAuditDetailLine() }
+                    }
+                }
             }
         }
     }
 }
+
+private fun Instant.formatAuditTimestamp(): String {
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        .withZone(java.time.ZoneOffset.UTC)
+    return formatter.format(this) + " UTC"
+}
+
+private fun String.formatAuditActionLabel(): String =
+    when (this) {
+        "telegram_setup", "webapp_setup" -> "Setup"
+        "telegram_webapp_launch" -> "Web App Launch"
+        "telegram_rotate", "management_rotate", "webapp_rotate" -> "Rotate Token"
+        "telegram_mute", "management_mute", "webapp_mute" -> "Muted"
+        "telegram_unmute", "management_unmute", "webapp_unmute" -> "Unmuted"
+        "webapp_identity_update" -> "Identity Update"
+        else -> replace('_', ' ').replace('-', ' ').lowercase()
+            .split(' ').joinToString(" ") { word ->
+                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+    }
+
+private fun String.formatAuditDetailLine(): String =
+    replace("->", "→")
 
 private fun auditActionBadgeClass(action: String): String =
     when (action) {
