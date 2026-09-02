@@ -29,12 +29,12 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
 
             assertThat(
                 postTelegram(
-                    groupUpdate(70, "/setup https://gitlab.example.com 321", installation.telegramChatId, userId = 70),
+                    groupUpdate(70, "/setup", installation.telegramChatId, userId = 70),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
             assertThat(
                 sentMessages().last().text,
-            ).isEqualTo("Use /start in a private chat before using admin commands.")
+            ).isEqualTo("Unknown command. Send <code>/help</code> for available commands.")
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
         }
@@ -48,10 +48,11 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
 
             assertThat(
                 postTelegram(
-                    groupUpdate(175, "/setup https://gitlab.example.com 321", installation.telegramChatId, userId = 75),
+                    groupUpdate(175, "/setup", installation.telegramChatId, userId = 75),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
+            val expectedUnknownMsg = "Unknown command. Send <code>/help</code> for available commands."
+            assertThat(sentMessages().last().text).isEqualTo(expectedUnknownMsg)
             assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
             assertThat(auditEventCount()).isEqualTo(initialAuditCount)
             assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
@@ -67,11 +68,12 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     groupUpdate(176, "/setup", installation.telegramChatId, userId = 76),
                 ).status,
             ).isEqualTo(HttpStatusCode.OK)
-            assertThat(sentMessages().last().text).isEqualTo("Only Telegram group administrators can use this command.")
+            val expectedUnknownMsg = "Unknown command. Send <code>/help</code> for available commands."
+            assertThat(sentMessages().last().text).isEqualTo(expectedUnknownMsg)
         }
 
     @Test
-    fun setupLaunchesWebAppForConfirmedAdminWithoutArguments() =
+    fun setupReturnsUnknownCommandInGroup() =
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(77)
@@ -84,12 +86,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
             ).isEqualTo(HttpStatusCode.OK)
 
             val lastMessage = sentMessages().last()
-            assertThat(lastMessage.text).contains("Open Nuecagram Web App to set up GitLab notifications:")
-            assertThat(lastMessage.replyMarkup).isNotNull()
-            val button = lastMessage.replyMarkup!!.inlineKeyboard.single().single()
-            assertThat(button.text).isEqualTo("Set Up GitLab Notifications")
-            assertThat(button.webApp).isNotNull()
-            assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+            assertThat(lastMessage.text).isEqualTo("Unknown command. Send <code>/help</code> for available commands.")
         }
 
     @Test
@@ -107,7 +104,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                     postTelegram(
                         groupUpdate(
                             71,
-                            "/setup https://gitlab.example.com 321",
+                            "/setup",
                             installation.telegramChatId,
                             userId = 71,
                             messageThreadId = 777,
@@ -118,15 +115,11 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 ).isEqualTo(HttpStatusCode.OK)
 
                 val groupMessage = messagesForChat(installation.telegramChatId).single()
-                assertThat(groupMessage.text).isEqualTo("Open Nuecagram Web App to set up GitLab notifications:")
-                assertThat(groupMessage.replyMarkup).isNotNull()
-                val button = groupMessage.replyMarkup!!.inlineKeyboard.single().single()
-                assertThat(button.text).isEqualTo("Set Up GitLab Notifications")
-                assertThat(button.webApp).isNotNull()
-                assertThat(button.webApp!!.url).contains("/webapp?startapp=nonce_")
+                val expectedUnknownMsg = "Unknown command. Send <code>/help</code> for available commands."
+                assertThat(groupMessage.text).isEqualTo(expectedUnknownMsg)
                 assertThat(messagesForChat(71)).isEmpty()
                 assertThat(installationCount("https://gitlab.example.com", 321L)).isEqualTo(0)
-                assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount + 1)
+                assertThat(auditActionCount("telegram_webapp_launch")).isEqualTo(initialLaunchAuditCount)
             }
         } finally {
             if (previous == null) {

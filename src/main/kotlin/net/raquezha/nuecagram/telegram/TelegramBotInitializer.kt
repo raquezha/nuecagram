@@ -63,7 +63,6 @@ class TelegramBotInitializerImpl(
             BotCommand("mute", "Choose a repository and pause notifications"),
             BotCommand("unmute", "Choose a repository and resume notifications"),
             BotCommand("digest", "Choose a repository and view summary"),
-            BotCommand("setup", "How to bind a new GitLab repository"),
             BotCommand("help", "View command reference and instructions"),
         )
     }
