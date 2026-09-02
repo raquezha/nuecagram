@@ -734,12 +734,14 @@ class TelegramWebhookTest : BaseEventTestHelper() {
         testApplication {
             configureTestApplication()
             bootstrapPrivateUser(340)
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 340, "member")
 
             // Bare /manage with no installations
             assertThat(postTelegram(privateUpdate(341, "/manage", userId = 340)).status).isEqualTo(HttpStatusCode.OK)
             assertThat(sentMessages().last().text).isEqualTo("No installations found for your account.")
 
             // Grant admin on installation
+            mockTelegramService().setChatMemberStatus(installation.telegramChatId, 340, "administrator")
             runBlocking {
                 installationRepository.recordInstallationAdmin(installation.id, 340)
             }
