@@ -1,5 +1,5 @@
-style(admin): align timestamp layout and polish chat details chips
+style(admin): unify overview dashboard and audit explorer table styling
 
-Fixed timestamp column spacing by enforcing fixed-width MMM dd date format and tabular numerals, and formatted chat target badges with Telegram icon and structured delta chips (highlighting old/new values).
+Apply stacked timestamps, action badges, right-aligned panel action links, and updated sample previews across platform admin views.
 
 Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]

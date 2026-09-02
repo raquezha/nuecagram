@@ -929,56 +929,12 @@ private fun platformAdminHtml(
                                 }
                             }
                         } else {
-                            previewInstallations.forEach { installation ->
-                                val gitlabUrl = installation.gitlabBaseUrl.redactedUrl()
-                                tr {
-                                    td { code { +installation.id.toString().take(SHORT_ID_LENGTH) } }
-                                    td { +installation.repoName.redactedUrl() }
-                                    td {
-                                        val label = installation.chatName?.takeIf(String::isNotBlank)
-                                        if (label != null) {
-                                            +label
-                                        } else {
-                                            span(classes = "table-subtle") { +"(none)" }
-                                        }
-                                    }
-                                    td {
-                                        if (gitlabUrl.startsWith("http")) {
-                                            a(href = gitlabUrl, target = "_blank", classes = "table-link") {
-                                                rel = "noopener"
-                                                span { +gitlabUrl }
-                                            }
-                                        } else {
-                                            +gitlabUrl
-                                        }
-                                    }
-                                    td {
-                                        if (installation.gitlabProjectId != null) {
-                                            code { +installation.gitlabProjectId.toString() }
-                                        } else {
-                                            span { +"Group-level" }
-                                        }
-                                    }
-                                    td {
-                                        if (installation.muted) {
-                                            span(classes = "status-badge status-muted") {
-                                                span(classes = "status-dot")
-                                                +"Muted"
-                                            }
-                                        } else {
-                                            span(classes = "status-badge status-active") {
-                                                span(classes = "status-dot")
-                                                +"Active"
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            previewInstallations.forEach(::platformAdminInstallationRow)
                         }
                     }
                 }
             }
-            div {
+            div(classes = "panel-link-bar") {
                 a(href = "$basePath/admin/installations", classes = "table-link") {
                     +"View all installations →"
                 }
@@ -1008,17 +964,26 @@ private fun platformAdminHtml(
                         } else {
                             previewAuditEvents.forEach { event ->
                                 tr {
-                                    td { +event.createdAt.toString() }
-                                    td { +event.repository }
-                                    td { +event.action }
-                                    td { +event.actor }
+                                    td(classes = "audit-timestamp") {
+                                        attributes["title"] = event.createdAt.formatAuditFullTooltip()
+                                        div(classes = "ts-time") { +event.createdAt.formatAuditTime() }
+                                        div(classes = "ts-date") { +event.createdAt.formatAuditDate() }
+                                    }
+                                    td(classes = "audit-repo") { +event.repository }
+                                    td {
+                                        span(classes = auditActionBadgeClass(event.action)) {
+                                            attributes["data-action"] = event.action
+                                            +event.action.formatAuditActionLabel()
+                                        }
+                                    }
+                                    td(classes = "audit-actor") { +event.actor }
                                 }
                             }
                         }
                     }
                 }
             }
-            div {
+            div(classes = "panel-link-bar") {
                 a(href = "$basePath/admin/audit", classes = "table-link") {
                     +"Explore audit logs →"
                 }

@@ -154,6 +154,7 @@
           .chip-val-old { color: #a62b1e; text-decoration: line-through; opacity: 0.85; }
           .chip-arrow { color: #2b7fa1; font-weight: 800; padding: 0 0.05rem; }
           .chip-val-new { color: #3b8b68; font-weight: 700; }
+          .panel-link-bar { margin-top: 0.85rem; text-align: right; }
           .table-link { color: #2b7fa1; text-decoration: none; font-weight: 600; transition: color 0.15s ease; }
           .table-link:hover { color: #1c8bc0; text-decoration: underline; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
@@ -212,7 +213,7 @@
                 <span>v0.16.0</span>
               </a>
               <form method="post" action="/nuecagram/manage/logout" class="header-form">
-  <input type="hidden" name="csrf" value="lFA2ZDlRDKxF37VNmhi6KzQGZGVGm7r3h0LP93IVF98">
+  <input type="hidden" name="csrf" value="aatHInzxXWtWwJ36DE2v-oP2dJUZc9FDpIYFftmzdmc">
   <button type="submit" class="header-btn btn-logout" aria-label="Log out">
     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     <span>Log out</span>
@@ -240,7 +241,7 @@
             <div class="confirm-content">
               <p>Are you sure you want to rotate the credential? The existing secret token will be revoked immediately.</p>
               <div class="confirm-actions">
-                <form action="/nuecagram/manage/rotate" method="post"><input type="hidden" name="csrf" value="lFA2ZDlRDKxF37VNmhi6KzQGZGVGm7r3h0LP93IVF98"><button class="btn-primary btn-danger" type="submit">Confirm Rotation</button></form>
+                <form action="/nuecagram/manage/rotate" method="post"><input type="hidden" name="csrf" value="aatHInzxXWtWwJ36DE2v-oP2dJUZc9FDpIYFftmzdmc"><button class="btn-primary btn-danger" type="submit">Confirm Rotation</button></form>
               </div>
             </div>
           </details>
@@ -255,14 +256,14 @@
             <div class="confirm-content">
               <p>Are you sure you want to mute notifications for this installation?</p>
               <div class="confirm-actions">
-                <form action="/nuecagram/manage/mute" method="post"><input type="hidden" name="csrf" value="lFA2ZDlRDKxF37VNmhi6KzQGZGVGm7r3h0LP93IVF98"><input type="hidden" name="muted" value="true"><button class="btn-primary btn-danger" type="submit">Confirm Mute</button></form>
+                <form action="/nuecagram/manage/mute" method="post"><input type="hidden" name="csrf" value="aatHInzxXWtWwJ36DE2v-oP2dJUZc9FDpIYFftmzdmc"><input type="hidden" name="muted" value="true"><button class="btn-primary btn-danger" type="submit">Confirm Mute</button></form>
               </div>
             </div>
           </details>
         </div>
       </div>
     </div>
-    <div class="recovery-notice"><span>Need access to this session later? Run <code>/manage c883a4a2</code> inside your Telegram group to issue a new single-use link.</span></div>
+    <div class="recovery-notice"><span>Need access to this session later? Run <code>/manage d20237d7</code> inside your Telegram group to issue a new single-use link.</span></div>
   </div>
   <div class="admin-panel">
     <h3>Installation Details</h3>
@@ -279,7 +280,7 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>c883a4a2</code></td>
+            <td><code>d20237d7</code></td>
             <td><a href="https://gitlab.com" target="_blank" class="table-link" rel="noopener"><span>https://gitlab.com</span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 0.35rem;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></td>
             <td><code>10011</code></td>
             <td><code>Topic #210011</code></td>

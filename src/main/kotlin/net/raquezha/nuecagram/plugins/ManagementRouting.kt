@@ -838,6 +838,7 @@ internal fun managementDocument(
           .chip-val-old { color: #a62b1e; text-decoration: line-through; opacity: 0.85; }
           .chip-arrow { color: #2b7fa1; font-weight: 800; padding: 0 0.05rem; }
           .chip-val-new { color: #3b8b68; font-weight: 700; }
+          .panel-link-bar { margin-top: 0.85rem; text-align: right; }
           .table-link { color: #2b7fa1; text-decoration: none; font-weight: 600; transition: color 0.15s ease; }
           .table-link:hover { color: #1c8bc0; text-decoration: underline; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
