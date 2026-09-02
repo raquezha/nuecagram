@@ -16,15 +16,14 @@ import org.junit.Test
 class WebAppBrowserIsolationTest : BaseEventTestHelper() {
 
     @Test
-    fun directBrowserAccessServesTelegramAccessRequiredGuidancePage() = testApplication {
+    fun directBrowserAccessServesWebAppShellHtmlWhichDynamicallyEnforcesAuth() = testApplication {
         configureTestApplication()
         val response = client.get("/nuecagram/webapp")
         assertThat(response.status).isEqualTo(HttpStatusCode.OK)
         assertThat(response.headers["Content-Type"]).contains("text/html")
         val body = response.bodyAsText()
-        assertThat(body).contains("Telegram Access Required")
-        assertThat(body).contains("This management portal must be opened inside Telegram.")
-        assertThat(body).contains("Open @NuecagramBot and tap OPEN")
+        assertThat(body).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(body).contains("Nuecagram Management")
     }
 
     @Test
@@ -55,6 +54,25 @@ class WebAppBrowserIsolationTest : BaseEventTestHelper() {
         val sessionBody = withSession.bodyAsText()
         assertThat(sessionBody).contains("https://telegram.org/js/telegram-web-app.js")
         assertThat(sessionBody).contains("Nuecagram Management")
+    }
+
+    @Test
+    fun telegramWebAppMenuButtonLaunchesServeWebAppShellHtml() = testApplication {
+        configureTestApplication()
+
+        val withTgWebAppVersion = client.get("/nuecagram/webapp?tgWebAppVersion=7.10&tgWebAppPlatform=android")
+        assertThat(withTgWebAppVersion.status).isEqualTo(HttpStatusCode.OK)
+        val bodyVersion = withTgWebAppVersion.bodyAsText()
+        assertThat(bodyVersion).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(bodyVersion).contains("Nuecagram Management")
+
+        val withUserAgent = client.get("/nuecagram/webapp") {
+            header(HttpHeaders.UserAgent, "TelegramBot (like TwitterBot)")
+        }
+        assertThat(withUserAgent.status).isEqualTo(HttpStatusCode.OK)
+        val bodyUserAgent = withUserAgent.bodyAsText()
+        assertThat(bodyUserAgent).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(bodyUserAgent).contains("Nuecagram Management")
     }
 
     @Test
