@@ -10,7 +10,15 @@ data class TelegramUpdate(
     val message: Message? = null,
     @SerialName("callback_query")
     val callbackQuery: CallbackQuery? = null,
+    @SerialName("my_chat_member")
+    val myChatMember: ChatMemberUpdated? = null,
 ) {
+    @Serializable
+    data class ChatMemberUpdated(
+        val chat: Chat,
+        val from: User? = null,
+    )
+
     @Serializable
     data class CallbackQuery(
         val id: String,

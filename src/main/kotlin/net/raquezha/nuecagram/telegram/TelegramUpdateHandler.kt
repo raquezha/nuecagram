@@ -47,6 +47,18 @@ class TelegramUpdateHandler(
     suspend fun handle(update: TelegramUpdate) {
         if (!installationRepository.recordTelegramUpdate(update.updateId)) return
 
+        val myChatMember = update.myChatMember
+        if (myChatMember != null) {
+            if (myChatMember.chat.type != "private") {
+                installationRepository.upsertKnownTelegramDestination(
+                    chatId = myChatMember.chat.id,
+                    topicId = null,
+                    chatTitle = myChatMember.chat.title,
+                )
+            }
+            return
+        }
+
         val callbackQuery = update.callbackQuery
         if (callbackQuery != null) {
             handleCallbackQuery(callbackQuery)

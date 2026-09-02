@@ -41,6 +41,35 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun myChatMemberUpdateRecordsKnownTelegramDestination() =
+        testApplication {
+            configureTestApplication()
+
+            val myChatMemberUpdate = """
+            {
+              "update_id": 65,
+              "my_chat_member": {
+                "chat": {
+                  "id": ${installation.telegramChatId},
+                  "type": "supergroup",
+                  "title": "Mobile Team Supergroup"
+                },
+                "from": {
+                  "id": 65
+                }
+              }
+            }
+            """.trimIndent()
+
+            assertThat(postTelegram(myChatMemberUpdate).status).isEqualTo(HttpStatusCode.OK)
+
+            val destinations = runBlocking { installationRepository.knownTelegramDestinations() }
+                .filter { it.telegramChatId == installation.telegramChatId }
+            assertThat(destinations).hasSize(1)
+            assertThat(destinations.single().chatTitle).isEqualTo("Mobile Team Supergroup")
+        }
+
+    @Test
     fun groupHelpRecordsKnownTelegramDestination() =
         testApplication {
             configureTestApplication()
