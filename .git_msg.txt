@@ -1,5 +1,5 @@
-style(admin): final UI polish for platform admin headers and badge chips
+refactor(admin): compact audit timestamp format to YYYY-MM-DD HH:mm with hover title
 
-Add top accent border to hero card, refine detail chip styling and table link hover transitions, and regenerate static review gallery.
+Shorten visible audit timestamps from 23 chars (2026-09-02 00:05:48 UTC) to 16 chars (2026-09-02 00:05) and preserve full ISO instant precision in hover title attributes.
 
 Assisted-by: antigravity:gemini-3.6-flash [read,bash,edit,write]

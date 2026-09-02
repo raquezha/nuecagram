@@ -535,6 +535,7 @@ private fun FlowContent.auditPaginationBtn(
 private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRecord) {
     tr {
         td(classes = "audit-timestamp") {
+            attributes["title"] = event.createdAt.toString()
             +event.createdAt.formatAuditTimestamp()
         }
         td(classes = "audit-repo") {
@@ -570,9 +571,9 @@ private fun kotlinx.html.TBODY.platformAdminAuditRow(event: PlatformAdminAuditRe
 }
 
 private fun Instant.formatAuditTimestamp(): String {
-    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
         .withZone(java.time.ZoneOffset.UTC)
-    return formatter.format(this) + " UTC"
+    return formatter.format(this)
 }
 
 private fun String.formatAuditActionLabel(): String =
