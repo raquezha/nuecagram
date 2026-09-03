@@ -307,7 +307,7 @@ private suspend fun ApplicationCall.handleGetInstallations(
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
-        suspend fun liveIsAdmin(chatId: Long): Boolean {
+        suspend fun isActiveAdmin(chatId: Long): Boolean {
             val cached = adminChatIds[chatId]
             if (cached != null) return cached
             val status = runCatching {
@@ -318,12 +318,12 @@ private suspend fun ApplicationCall.handleGetInstallations(
             return isAdmin
         }
         val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
-            .filter { inst -> liveIsAdmin(inst.telegramChatId) }
+            .filter { inst -> isActiveAdmin(inst.telegramChatId) }
         if (recorded.isNotEmpty()) {
             recorded
         } else {
             installationRepository.listInstallationsForContext(null, null).filter { inst ->
-                liveIsAdmin(inst.telegramChatId)
+                isActiveAdmin(inst.telegramChatId)
             }
         }
     }
@@ -361,7 +361,7 @@ private suspend fun ApplicationCall.handleGetDestinations(
     val session = authenticateWebAppSession(installationRepository) ?: return
     val userId = session.telegramUserId
     val adminChatIds = mutableMapOf<Long, Boolean>()
-    suspend fun liveIsAdmin(chatId: Long): Boolean {
+    suspend fun isActiveAdmin(chatId: Long): Boolean {
         val cached = adminChatIds[chatId]
         if (cached != null) return cached
         val status = runCatching {
@@ -373,7 +373,7 @@ private suspend fun ApplicationCall.handleGetDestinations(
     }
 
     val installed = installationRepository.installationsForAdmin(userId)
-        .filter { inst -> liveIsAdmin(inst.telegramChatId) }
+        .filter { inst -> isActiveAdmin(inst.telegramChatId) }
         .map { inst ->
             val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
             val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
@@ -389,7 +389,7 @@ private suspend fun ApplicationCall.handleGetDestinations(
         val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
         val baseTitle = dest.chatTitle?.takeIf(String::isNotBlank) ?: "Chat #${dest.telegramChatId}"
         val label = "$baseTitle$topicSuffix"
-        if (liveIsAdmin(dest.telegramChatId)) {
+        if (isActiveAdmin(dest.telegramChatId)) {
             DestinationPayload(
                 id = dest.id,
                 name = label,
