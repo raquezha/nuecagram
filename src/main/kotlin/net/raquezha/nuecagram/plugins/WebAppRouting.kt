@@ -143,18 +143,9 @@ fun Route.webAppRouting(basePath: String) {
         )
     }
 
-    get("$basePath/webapp/avatars/{file}") {
-        val file = call.parameters["file"].orEmpty()
-        val bytes = file.takeIf { it.matches(Regex("[a-zA-Z0-9.-]+\\.png")) }
-            ?.let { Thread.currentThread().contextClassLoader.getResourceAsStream("webapp/avatars/$it") }
-            ?.use { it.readBytes() }
-        if (bytes == null) {
-            call.respond(HttpStatusCode.NotFound)
-        } else {
-            call.appendWebAppSecurityHeaders()
-            call.respondBytes(bytes, ContentType.Image.PNG, HttpStatusCode.OK)
-        }
-    }
+    get("$basePath/webapp/avatars/{file}") { call.handleWebAppAvatar() }
+
+    get("$basePath/webapp/loading.json") { call.handleWebAppLoadingJson() }
 
     post("$basePath/api/webapp/auth") {
         call.handleWebAppAuth(installationRepository, config, json, basePath)
@@ -835,6 +826,30 @@ private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
 
 private fun ConfigWithSecrets.webhookEndpointUrl(basePath: String): String = "${publicBaseUrl()}$basePath/webhook"
 
+private suspend fun ApplicationCall.handleWebAppAvatar() {
+    val file = parameters["file"].orEmpty()
+    val bytes = file.takeIf { it.matches(Regex("[a-zA-Z0-9.-]+\\.png")) }
+        ?.let { Thread.currentThread().contextClassLoader.getResourceAsStream("webapp/avatars/$it") }
+        ?.use { it.readBytes() }
+    if (bytes == null) {
+        respond(HttpStatusCode.NotFound)
+    } else {
+        appendWebAppSecurityHeaders()
+        respondBytes(bytes, ContentType.Image.PNG, HttpStatusCode.OK)
+    }
+}
+
+private suspend fun ApplicationCall.handleWebAppLoadingJson() {
+    val bytes = Thread.currentThread().contextClassLoader
+        .getResourceAsStream("webapp/loading.json")?.use { it.readBytes() }
+    if (bytes == null) {
+        respond(HttpStatusCode.NotFound)
+    } else {
+        appendWebAppSecurityHeaders()
+        respondBytes(bytes, ContentType.Application.Json, HttpStatusCode.OK)
+    }
+}
+
 internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.append("Pragma", "no-cache")
@@ -842,7 +857,7 @@ internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("X-Content-Type-Options", "nosniff")
     response.headers.append(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' https://telegram.org; " +
+        "default-src 'self'; script-src 'self' https://telegram.org https://unpkg.com; " +
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; " +
             "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org;",
@@ -878,6 +893,7 @@ private fun webAppShellHtml(basePath: String): String = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Nuecagram Management</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/@lottiefiles/lottie-player@2/dist/lottie-player.js"></script>
     <style>
       :root {
         --bg-color: var(--tg-theme-bg-color, #f4f5f8);
@@ -929,14 +945,9 @@ private fun webAppShellHtml(basePath: String): String = """
       .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
       .panel { display: none; }
       .panel.active { display: block; }
-      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 18px; }
-      .dots { display: flex; gap: 10px; }
-      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--button); animation: bounce 1.2s infinite ease-in-out; }
-      .dot:nth-child(1) { animation-delay: 0s; }
-      .dot:nth-child(2) { animation-delay: 0.2s; }
-      .dot:nth-child(3) { animation-delay: 0.4s; }
-      @keyframes bounce { 0%, 80%, 100% { transform: scale(0); opacity: 0.3; } 40% { transform: scale(1); opacity: 1; } }
-      .spinner-label { color: var(--hint); font-size: 14px; }
+      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      .loading-animation { width: 220px; height: 165px; }
+      .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
       .section { margin: 18px 0; }
@@ -968,8 +979,8 @@ private fun webAppShellHtml(basePath: String): String = """
   <body>
     <div class="container">
       <section id="screen-loading" class="panel active">
-        <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-        <span class="spinner-label">Loading…</span>
+        <div class="loading-animation"><lottie-player src="${basePath}/webapp/loading.json" background="transparent" speed="1" loop autoplay></lottie-player></div>
+        <span class="spinner-label" id="loadingText"></span>
       </section>
 
       <section id="screen-list" class="panel">
@@ -1041,6 +1052,76 @@ private fun webAppShellHtml(basePath: String): String = """
 @Suppress("LongMethod", "MagicNumber")
 private fun webAppJsScript(basePath: String): String = """
 let userCsrf = '';
+const LOADING_TEXTS = [
+  'Bribing the GitLab servers...',
+  'Waking up the paper plane...',
+  'Untangling webhook spaghetti...',
+  'Asking Telegram nicely...',
+  'Counting merge requests...',
+  'Herding notifications...',
+  'Feeding the CI pipeline...',
+  'Pretending to be fast...',
+  'Teaching the bot new tricks...',
+  'Blaming the intern...',
+  'Reticulating splines...',
+  'Negotiating with the database...',
+  'Almost there (probably)...',
+  'Checking if production is on fire...',
+  'Locating the missing semicolon...',
+  'Convincing CI to cooperate...',
+  'Reading the docs so you do not have to...',
+  'Converting caffeine into webhooks...',
+  'Wiggling the Ethernet cable...',
+  'Refactoring the universe...',
+  'Buying more RAM...',
+  'Polishing the paper plane...',
+  'Rebasing reality...',
+  'Hunting flaky tests...',
+  'Aligning the merge request chakras...',
+  'Optimizing optimizations...',
+  'Compiling feelings...',
+  'Assembling pixels...',
+  'Sharpening the admin badge...',
+  'Checking the hidden group scope...',
+  'Making Telegram behave...',
+  'Summoning the webhook spirits...',
+  'Dusting off the database indexes...',
+  'Resolving merge conflicts diplomatically...',
+  'Interpreting GitLab hieroglyphics...',
+  'Debugging the inevitable edge case...',
+  'Reheating last nights deployment...',
+  'Rolling for initiative against latency...',
+  'Translating stack traces...',
+  'Asking the bot who broke production...',
+  'Preparing a strongly worded callback query...',
+  'Generating plausible progress...',
+  'Performing advanced button science...',
+  'Double-checking the secret secrets...',
+  'Shuffling repositories into formation...',
+  'Reassuring the load balancer...',
+  'Charging the rubber duck...',
+  'Looking busy for the status page...',
+  'Removing one more legacy workaround...',
+  'Rehydrating dehydrated JSON...',
+  'Inspecting suspiciously round trip times...',
+  'Doing cloud things with tiny paper planes...',
+];
+(function() {
+  const el = document.getElementById('loadingText');
+  if (!el) return;
+  let last = -1;
+  function nextLoadingText() {
+    if (LOADING_TEXTS.length === 1) return LOADING_TEXTS[0];
+    let i = Math.floor(Math.random() * LOADING_TEXTS.length);
+    while (i === last) i = Math.floor(Math.random() * LOADING_TEXTS.length);
+    last = i;
+    return LOADING_TEXTS[i];
+  }
+  el.innerText = nextLoadingText();
+  setInterval(function() {
+    el.innerText = nextLoadingText();
+  }, 2200);
+})();
 let sToken = '';
 let currentContext = {};
 let items = [];
