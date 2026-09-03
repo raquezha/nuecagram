@@ -50,7 +50,7 @@ class TelegramUpdateHandler(
         val myChatMember = update.myChatMember
         if (myChatMember != null) {
             if (myChatMember.chat.type != "private") {
-                val newStatus = myChatMember.newChatMember?.status ?: "administrator"
+                val newStatus = myChatMember.newChatMember?.status
                 if (isTelegramAdmin(newStatus)) {
                     installationRepository.upsertKnownTelegramDestination(
                         chatId = myChatMember.chat.id,

@@ -1512,7 +1512,9 @@ function updateChatNameFromDestination() {
   const selectEl = document.getElementById('inDestination');
   const chatNameEl = document.getElementById('inChatName');
   if (!selectEl || !chatNameEl) return;
-  const selectedText = selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].text : '';
+  const idx = selectEl.selectedIndex;
+  if (idx < 0 || !selectEl.options[idx]) return;
+  const selectedText = selectEl.options[idx].text;
   if (selectedText && selectedText.indexOf('Loading') === -1 && selectedText.indexOf('No Telegram groups') === -1 && selectedText.indexOf('Could not load') === -1) {
     if (!chatNameEl.value || chatNameEl.getAttribute('data-autofilled') === 'true') {
       chatNameEl.value = selectedText;
@@ -1524,8 +1526,10 @@ function updateChatNameFromDestination() {
 async function openAdd() {
   const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
   const selectEl = document.getElementById('inDestination');
+  const groupText = isGroup ? destinationLabel({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId}) : '';
+
   document.getElementById('createDestinationName').innerText = isGroup
-    ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
+    ? groupText
     : 'Target Telegram Destination';
   document.getElementById('createDestinationMeta').innerHTML = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
@@ -1533,7 +1537,7 @@ async function openAdd() {
   document.getElementById('wizErr').innerText = '';
   const inChatName = document.getElementById('inChatName');
   if (inChatName) {
-    inChatName.value = '';
+    inChatName.value = isGroup ? groupText : '';
     inChatName.setAttribute('data-autofilled', 'true');
   }
 
@@ -1550,6 +1554,7 @@ async function openAdd() {
           selectEl.innerHTML = dests.map(function(d) {
             return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
           }).join('');
+          selectEl.selectedIndex = 0;
           updateChatNameFromDestination();
         } else {
           selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
