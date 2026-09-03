@@ -1133,6 +1133,20 @@ private fun webAppShellHtml(basePath: String): String = """
         </div>
       </section>
 
+      <section id="screen-rotate-confirm" class="panel">
+        <button class="link" data-screen="detail">‹ Back to details</button>
+        <h1 id="rotConfirmTitle">Rotate webhook token</h1>
+        <div class="box" style="margin-top:16px;border-color:var(--danger);">
+          <p style="color:var(--danger);font-weight:700;margin-bottom:8px;">⚠️ Warning</p>
+          <p style="margin-bottom:0;">The existing secret token will stop working immediately. You will need to update the secret token in GitLab after rotation.</p>
+        </div>
+        <div id="rotErr" class="helper err"></div>
+        <div class="split" style="margin-top:20px;">
+          <button data-screen="detail">Cancel</button>
+          <button id="btnConfirmRotate" class="danger" style="background:var(--danger);color:#ffffff;box-shadow:none;">Confirm rotate</button>
+        </div>
+      </section>
+
       <section id="screen-delete-confirm" class="panel">
         <button class="link" data-screen="detail">‹ Back to details</button>
         <h1 id="delConfirmTitle">Delete repository</h1>
@@ -1454,7 +1468,7 @@ function renderDetail() {
   document.getElementById('btnTest').addEventListener('click', testDelivery);
   document.getElementById('btnMute').addEventListener('click', toggleMute);
   document.getElementById('btnEdit').addEventListener('click', openEdit);
-  document.getElementById('btnRotate').addEventListener('click', rotateInstall);
+  document.getElementById('btnRotate').addEventListener('click', openRotateConfirm);
   document.getElementById('btnDelete').addEventListener('click', openDeleteConfirm);
 }
 
@@ -1561,27 +1575,35 @@ async function createInstallation() {
   }
 }
 
-function confirmRotate(callback) {
-  const tg = window.Telegram && window.Telegram.WebApp;
-  if (tg && tg.showConfirm) {
-    tg.showConfirm('Rotate webhook token? Old token will stop working immediately.', callback);
-  } else {
-    callback(confirm('Rotate webhook token?\n\nOld token will stop working immediately.'));
-  }
+function openRotateConfirm() {
+  document.getElementById('rotConfirmTitle').innerText = 'Rotate token for ' + (currentItem ? currentItem.repoName : 'repository') + '?';
+  document.getElementById('rotErr').innerText = '';
+  const btn = document.getElementById('btnConfirmRotate');
+  if (btn) btn.disabled = false;
+  showScreen('rotate-confirm');
 }
 
-function rotateInstall() {
-  confirmRotate(async function(ok) {
-    if (!ok) return;
-    try {
-      const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/rotate', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
-      if (!res.ok) { setAction('Could not rotate token.', false); return; }
-      const data = await res.json();
-      showReveal(data.credential, '', 'Webhook token rotated', true);
-    } catch (e) {
-      setAction('Could not rotate token.', false);
+async function confirmRotateInstallation() {
+  if (!currentItem) return;
+  const btn = document.getElementById('btnConfirmRotate');
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/rotate', {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+    });
+    if (!res.ok) {
+      document.getElementById('rotErr').innerText = 'Could not rotate token.';
+      if (btn) btn.disabled = false;
+      return;
     }
-  });
+    const data = await res.json();
+    showReveal(data.credential, '', 'Webhook token rotated', true);
+  } catch (e) {
+    document.getElementById('rotErr').innerText = 'Could not rotate token.';
+    if (btn) btn.disabled = false;
+  }
 }
 
 function openDeleteConfirm() {
@@ -1687,6 +1709,7 @@ function setupHandlers() {
     if (navigator.clipboard) navigator.clipboard.writeText(val);
     copyValue(val, secret);
   });
+  document.getElementById('btnConfirmRotate').addEventListener('click', confirmRotateInstallation);
   document.getElementById('btnConfirmDelete').addEventListener('click', confirmDeleteInstallation);
 }
 

@@ -466,6 +466,24 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun rotateAndDeleteConfirmScreensAreDefinedInHtmlAndJs() = testApplication {
+        configureTestApplication()
+        val html = client.get("/nuecagram/webapp").bodyAsText()
+        val js = client.get("/nuecagram/webapp/app.js").bodyAsText()
+
+        assertThat(html).contains("id=\"screen-rotate-confirm\"")
+        assertThat(html).contains("id=\"screen-delete-confirm\"")
+        assertThat(html).contains("id=\"rotConfirmTitle\"")
+        assertThat(html).contains("id=\"delConfirmTitle\"")
+        assertThat(html).contains("id=\"btnConfirmRotate\"")
+        assertThat(html).contains("id=\"btnConfirmDelete\"")
+        assertThat(js).contains("openRotateConfirm")
+        assertThat(js).contains("confirmRotateInstallation")
+        assertThat(js).contains("openDeleteConfirm")
+        assertThat(js).contains("confirmDeleteInstallation")
+    }
+
+    @Test
     fun nonAdminUserIsRejectedWithForbidden() = testApplication {
         configureTestApplication()
         val groupChatId = -100123456L
