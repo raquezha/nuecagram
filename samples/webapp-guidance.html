@@ -158,5 +158,14 @@
       </section>
     </div>
     <script src="/nuecagram/webapp/app.js"></script>
+    <script>
+      if (typeof initWebApp === 'undefined') {
+        document.getElementById('screen-loading').classList.remove('active');
+        document.getElementById('screen-list').classList.add('active');
+        document.getElementById('listTitle').innerText = 'Repositories';
+        document.getElementById('listSubtitle').innerText = '1 repository configured';
+        document.getElementById('installationsList').innerHTML = '<div class="card"><div class="grow"><div class="row"><div class="title">nuecagram</div><span class="badge badge-active">Active</span></div><div class="sub">GitLab Project #123456 &bull; https://gitlab.com</div><div class="meta">Target: Main Notifications Channel</div></div><div class="chev">›</div></div>';
+      }
+    </script>
   </body>
 </html>
