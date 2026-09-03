@@ -23,7 +23,17 @@ class WebAppBrowserIsolationTest : BaseEventTestHelper() {
         assertThat(response.headers["Content-Type"]).contains("text/html")
         val body = response.bodyAsText()
         assertThat(body).contains("https://telegram.org/js/telegram-web-app.js")
+        assertThat(body).contains("webapp/lottie.min.js")
         assertThat(body).contains("Nuecagram Management")
+        assertThat(body).contains("screen-loading")
+        assertThat(body).contains("loadingText")
+        assertThat(body).contains("lottieContainer")
+
+        val appJsResp = client.get("/nuecagram/webapp/app.js")
+        assertThat(appJsResp.status).isEqualTo(HttpStatusCode.OK)
+        val jsBody = appJsResp.bodyAsText()
+        assertThat(jsBody).contains("webapp/loading.json")
+        assertThat(jsBody).contains("lottie.loadAnimation")
     }
 
     @Test
@@ -73,6 +83,19 @@ class WebAppBrowserIsolationTest : BaseEventTestHelper() {
         val bodyUserAgent = withUserAgent.bodyAsText()
         assertThat(bodyUserAgent).contains("https://telegram.org/js/telegram-web-app.js")
         assertThat(bodyUserAgent).contains("Nuecagram Management")
+    }
+
+    @Test
+    fun loadingAnimationAssetsAreServedFromWebAppResources() = testApplication {
+        configureTestApplication()
+        val jsonResp = client.get("/nuecagram/webapp/loading.json")
+        assertThat(jsonResp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(jsonResp.headers["Content-Type"]).contains("application/json")
+        assertThat(jsonResp.bodyAsText()).contains("Paperplane")
+
+        val jsResp = client.get("/nuecagram/webapp/lottie.min.js")
+        assertThat(jsResp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(jsResp.headers["Content-Type"]).contains("text/javascript")
     }
 
     @Test

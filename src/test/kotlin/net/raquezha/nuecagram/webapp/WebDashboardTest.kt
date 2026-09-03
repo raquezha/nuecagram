@@ -315,6 +315,31 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun identityEndpointHandlesEmojiUnicodeAndLongStringsGracefully() = testApplication {
+        configureTestApplication()
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9998L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+
+        val longName = "A".repeat(300)
+        val emojiName = "🚀 Mobile App 📱 Nüeçagrăm <script>alert(1)</script>"
+
+        val updateResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/identity") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"repoName":"$longName","chatName":"$emojiName"}""")
+        }
+        assertThat(updateResp.status).isEqualTo(HttpStatusCode.OK)
+        val updatedPayload = json.decodeFromString<TestInstallationPayload>(updateResp.bodyAsText())
+        assertThat(updatedPayload.repoName).hasLength(255)
+        assertThat(updatedPayload.chatName).isEqualTo(emojiName)
+    }
+
+    @Test
     fun identityEndpointRejectsBlankAndLegacyRepoNames() = testApplication {
         configureTestApplication()
         val (sessionCookie, csrf) = issueSessionWithNonce(
