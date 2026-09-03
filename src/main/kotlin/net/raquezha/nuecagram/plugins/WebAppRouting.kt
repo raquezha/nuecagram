@@ -368,8 +368,8 @@ private suspend fun ApplicationCall.handleGetDestinations(
 
     val known = installationRepository.knownTelegramDestinations().mapNotNull { dest ->
         val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
-        val defaultTitle = "Chat #${dest.telegramChatId}$topicSuffix"
-        val label = dest.chatTitle?.takeIf(String::isNotBlank) ?: defaultTitle
+        val baseTitle = dest.chatTitle?.takeIf(String::isNotBlank) ?: "Chat #${dest.telegramChatId}"
+        val label = "$baseTitle$topicSuffix"
         val status = runCatching { telegramService.chatMemberStatus(dest.telegramChatId, userId) }.getOrNull()
         if (isTelegramAdmin(status)) {
             DestinationPayload(
