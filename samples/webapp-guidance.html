@@ -159,24 +159,5 @@
       </section>
     </div>
     <script src="/nuecagram/webapp/app.js"></script>
-    <script>
-      if (typeof initWebApp === 'undefined') {
-        const sampleAvatars = [
-          '../src/main/resources/webapp/avatars/01-wildlife-avatar-1-giraffe.png',
-          '../src/main/resources/webapp/avatars/08-wildlife-avatar-3-lion.png',
-          '../src/main/resources/webapp/avatars/16-animal-avatar-2-panda.png',
-          '../src/main/resources/webapp/avatars/23-baby-jungle-avatar-2-giraffe.png',
-          '../src/main/resources/webapp/avatars/33-doodle-cat-avatar-1.png'
-        ];
-        const avatarKey = 'nuecagram-sample-avatar';
-        const avatar = localStorage.getItem(avatarKey) || sampleAvatars[Math.floor(Math.random() * sampleAvatars.length)];
-        localStorage.setItem(avatarKey, avatar);
-        document.getElementById('screen-loading').classList.remove('active');
-        document.getElementById('screen-list').classList.add('active');
-        document.getElementById('listTitle').innerText = 'Repositories';
-        document.getElementById('listSubtitle').innerText = '1 repository configured';
-        document.getElementById('installationsList').innerHTML = '<div class="card"><img class="avatar" src="' + avatar + '"><div class="grow"><div class="row"><div class="title">nuecagram</div><span class="badge badge-active">Active</span></div><div class="sub">GitLab Project #123456 &bull; https://gitlab.com</div><div class="meta">Target: Main Notifications Channel</div></div><div class="chev">›</div></div>';
-      }
-    </script>
   </body>
 </html>

@@ -446,6 +446,22 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun webAppScriptContainsLoadingAndErrorRecoveryGuards() = testApplication {
+        configureTestApplication()
+        val html = client.get("/nuecagram/webapp").bodyAsText()
+        val js = client.get("/nuecagram/webapp/app.js").bodyAsText()
+
+        assertThat(html).contains("#screen-loading { display: none;")
+        assertThat(html).contains("#screen-loading.active { display: flex; }")
+        assertThat(js).contains("if (name !== 'loading' && loadingTimer)")
+        assertThat(js).contains("clearInterval(loadingTimer);")
+        assertThat(js).contains("showScreen('list');")
+        assertThat(js).contains("document.querySelector('#screen-list .top-actions')")
+        assertThat(js).contains("topActions.style.display = 'flex'")
+        assertThat(js).contains("catch (e) {")
+    }
+
+    @Test
     fun nonAdminUserIsRejectedWithForbidden() = testApplication {
         configureTestApplication()
         val groupChatId = -100123456L
