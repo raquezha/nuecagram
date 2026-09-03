@@ -306,18 +306,24 @@ private suspend fun ApplicationCall.handleGetInstallations(
     val items = if (isGroupContext && scopedOnly) {
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
+        val adminChatIds = mutableMapOf<Long, Boolean>()
+        suspend fun isActiveAdmin(chatId: Long): Boolean {
+            val cached = adminChatIds[chatId]
+            if (cached != null) return cached
+            val status = runCatching {
+                telegramService.chatMemberStatus(chatId, session.telegramUserId)
+            }.getOrNull()
+            val isAdmin = isTelegramAdmin(status)
+            adminChatIds[chatId] = isAdmin
+            return isAdmin
+        }
         val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
+            .filter { inst -> isActiveAdmin(inst.telegramChatId) }
         if (recorded.isNotEmpty()) {
             recorded
         } else {
-            val adminChatIds = mutableMapOf<Long, Boolean>()
             installationRepository.listInstallationsForContext(null, null).filter { inst ->
-                adminChatIds.getOrPut(inst.telegramChatId) {
-                    val status = runCatching {
-                        telegramService.chatMemberStatus(inst.telegramChatId, session.telegramUserId)
-                    }.getOrNull()
-                    isTelegramAdmin(status)
-                }
+                isActiveAdmin(inst.telegramChatId)
             }
         }
     }
@@ -354,24 +360,36 @@ private suspend fun ApplicationCall.handleGetDestinations(
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
     val userId = session.telegramUserId
-
-    val installed = installationRepository.installationsForAdmin(userId).map { inst ->
-        val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
-        val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
-        DestinationPayload(
-            id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
-            name = label,
-            telegramChatId = inst.telegramChatId,
-            telegramTopicId = inst.telegramTopicId,
-        )
+    val adminChatIds = mutableMapOf<Long, Boolean>()
+    suspend fun isActiveAdmin(chatId: Long): Boolean {
+        val cached = adminChatIds[chatId]
+        if (cached != null) return cached
+        val status = runCatching {
+            telegramService.chatMemberStatus(chatId, userId)
+        }.getOrNull()
+        val isAdmin = isTelegramAdmin(status)
+        adminChatIds[chatId] = isAdmin
+        return isAdmin
     }
+
+    val installed = installationRepository.installationsForAdmin(userId)
+        .filter { inst -> isActiveAdmin(inst.telegramChatId) }
+        .map { inst ->
+            val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+            val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
+            DestinationPayload(
+                id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
+                name = label,
+                telegramChatId = inst.telegramChatId,
+                telegramTopicId = inst.telegramTopicId,
+            )
+        }
 
     val known = installationRepository.knownTelegramDestinations().mapNotNull { dest ->
         val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
         val baseTitle = dest.chatTitle?.takeIf(String::isNotBlank) ?: "Chat #${dest.telegramChatId}"
         val label = "$baseTitle$topicSuffix"
-        val status = runCatching { telegramService.chatMemberStatus(dest.telegramChatId, userId) }.getOrNull()
-        if (isTelegramAdmin(status)) {
+        if (isActiveAdmin(dest.telegramChatId)) {
             DestinationPayload(
                 id = dest.id,
                 name = label,

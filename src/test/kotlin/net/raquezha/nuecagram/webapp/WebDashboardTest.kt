@@ -61,6 +61,14 @@ private data class TestCreateInstallationResponsePayload(
     val webhookUrl: String,
 )
 
+@Serializable
+private data class TestDestinationPayload(
+    val id: String,
+    val name: String,
+    val telegramChatId: Long,
+    val telegramTopicId: Long? = null,
+)
+
 class WebDashboardTest : BaseEventTestHelper() {
     private val testConfig: ConfigWithSecrets by inject()
     private val mockTelegramService: MockTelegramService
@@ -566,5 +574,51 @@ class WebDashboardTest : BaseEventTestHelper() {
             header("X-CSRF-Token", csrf)
         }
         assertThat(rotateResp.status).isEqualTo(HttpStatusCode.OK)
+    }
+
+    @Test
+    fun demotedAdminDoesNotSeeStaleInstallationsInUnscopedWebAppSession() = testApplication {
+        configureTestApplication()
+        runBlocking { installationRepository.recordInstallationAdmin(installation.id, 9999L) }
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "member")
+
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val setCookies = authResp.headers.getAll("Set-Cookie").orEmpty()
+        val sessionCookie = extractCookie(setCookies, "nuecagram_webapp_session")
+
+        val listResp = client.get("/nuecagram/api/webapp/installations?scope=all") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())
+        assertThat(items).isEmpty()
+    }
+
+    @Test
+    fun demotedAdminDoesNotSeeStaleDestinationsInWebApp() = testApplication {
+        configureTestApplication()
+        runBlocking { installationRepository.recordInstallationAdmin(installation.id, 9999L) }
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "member")
+
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val setCookies = authResp.headers.getAll("Set-Cookie").orEmpty()
+        val sessionCookie = extractCookie(setCookies, "nuecagram_webapp_session")
+
+        val destResp = client.get("/nuecagram/api/webapp/destinations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
+        assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
     }
 }
