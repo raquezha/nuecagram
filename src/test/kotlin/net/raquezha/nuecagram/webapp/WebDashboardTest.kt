@@ -477,10 +477,13 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(html).contains("id=\"delConfirmTitle\"")
         assertThat(html).contains("id=\"btnConfirmRotate\"")
         assertThat(html).contains("id=\"btnConfirmDelete\"")
+        assertThat(html).contains("Make sure both <strong>you</strong>")
+        assertThat(html).contains("and <strong>@NuecagramBot</strong> are <strong>Administrators</strong>")
         assertThat(js).contains("openRotateConfirm")
         assertThat(js).contains("confirmRotateInstallation")
         assertThat(js).contains("openDeleteConfirm")
         assertThat(js).contains("confirmDeleteInstallation")
+        assertThat(js).contains("updateChatNameFromDestination")
     }
 
     @Test

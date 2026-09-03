@@ -1121,7 +1121,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <div class="field" id="fieldDestination">
           <label>Target Telegram destination</label>
           <select id="inDestination"><option value="">Loading destinations...</option></select>
-          <span style="font-size: 12px; font-style: italic; opacity: 0.85; display: block; margin-top: 6px; color: var(--hint);">Don't see your group? Add <strong>@NuecagramBot</strong> to the group, promote it to <strong>Administrator</strong>, and send a message there if it doesn't appear right away.</span>
+          <span style="font-size: 12px; font-style: italic; opacity: 0.85; display: block; margin-top: 6px; color: var(--hint);">Don't see your group? Make sure both <strong>you</strong> and <strong>@NuecagramBot</strong> are <strong>Administrators</strong> in the group (send a message there if it doesn't appear right away).</span>
         </div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
@@ -1524,6 +1524,19 @@ async function saveIdentity() {
   }
 }
 
+function updateChatNameFromDestination() {
+  const selectEl = document.getElementById('inDestination');
+  const chatNameEl = document.getElementById('inChatName');
+  if (!selectEl || !chatNameEl) return;
+  const selectedText = selectEl.options[selectEl.selectedIndex] ? selectEl.options[selectEl.selectedIndex].text : '';
+  if (selectedText && selectedText.indexOf('Loading') === -1 && selectedText.indexOf('No Telegram groups') === -1 && selectedText.indexOf('Could not load') === -1) {
+    if (!chatNameEl.value || chatNameEl.getAttribute('data-autofilled') === 'true') {
+      chatNameEl.value = selectedText;
+      chatNameEl.setAttribute('data-autofilled', 'true');
+    }
+  }
+}
+
 async function openAdd() {
   const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
   const selectEl = document.getElementById('inDestination');
@@ -1534,6 +1547,11 @@ async function openAdd() {
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
     : 'Select a destination group or topic<br>below to connect your GitLab project.';
   document.getElementById('wizErr').innerText = '';
+  const inChatName = document.getElementById('inChatName');
+  if (inChatName) {
+    inChatName.value = '';
+    inChatName.setAttribute('data-autofilled', 'true');
+  }
 
   if (isGroup) {
     document.getElementById('fieldDestination').style.display = 'none';
@@ -1548,6 +1566,7 @@ async function openAdd() {
           selectEl.innerHTML = dests.map(function(d) {
             return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
           }).join('');
+          updateChatNameFromDestination();
         } else {
           selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
         }
@@ -1729,6 +1748,13 @@ function setupHandlers() {
     if (navigator.clipboard) navigator.clipboard.writeText(val);
     copyValue(val, secret);
   });
+  document.getElementById('inDestination').addEventListener('change', updateChatNameFromDestination);
+  const inChatNameEl = document.getElementById('inChatName');
+  if (inChatNameEl) {
+    inChatNameEl.addEventListener('input', function() {
+      this.removeAttribute('data-autofilled');
+    });
+  }
   document.getElementById('btnConfirmRotate').addEventListener('click', confirmRotateInstallation);
   document.getElementById('btnConfirmDelete').addEventListener('click', confirmDeleteInstallation);
 }
