@@ -1347,17 +1347,22 @@ async function initWebApp() {
   }
 }
 
-async function loadInstallations() {
-  const el = document.getElementById('installationsList');
-  el.innerHTML = '';
+async function loadInstallations(silent) {
+  if (!silent) {
+    const el = document.getElementById('installationsList');
+    if (el) el.innerHTML = '';
+  }
   try {
     const qs = listMode === 'all' ? '?scope=all' : '';
     const res = await fetch('${basePath}/api/webapp/installations' + qs, { headers: getAuthHeaders() });
-    if (!res.ok) { renderError(res.status === 403 ? 'Admin access required' : 'Nuecagram needs admin access', res.status === 403 ? 'Only Telegram group admins can manage repositories here.' : 'Give the bot admin access in this group to manage repositories.'); return; }
+    if (!res.ok) {
+      if (!silent) renderError(res.status === 403 ? 'Admin access required' : 'Nuecagram needs admin access', res.status === 403 ? 'Only Telegram group admins can manage repositories here.' : 'Give the bot admin access in this group to manage repositories.');
+      return;
+    }
     items = await res.json();
     renderList();
   } catch (e) {
-    renderError('Connection error', 'Could not load repositories. Check your connection and try again.');
+    if (!silent) renderError('Connection error', 'Could not load repositories. Check your connection and try again.');
   }
 }
 
@@ -1414,19 +1419,28 @@ function renderError(title, body) {
 }
 
 async function openDetail(id) {
+  const existing = items.find(function(x) { return x.id === id; });
+  if (existing) {
+    currentItem = existing;
+    renderDetail();
+    showScreen('detail');
+  }
   try {
     const res = await fetch('${basePath}/api/webapp/installations/' + id, { headers: getAuthHeaders() });
     if (!res.ok) {
-      const title = res.status === 404 ? 'Repository not found' : (res.status === 401 || res.status === 403 ? 'Access denied' : 'Could not open repository');
-      const body = res.status === 404 ? 'This repository is no longer available or you no longer have access.' : 'Try again in a moment or return to the list.';
-      renderError(title, body);
+      if (!existing) {
+        const title = res.status === 404 ? 'Repository not found' : (res.status === 401 || res.status === 403 ? 'Access denied' : 'Could not open repository');
+        const body = res.status === 404 ? 'This repository is no longer available or you no longer have access.' : 'Try again in a moment or return to the list.';
+        renderError(title, body);
+      }
       return;
     }
     currentItem = await res.json();
+    items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
     renderDetail();
-    showScreen('detail');
+    if (!existing) showScreen('detail');
   } catch (e) {
-    renderError('Connection error', 'Could not load repository details. Check your connection and try again.');
+    if (!existing) renderError('Connection error', 'Could not load repository details. Check your connection and try again.');
   }
 }
 
@@ -1650,10 +1664,10 @@ function setupHandlers() {
   document.querySelectorAll('[data-screen]').forEach(function(b) {
     b.addEventListener('click', function() {
       const targetScreen = b.getAttribute('data-screen');
+      showScreen(targetScreen);
       if (targetScreen === 'list') {
-        loadInstallations();
-      } else {
-        showScreen(targetScreen);
+        renderList();
+        loadInstallations(true);
       }
     });
   });
