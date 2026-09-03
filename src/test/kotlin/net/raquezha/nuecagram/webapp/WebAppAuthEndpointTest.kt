@@ -219,6 +219,12 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
             header("X-Session-Token", token2)
         }
         assertThat(step4Resp.status).isEqualTo(HttpStatusCode.OK)
+
+        // Step 5: Prior session token is invalidated after re-auth
+        val step5Resp = client.get("/nuecagram/api/webapp/installations") {
+            header("X-Session-Token", token1)
+        }
+        assertThat(step5Resp.status).isEqualTo(HttpStatusCode.Unauthorized)
     }
 
     @Test
@@ -247,5 +253,7 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         val js = response.bodyAsText()
         assertThat(js).contains("function getAuthHeaders(")
         assertThat(js).contains("headers: getAuthHeaders({ 'Content-Type': 'application/json' })")
+        assertThat(js).contains("Connection error")
+        assertThat(js).contains("Repository not found")
     }
 }
