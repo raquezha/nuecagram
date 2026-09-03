@@ -980,7 +980,8 @@ private fun webAppShellHtml(basePath: String): String = """
       .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
       .panel { display: none; }
       .panel.active { display: block; }
-      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      #screen-loading { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      #screen-loading.active { display: flex; }
       .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
       .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
       .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
@@ -1142,6 +1143,7 @@ const LOADING_TEXTS = [
   'Inspecting suspiciously round trip times...',
   'Doing cloud things with tiny paper planes...',
 ];
+let loadingTimer = null;
 (function() {
   const el = document.getElementById('loadingText');
   if (!el) return;
@@ -1154,7 +1156,7 @@ const LOADING_TEXTS = [
     return LOADING_TEXTS[i];
   }
   el.innerText = nextLoadingText();
-  setInterval(function() {
+  loadingTimer = setInterval(function() {
     el.innerText = nextLoadingText();
   }, 2200);
 })();
@@ -1222,6 +1224,8 @@ function repoMeta(item) {
   return host + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '') + ' · id ' + item.id.substring(0, 8);
 }
 
+const fallbackAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='12' fill='%23eef0f3'/%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' fill='%2394a3b8'/%3E%3C/svg%3E";
+
 function avatarFor(item, index) {
   let n = 0;
   for (let i = 0; i < item.id.length; i++) n = (n + item.id.charCodeAt(i)) % avatars.length;
@@ -1229,8 +1233,13 @@ function avatarFor(item, index) {
 }
 
 function showScreen(name) {
+  if (name !== 'loading' && loadingTimer) {
+    clearInterval(loadingTimer);
+    loadingTimer = null;
+  }
   document.querySelectorAll('.panel').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById('screen-' + name).classList.add('active');
+  const target = document.getElementById('screen-' + name);
+  if (target) target.classList.add('active');
 }
 
 function extractStartParam() {
@@ -1308,7 +1317,7 @@ function renderList() {
   items.forEach(function(item, index) {
     const card = document.createElement('button');
     card.className = 'card' + (item.muted ? ' muted' : '');
-    card.innerHTML = '<img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, index) + '">' +
+    card.innerHTML = '<img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, index) + '" onerror="this.onerror=null;this.src=\'' + fallbackAvatar + '\'">' +
       '<div class="grow"><div class="row"><div class="title">' + escapeHtml(item.repoName) + '</div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span><span class="chev">›</span></div>' +
       '<div class="sub">' + escapeHtml(destinationLabel(item)) + '</div><div class="meta">' + escapeHtml(repoMeta(item)) + '</div></div>';
     card.addEventListener('click', function() { openDetail(item.id); });
@@ -1317,6 +1326,7 @@ function renderList() {
 }
 
 function renderError(title, body) {
+  showScreen('list');
   document.getElementById('listTitle').innerText = title;
   document.getElementById('listSubtitle').innerText = body;
   const topActions = document.querySelector('.top-actions');
@@ -1352,7 +1362,7 @@ async function openDetail(id) {
 
 function renderDetail() {
   const item = currentItem;
-  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
+  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '" onerror="this.onerror=null;this.src=\'' + fallbackAvatar + '\'"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
     '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
