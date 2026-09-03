@@ -365,16 +365,29 @@ private suspend fun ApplicationCall.handleGetDestinations(
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
     val userId = session.telegramUserId
+    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull()
     val adminChatIds = mutableMapOf<Long, Boolean>()
     suspend fun isActiveAdmin(chatId: Long): Boolean {
         val cached = adminChatIds[chatId]
         if (cached != null) return cached
-        val status = runCatching {
+        val userStatus = runCatching {
             telegramService.chatMemberStatus(chatId, userId)
         }.getOrNull()
-        val isAdmin = isTelegramAdmin(status)
-        adminChatIds[chatId] = isAdmin
-        return isAdmin
+        val userIsAdmin = isTelegramAdmin(userStatus)
+        if (!userIsAdmin) {
+            adminChatIds[chatId] = false
+            return false
+        }
+        val botIsAdmin = if (botUserId != null) {
+            val botStatus = runCatching {
+                telegramService.chatMemberStatus(chatId, botUserId)
+            }.getOrNull()
+            isTelegramAdmin(botStatus)
+        } else {
+            true
+        }
+        adminChatIds[chatId] = botIsAdmin
+        return botIsAdmin
     }
 
     val installed = installationRepository.installationsForAdmin(userId)
@@ -616,8 +629,11 @@ private suspend fun isTargetAdmin(
     telegramService: TelegramService,
 ): Boolean {
     if (session.telegramChatId != null && session.telegramChatId < 0) return true
-    val status = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
-    return isTelegramAdmin(status)
+    val userStatus = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
+    if (!isTelegramAdmin(userStatus)) return false
+    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
+    val botStatus = runCatching { telegramService.chatMemberStatus(targetChatId, botUserId) }.getOrNull()
+    return isTelegramAdmin(botStatus)
 }
 
 private suspend fun ApplicationCall.processCreateInstallation(
@@ -1092,7 +1108,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <button class="link" data-screen="detail">‹ Back to details</button>
         <h1>Edit names</h1>
         <div class="field"><label>Repository name</label><input id="editRepoName" autocomplete="off"></div>
-        <div class="field"><label>Notification label</label><input id="editChatName" autocomplete="off"></div>
+        <div class="field"><label>Telegram Group Chat/Topic Label</label><input id="editChatName" autocomplete="off"></div>
         <div id="editErr" class="helper err"></div>
         <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
       </section>
@@ -1102,11 +1118,15 @@ private fun webAppShellHtml(basePath: String): String = """
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
         <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
-        <div class="field" id="fieldDestination"><label>Target Telegram destination</label><select id="inDestination"><option value="">Loading destinations...</option></select></div>
+        <div class="field" id="fieldDestination">
+          <label>Target Telegram destination</label>
+          <select id="inDestination"><option value="">Loading destinations...</option></select>
+          <span style="font-size: 12px; font-style: italic; opacity: 0.85; display: block; margin-top: 6px; color: var(--hint);">Don't see your group? Add <strong>@NuecagramBot</strong> to the group, promote it to <strong>Administrator</strong>, and send a message there if it doesn't appear right away.</span>
+        </div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
-        <div class="field"><label>Notification label</label><input id="inChatName" placeholder="Android Team / Notifications"></div>
+        <div class="field"><label>Telegram Group Chat/Topic Label</label><input id="inChatName" placeholder="Android Team / Notifications"></div>
         <div id="wizErr" class="helper err"></div>
         <div class="split"><button data-screen="list">Cancel</button><button id="btnCreate" class="primary">Create</button></div>
       </section>

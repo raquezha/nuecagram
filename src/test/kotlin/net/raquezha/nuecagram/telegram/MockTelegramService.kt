@@ -78,7 +78,7 @@ class MockTelegramService : TelegramService {
         userId: Long,
     ): String? {
         check(!failChatMemberLookup) { "chat member lookup failed" }
-        return memberStatuses[chatId to userId]
+        return memberStatuses[chatId to userId] ?: if (userId == 10001L) "administrator" else null
     }
 
     override suspend fun answerCallbackQuery(

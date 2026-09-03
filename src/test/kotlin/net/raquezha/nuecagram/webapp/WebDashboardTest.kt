@@ -688,6 +688,31 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun demotedBotDoesNotSeeDestinationsInWebApp() = testApplication {
+        configureTestApplication()
+        runBlocking { installationRepository.recordInstallationAdmin(installation.id, 9999L) }
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        // Demote the bot itself in the group chat (bot ID is 10001L)
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 10001L, "member")
+
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val setCookies = authResp.headers.getAll("Set-Cookie").orEmpty()
+        val sessionCookie = extractCookie(setCookies, "nuecagram_webapp_session")
+
+        val destResp = client.get("/nuecagram/api/webapp/destinations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
+        assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
+    }
+
+    @Test
     fun deleteEndpointSoftDeletesInstallationAndEnforcesAuthzAnd410OnWebhook() = testApplication {
         configureTestApplication()
         mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
