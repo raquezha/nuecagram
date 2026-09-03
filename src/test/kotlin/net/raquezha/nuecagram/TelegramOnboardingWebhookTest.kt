@@ -56,6 +56,9 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
                 },
                 "from": {
                   "id": 65
+                },
+                "new_chat_member": {
+                  "status": "administrator"
                 }
               }
             }

@@ -477,10 +477,13 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(html).contains("id=\"delConfirmTitle\"")
         assertThat(html).contains("id=\"btnConfirmRotate\"")
         assertThat(html).contains("id=\"btnConfirmDelete\"")
+        assertThat(html).contains("Make sure both <strong>you</strong>")
+        assertThat(html).contains("and <strong>@NuecagramBot</strong> are <strong>Administrators</strong>")
         assertThat(js).contains("openRotateConfirm")
         assertThat(js).contains("confirmRotateInstallation")
         assertThat(js).contains("openDeleteConfirm")
         assertThat(js).contains("confirmDeleteInstallation")
+        assertThat(js).contains("updateChatNameFromDestination")
     }
 
     @Test
@@ -685,6 +688,45 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
         val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
         assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
+    }
+
+    @Test
+    fun demotedBotDoesNotSeeDestinationsInWebApp() = testApplication {
+        configureTestApplication()
+        runBlocking { installationRepository.recordInstallationAdmin(installation.id, 9999L) }
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        // Demote the bot itself in the group chat (bot ID is 10001L)
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 10001L, "member")
+
+        val botToken = testConfig.botApi
+        val initData = buildTestInitData(botToken, userId = 9999L)
+        val authResp = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val setCookies = authResp.headers.getAll("Set-Cookie").orEmpty()
+        val sessionCookie = extractCookie(setCookies, "nuecagram_webapp_session")
+
+        val destResp = client.get("/nuecagram/api/webapp/destinations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
+        val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
+        assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
+    }
+
+    @Test
+    fun groupContextRejectsDemotedBotSession() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 10001L, "member")
+
+        val (sessionCookie, _) = issueSessionWithNonce(client, userId = 9999L, chatId = installation.telegramChatId)
+
+        val listResp = client.get("/nuecagram/api/webapp/installations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.Forbidden)
     }
 
     @Test

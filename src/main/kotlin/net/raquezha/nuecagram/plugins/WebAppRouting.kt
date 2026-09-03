@@ -312,16 +312,12 @@ private suspend fun ApplicationCall.handleGetInstallations(
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
-        suspend fun isActiveAdmin(chatId: Long): Boolean {
-            val cached = adminChatIds[chatId]
-            if (cached != null) return cached
-            val status = runCatching {
-                telegramService.chatMemberStatus(chatId, session.telegramUserId)
-            }.getOrNull()
-            val isAdmin = isTelegramAdmin(status)
-            adminChatIds[chatId] = isAdmin
-            return isAdmin
-        }
+        suspend fun isActiveAdmin(chatId: Long): Boolean =
+            adminChatIds.getOrPut(chatId) {
+                runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }
+                    .map(::isTelegramAdmin)
+                    .getOrDefault(false)
+            }
         val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
             .filter { inst -> isActiveAdmin(inst.telegramChatId) }
         if (recorded.isNotEmpty()) {
@@ -365,17 +361,18 @@ private suspend fun ApplicationCall.handleGetDestinations(
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
     val userId = session.telegramUserId
+    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull()
     val adminChatIds = mutableMapOf<Long, Boolean>()
-    suspend fun isActiveAdmin(chatId: Long): Boolean {
-        val cached = adminChatIds[chatId]
-        if (cached != null) return cached
-        val status = runCatching {
-            telegramService.chatMemberStatus(chatId, userId)
-        }.getOrNull()
-        val isAdmin = isTelegramAdmin(status)
-        adminChatIds[chatId] = isAdmin
-        return isAdmin
-    }
+    suspend fun isActiveAdmin(chatId: Long): Boolean =
+        adminChatIds.getOrPut(chatId) {
+            val userIsAdmin = runCatching { telegramService.chatMemberStatus(chatId, userId) }
+                .map(::isTelegramAdmin)
+                .getOrDefault(false)
+
+            userIsAdmin && (botUserId == null || runCatching { telegramService.chatMemberStatus(chatId, botUserId) }
+                .map(::isTelegramAdmin)
+                .getOrDefault(false))
+        }
 
     val installed = installationRepository.installationsForAdmin(userId)
         .filter { inst -> isActiveAdmin(inst.telegramChatId) }
@@ -615,9 +612,11 @@ private suspend fun isTargetAdmin(
     targetChatId: Long,
     telegramService: TelegramService,
 ): Boolean {
-    if (session.telegramChatId != null && session.telegramChatId < 0) return true
-    val status = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
-    return isTelegramAdmin(status)
+    val userStatus = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
+    if (!isTelegramAdmin(userStatus)) return false
+    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
+    val botStatus = runCatching { telegramService.chatMemberStatus(targetChatId, botUserId) }.getOrNull()
+    return isTelegramAdmin(botStatus)
 }
 
 private suspend fun ApplicationCall.processCreateInstallation(
@@ -840,6 +839,12 @@ private suspend fun ApplicationCall.verifyAdminStatus(
     if (chatId > 0) return true
     val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
     if (!isTelegramAdmin(status)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
+        return false
+    }
+    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
+    val botStatus = runCatching { telegramService.chatMemberStatus(chatId, botUserId) }.getOrNull()
+    if (!isTelegramAdmin(botStatus)) {
         respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
         return false
     }
@@ -1092,7 +1097,7 @@ private fun webAppShellHtml(basePath: String): String = """
         <button class="link" data-screen="detail">‹ Back to details</button>
         <h1>Edit names</h1>
         <div class="field"><label>Repository name</label><input id="editRepoName" autocomplete="off"></div>
-        <div class="field"><label>Notification label</label><input id="editChatName" autocomplete="off"></div>
+        <div class="field"><label>Telegram Group Chat/Topic Label</label><input id="editChatName" autocomplete="off"></div>
         <div id="editErr" class="helper err"></div>
         <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
       </section>
@@ -1102,11 +1107,15 @@ private fun webAppShellHtml(basePath: String): String = """
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
         <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
-        <div class="field" id="fieldDestination"><label>Target Telegram destination</label><select id="inDestination"><option value="">Loading destinations...</option></select></div>
+        <div class="field" id="fieldDestination">
+          <label>Target Telegram destination</label>
+          <select id="inDestination"><option value="">Loading destinations...</option></select>
+          <span style="font-size: 12px; font-style: italic; opacity: 0.85; display: block; margin-top: 6px; color: var(--hint);">Don't see your group? Make sure both <strong>you</strong> and <strong>@NuecagramBot</strong> are <strong>Administrators</strong> in the group (send a message there if it doesn't appear right away).</span>
+        </div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
         <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
-        <div class="field"><label>Notification label</label><input id="inChatName" placeholder="Android Team / Notifications"></div>
+        <div class="field"><label>Telegram Group Chat/Topic Label</label><input id="inChatName" placeholder="Android Team / Notifications"></div>
         <div id="wizErr" class="helper err"></div>
         <div class="split"><button data-screen="list">Cancel</button><button id="btnCreate" class="primary">Create</button></div>
       </section>
@@ -1504,16 +1513,38 @@ async function saveIdentity() {
   }
 }
 
+function updateChatNameFromDestination() {
+  const selectEl = document.getElementById('inDestination');
+  const chatNameEl = document.getElementById('inChatName');
+  if (!selectEl || !chatNameEl) return;
+  const idx = selectEl.selectedIndex;
+  if (idx < 0 || !selectEl.options[idx]) return;
+  const selectedText = selectEl.options[idx].text;
+  if (selectedText && selectedText.indexOf('Loading') === -1 && selectedText.indexOf('No Telegram groups') === -1 && selectedText.indexOf('Could not load') === -1) {
+    if (!chatNameEl.value || chatNameEl.getAttribute('data-autofilled') === 'true') {
+      chatNameEl.value = selectedText;
+      chatNameEl.setAttribute('data-autofilled', 'true');
+    }
+  }
+}
+
 async function openAdd() {
   const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
   const selectEl = document.getElementById('inDestination');
+  const groupText = isGroup ? destinationLabel({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId}) : '';
+
   document.getElementById('createDestinationName').innerText = isGroup
-    ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
+    ? groupText
     : 'Target Telegram Destination';
   document.getElementById('createDestinationMeta').innerHTML = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
     : 'Select a destination group or topic<br>below to connect your GitLab project.';
   document.getElementById('wizErr').innerText = '';
+  const inChatName = document.getElementById('inChatName');
+  if (inChatName) {
+    inChatName.value = isGroup ? groupText : '';
+    inChatName.setAttribute('data-autofilled', 'true');
+  }
 
   if (isGroup) {
     document.getElementById('fieldDestination').style.display = 'none';
@@ -1528,6 +1559,8 @@ async function openAdd() {
           selectEl.innerHTML = dests.map(function(d) {
             return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
           }).join('');
+          selectEl.selectedIndex = 0;
+          updateChatNameFromDestination();
         } else {
           selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
         }
@@ -1709,6 +1742,13 @@ function setupHandlers() {
     if (navigator.clipboard) navigator.clipboard.writeText(val);
     copyValue(val, secret);
   });
+  document.getElementById('inDestination').addEventListener('change', updateChatNameFromDestination);
+  const inChatNameEl = document.getElementById('inChatName');
+  if (inChatNameEl) {
+    inChatNameEl.addEventListener('input', function() {
+      this.removeAttribute('data-autofilled');
+    });
+  }
   document.getElementById('btnConfirmRotate').addEventListener('click', confirmRotateInstallation);
   document.getElementById('btnConfirmDelete').addEventListener('click', confirmDeleteInstallation);
 }

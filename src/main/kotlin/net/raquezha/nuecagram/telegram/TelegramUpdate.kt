@@ -17,6 +17,13 @@ data class TelegramUpdate(
     data class ChatMemberUpdated(
         val chat: Chat,
         val from: User? = null,
+        @SerialName("new_chat_member")
+        val newChatMember: ChatMember? = null,
+    )
+
+    @Serializable
+    data class ChatMember(
+        val status: String? = null,
     )
 
     @Serializable
