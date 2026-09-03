@@ -21,15 +21,19 @@ class WebAppBrowserIsolationTest : BaseEventTestHelper() {
         val response = client.get("/nuecagram/webapp")
         assertThat(response.status).isEqualTo(HttpStatusCode.OK)
         assertThat(response.headers["Content-Type"]).contains("text/html")
-        assertThat(response.headers["Content-Security-Policy"]).contains("https://unpkg.com")
         val body = response.bodyAsText()
         assertThat(body).contains("https://telegram.org/js/telegram-web-app.js")
-        assertThat(body).contains("https://unpkg.com/@lottiefiles/lottie-player")
+        assertThat(body).contains("webapp/lottie.min.js")
         assertThat(body).contains("Nuecagram Management")
         assertThat(body).contains("screen-loading")
         assertThat(body).contains("loadingText")
-        assertThat(body).contains("lottie-player")
-        assertThat(body).contains("/nuecagram/webapp/loading.json")
+        assertThat(body).contains("lottieContainer")
+
+        val appJsResp = client.get("/nuecagram/webapp/app.js")
+        assertThat(appJsResp.status).isEqualTo(HttpStatusCode.OK)
+        val jsBody = appJsResp.bodyAsText()
+        assertThat(jsBody).contains("webapp/loading.json")
+        assertThat(jsBody).contains("lottie.loadAnimation")
     }
 
     @Test
@@ -82,12 +86,16 @@ class WebAppBrowserIsolationTest : BaseEventTestHelper() {
     }
 
     @Test
-    fun loadingAnimationJsonIsServedFromWebAppAssets() = testApplication {
+    fun loadingAnimationAssetsAreServedFromWebAppResources() = testApplication {
         configureTestApplication()
-        val response = client.get("/nuecagram/webapp/loading.json")
-        assertThat(response.status).isEqualTo(HttpStatusCode.OK)
-        assertThat(response.headers["Content-Type"]).contains("application/json")
-        assertThat(response.bodyAsText()).contains("Paperplane")
+        val jsonResp = client.get("/nuecagram/webapp/loading.json")
+        assertThat(jsonResp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(jsonResp.headers["Content-Type"]).contains("application/json")
+        assertThat(jsonResp.bodyAsText()).contains("Paperplane")
+
+        val jsResp = client.get("/nuecagram/webapp/lottie.min.js")
+        assertThat(jsResp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(jsResp.headers["Content-Type"]).contains("text/javascript")
     }
 
     @Test

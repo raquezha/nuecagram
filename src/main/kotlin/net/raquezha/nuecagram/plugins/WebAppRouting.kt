@@ -147,6 +147,8 @@ fun Route.webAppRouting(basePath: String) {
 
     get("$basePath/webapp/loading.json") { call.handleWebAppLoadingJson() }
 
+    get("$basePath/webapp/lottie.min.js") { call.handleWebAppLottieJs() }
+
     post("$basePath/api/webapp/auth") {
         call.handleWebAppAuth(installationRepository, config, json, basePath)
     }
@@ -854,6 +856,17 @@ private suspend fun ApplicationCall.handleWebAppLoadingJson() {
     }
 }
 
+private suspend fun ApplicationCall.handleWebAppLottieJs() {
+    val bytes = Thread.currentThread().contextClassLoader
+        .getResourceAsStream("webapp/lottie.min.js")?.use { it.readBytes() }
+    if (bytes == null) {
+        respond(HttpStatusCode.NotFound)
+    } else {
+        appendWebAppSecurityHeaders()
+        respondBytes(bytes, ContentType.Text.JavaScript, HttpStatusCode.OK)
+    }
+}
+
 internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.append("Pragma", "no-cache")
@@ -861,7 +874,7 @@ internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("X-Content-Type-Options", "nosniff")
     response.headers.append(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self' https://telegram.org https://unpkg.com; " +
+        "default-src 'self'; script-src 'self' https://telegram.org; " +
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; " +
             "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org https://telegram.org;",
@@ -897,7 +910,7 @@ private fun webAppShellHtml(basePath: String): String = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Nuecagram Management</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://unpkg.com/@lottiefiles/lottie-player@2/dist/lottie-player.js"></script>
+    <script src="${basePath}/webapp/lottie.min.js"></script>
     <style>
       :root {
         --bg-color: var(--tg-theme-bg-color, #f4f5f8);
@@ -950,7 +963,8 @@ private fun webAppShellHtml(basePath: String): String = """
       .panel { display: none; }
       .panel.active { display: block; }
       #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
-      .loading-animation { width: 220px; height: 165px; }
+      .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
+      .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
       .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
@@ -983,7 +997,7 @@ private fun webAppShellHtml(basePath: String): String = """
   <body>
     <div class="container">
       <section id="screen-loading" class="panel active">
-        <div class="loading-animation"><lottie-player src="${basePath}/webapp/loading.json" background="transparent" speed="1" loop autoplay></lottie-player></div>
+        <div class="loading-animation" id="lottieContainer"></div>
         <span class="spinner-label" id="loadingText"></span>
       </section>
 
@@ -1125,6 +1139,19 @@ const LOADING_TEXTS = [
   setInterval(function() {
     el.innerText = nextLoadingText();
   }, 2200);
+})();
+(function initLottie() {
+  const container = document.getElementById('lottieContainer');
+  if (!container || typeof lottie === 'undefined') return;
+  try {
+    lottie.loadAnimation({
+      container: container,
+      renderer: 'svg',
+      loop: true,
+      autoplay: true,
+      path: '${basePath}/webapp/loading.json'
+    });
+  } catch (e) {}
 })();
 let sToken = '';
 let currentContext = {};
