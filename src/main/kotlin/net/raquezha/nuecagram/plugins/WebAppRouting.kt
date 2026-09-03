@@ -11,6 +11,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.time.Instant
@@ -183,6 +184,10 @@ fun Route.webAppRouting(basePath: String) {
 
     post("$basePath/api/webapp/installations/{id}/rotate") {
         call.handleRotateInstallation(installationRepository, telegramService, config, basePath)
+    }
+
+    delete("$basePath/api/webapp/installations/{id}") {
+        call.handleDeleteInstallation(installationRepository, telegramService)
     }
 }
 
@@ -717,6 +722,53 @@ private suspend fun ApplicationCall.handleRotateInstallation(
     }
 }
 
+private suspend fun ApplicationCall.handleDeleteInstallation(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+) {
+    val session = authenticateWebAppSession(installationRepository) ?: return
+    if (!verifyAdminStatus(session, telegramService)) return
+    if (!verifyCsrfHeader(installationRepository, session)) return
+
+    val dmId = resolveDmId(session, installationRepository)
+    if (dmId == null) {
+        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
+        return
+    }
+
+    val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+    if (idParam == null) {
+        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+        return
+    }
+
+    val item = installationRepository.installationAdminContext(idParam)
+    if (item == null || !canAccess(session, item, telegramService)) {
+        respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+        return
+    }
+
+    val deleted = installationRepository.softDeleteInstallation(item.id)
+    if (!deleted) {
+        respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+        return
+    }
+
+    installationRepository.writeAuditEvent(
+        installationId = item.id,
+        actorType = "webapp_session",
+        actorId = session.telegramUserId.toString(),
+        action = "webapp_delete",
+        metadataPatch = AuditMetadataPatch(
+            actorUsername = session.username,
+            actorFirstName = session.firstName,
+        ),
+    )
+
+    appendWebAppSecurityHeaders()
+    respond(HttpStatusCode.NoContent)
+}
+
 private suspend fun ApplicationCall.processRotateInstallation(
     installationRepository: InstallationRepository,
     telegramService: TelegramService,
@@ -1080,6 +1132,20 @@ private fun webAppShellHtml(basePath: String): String = """
           <button id="btnRevDone" class="primary" style="width:100%;">Done</button>
         </div>
       </section>
+
+      <section id="screen-delete-confirm" class="panel">
+        <button class="link" data-screen="detail">‹ Back to details</button>
+        <h1 id="delConfirmTitle">Delete repository</h1>
+        <div class="box" style="margin-top:16px;border-color:var(--danger);">
+          <p style="color:var(--danger);font-weight:700;margin-bottom:8px;">⚠️ Warning</p>
+          <p style="margin-bottom:0;">This will permanently stop all GitLab notifications to this group. Remove the webhook from GitLab first to avoid ongoing delivery failures.</p>
+        </div>
+        <div id="delErr" class="helper err"></div>
+        <div class="split" style="margin-top:20px;">
+          <button data-screen="detail">Cancel</button>
+          <button id="btnConfirmDelete" class="danger" style="background:var(--danger);color:#ffffff;box-shadow:none;">Confirm delete</button>
+        </div>
+      </section>
     </div>
     <script src="${basePath}/webapp/app.js"></script>
   </body>
@@ -1370,11 +1436,12 @@ function renderDetail() {
     '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
-    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><button id="btnRotate" class="danger">Rotate webhook token ›</button></div>';
+    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><div style="display:flex;flex-direction:column;gap:10px;"><button id="btnRotate" class="danger">Rotate webhook token ›</button><button id="btnDelete" class="danger">Delete repository ›</button></div></div>';
   document.getElementById('btnTest').addEventListener('click', testDelivery);
   document.getElementById('btnMute').addEventListener('click', toggleMute);
   document.getElementById('btnEdit').addEventListener('click', openEdit);
   document.getElementById('btnRotate').addEventListener('click', rotateInstall);
+  document.getElementById('btnDelete').addEventListener('click', openDeleteConfirm);
 }
 
 function setAction(text, ok) {
@@ -1503,6 +1570,39 @@ function rotateInstall() {
   });
 }
 
+function openDeleteConfirm() {
+  document.getElementById('delConfirmTitle').innerText = 'Delete ' + (currentItem ? currentItem.repoName : 'repository') + '?';
+  document.getElementById('delErr').innerText = '';
+  const btn = document.getElementById('btnConfirmDelete');
+  if (btn) btn.disabled = false;
+  showScreen('delete-confirm');
+}
+
+async function confirmDeleteInstallation() {
+  if (!currentItem) return;
+  const btn = document.getElementById('btnConfirmDelete');
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id, {
+      method: 'DELETE',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+    });
+    if (!res.ok) {
+      document.getElementById('delErr').innerText = 'Could not delete repository.';
+      if (btn) btn.disabled = false;
+      return;
+    }
+    items = items.filter(function(x) { return x.id !== currentItem.id; });
+    currentItem = null;
+    showScreen('list');
+    await loadInstallations();
+  } catch (e) {
+    document.getElementById('delErr').innerText = 'Could not delete repository.';
+    if (btn) btn.disabled = false;
+  }
+}
+
 function showReveal(token, url, title, isRotate) {
   document.getElementById('revTitle').innerText = title;
   const sub = document.getElementById('revSubtitle');
@@ -1547,7 +1647,16 @@ async function testDelivery() {
 }
 
 function setupHandlers() {
-  document.querySelectorAll('[data-screen]').forEach(function(b) { b.addEventListener('click', function() { showScreen(b.getAttribute('data-screen')); }); });
+  document.querySelectorAll('[data-screen]').forEach(function(b) {
+    b.addEventListener('click', function() {
+      const targetScreen = b.getAttribute('data-screen');
+      if (targetScreen === 'list') {
+        loadInstallations();
+      } else {
+        showScreen(targetScreen);
+      }
+    });
+  });
   document.getElementById('btnAdd').addEventListener('click', openAdd);
   document.getElementById('btnAll').addEventListener('click', function() { listMode = 'all'; loadInstallations(); });
   document.getElementById('btnSaveIdentity').addEventListener('click', saveIdentity);
@@ -1564,6 +1673,7 @@ function setupHandlers() {
     if (navigator.clipboard) navigator.clipboard.writeText(val);
     copyValue(val, secret);
   });
+  document.getElementById('btnConfirmDelete').addEventListener('click', confirmDeleteInstallation);
 }
 
 initWebApp();

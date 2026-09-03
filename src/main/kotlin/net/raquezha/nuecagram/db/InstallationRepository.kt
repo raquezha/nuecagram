@@ -145,6 +145,12 @@ data class InstallationContext(
     val muted: Boolean,
 )
 
+sealed interface WebhookInstallationResult {
+    data class Active(val context: InstallationContext) : WebhookInstallationResult
+    data object SoftDeleted : WebhookInstallationResult
+    data object NotFound : WebhookInstallationResult
+}
+
 data class InstallationAdminContext(
     val id: UUID,
     val repoName: String,
@@ -296,10 +302,17 @@ class InstallationRepository(
     suspend fun resolveWebhookInstallation(
         raw: String,
         now: Instant = Instant.now(),
-    ): InstallationContext? {
-        val verified = verifyWebhookSecret(raw, now) ?: return null
+    ): WebhookInstallationResult {
+        val verified = verifyWebhookSecret(raw, now) ?: return WebhookInstallationResult.NotFound
         return databaseFactory.dbTransaction {
-            installationWithMuteQuery(verified.installationId).firstOrNull()?.let { row ->
+            val row = installationWithMuteQuery(verified.installationId, includeDeleted = true).firstOrNull()
+                ?: return@dbTransaction WebhookInstallationResult.NotFound
+
+            if (row[Installations.deletedAt] != null) {
+                return@dbTransaction WebhookInstallationResult.SoftDeleted
+            }
+
+            WebhookInstallationResult.Active(
                 InstallationContext(
                     verified.secretId,
                     verified.installationId,
@@ -308,8 +321,8 @@ class InstallationRepository(
                         row[Installations.telegramTopicId]?.toString(),
                     ),
                     row.getOrNull(MuteStates.muted) ?: false,
-                )
-            }
+                ),
+            )
         }
     }
 
@@ -411,7 +424,10 @@ class InstallationRepository(
                 Installations.id,
                 MuteStates.installationId,
             ).selectAll()
-                .where { InstallationAdmins.telegramUserId eq telegramUserId }
+                .where {
+                    (InstallationAdmins.telegramUserId eq telegramUserId) and
+                        (Installations.deletedAt.isNull())
+                }
                 .orderBy(InstallationAdmins.confirmedAt to SortOrder.DESC)
                 .map { it.toAdminContext() }
         }
@@ -833,7 +849,17 @@ class InstallationRepository(
             )
         }.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
 
-    private fun installationWithMuteQuery(installationId: UUID? = null): Query {
+    suspend fun softDeleteInstallation(id: UUID): Boolean = databaseFactory.dbTransaction {
+        val count = Installations.update({ (Installations.id eq id) and (Installations.deletedAt.isNull()) }) {
+            it[deletedAt] = Instant.now().databaseTime()
+        }
+        count > 0
+    }
+
+    private fun installationWithMuteQuery(
+        installationId: UUID? = null,
+        includeDeleted: Boolean = false,
+    ): Query {
         val join = Installations.join(
             MuteStates,
             JoinType.LEFT,
@@ -841,6 +867,9 @@ class InstallationRepository(
             MuteStates.installationId,
         )
         val query = join.selectAll()
+        if (!includeDeleted) {
+            query.andWhere { Installations.deletedAt.isNull() }
+        }
         if (installationId != null) query.andWhere { Installations.id eq installationId }
         return query
     }
