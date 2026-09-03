@@ -92,12 +92,12 @@
   </head>
   <body>
     <div class="container">
-      <section id="screen-loading" class="panel active">
+      <section id="screen-loading" class="panel">
         <div class="loading-animation" id="lottieContainer"></div>
-        <span class="spinner-label" id="loadingText"></span>
+        <span class="spinner-label" id="loadingText">Loading...</span>
       </section>
 
-      <section id="screen-list" class="panel">
+      <section id="screen-list" class="panel active">
         <h1 id="listTitle">Repositories</h1>
         <p id="listSubtitle"></p>
         <div class="top-actions">
@@ -158,6 +158,20 @@
         </div>
       </section>
     </div>
-    <script src="/nuecagram/webapp/app.js"></script>
+    <script>
+      const sampleAvatars = [
+        '../src/main/resources/webapp/avatars/01-wildlife-avatar-1-giraffe.png',
+        '../src/main/resources/webapp/avatars/08-wildlife-avatar-3-lion.png',
+        '../src/main/resources/webapp/avatars/16-animal-avatar-2-panda.png',
+        '../src/main/resources/webapp/avatars/23-baby-jungle-avatar-2-giraffe.png',
+        '../src/main/resources/webapp/avatars/33-doodle-cat-avatar-1.png'
+      ];
+      const avatarKey = 'nuecagram-sample-shell-avatar';
+      const avatar = localStorage.getItem(avatarKey) || sampleAvatars[Math.floor(Math.random() * sampleAvatars.length)];
+      localStorage.setItem(avatarKey, avatar);
+      document.getElementById('listTitle').innerText = 'Repositories';
+      document.getElementById('listSubtitle').innerText = '1 repository configured';
+      document.getElementById('installationsList').innerHTML = '<div class="card"><img class="avatar" alt="" src="' + avatar + '"><div class="grow"><div class="row"><div class="title">nuecagram</div><span class="badge badge-active">ACTIVE</span><span class="chev">›</span></div><div class="sub">Main Notifications Channel</div><div class="meta">gitlab.com/#123456 · id inst_1234</div></div></div>';
+    </script>
   </body>
 </html>
