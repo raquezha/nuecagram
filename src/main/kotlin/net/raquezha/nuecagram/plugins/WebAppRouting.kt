@@ -143,18 +143,11 @@ fun Route.webAppRouting(basePath: String) {
         )
     }
 
-    get("$basePath/webapp/avatars/{file}") {
-        val file = call.parameters["file"].orEmpty()
-        val bytes = file.takeIf { it.matches(Regex("[a-zA-Z0-9.-]+\\.png")) }
-            ?.let { Thread.currentThread().contextClassLoader.getResourceAsStream("webapp/avatars/$it") }
-            ?.use { it.readBytes() }
-        if (bytes == null) {
-            call.respond(HttpStatusCode.NotFound)
-        } else {
-            call.appendWebAppSecurityHeaders()
-            call.respondBytes(bytes, ContentType.Image.PNG, HttpStatusCode.OK)
-        }
-    }
+    get("$basePath/webapp/avatars/{file}") { call.handleWebAppAvatar() }
+
+    get("$basePath/webapp/loading.json") { call.handleWebAppLoadingJson() }
+
+    get("$basePath/webapp/lottie.min.js") { call.handleWebAppLottieJs() }
 
     post("$basePath/api/webapp/auth") {
         call.handleWebAppAuth(installationRepository, config, json, basePath)
@@ -839,6 +832,41 @@ private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
 
 private fun ConfigWithSecrets.webhookEndpointUrl(basePath: String): String = "${publicBaseUrl()}$basePath/webhook"
 
+private suspend fun ApplicationCall.handleWebAppAvatar() {
+    val file = parameters["file"].orEmpty()
+    val bytes = file.takeIf { it.matches(Regex("[a-zA-Z0-9.-]+\\.png")) }
+        ?.let { Thread.currentThread().contextClassLoader.getResourceAsStream("webapp/avatars/$it") }
+        ?.use { it.readBytes() }
+    if (bytes == null) {
+        respond(HttpStatusCode.NotFound)
+    } else {
+        appendWebAppSecurityHeaders()
+        respondBytes(bytes, ContentType.Image.PNG, HttpStatusCode.OK)
+    }
+}
+
+private suspend fun ApplicationCall.handleWebAppLoadingJson() {
+    val bytes = Thread.currentThread().contextClassLoader
+        .getResourceAsStream("webapp/loading.json")?.use { it.readBytes() }
+    if (bytes == null) {
+        respond(HttpStatusCode.NotFound)
+    } else {
+        appendWebAppSecurityHeaders()
+        respondBytes(bytes, ContentType.Application.Json, HttpStatusCode.OK)
+    }
+}
+
+private suspend fun ApplicationCall.handleWebAppLottieJs() {
+    val bytes = Thread.currentThread().contextClassLoader
+        .getResourceAsStream("webapp/lottie.min.js")?.use { it.readBytes() }
+    if (bytes == null) {
+        respond(HttpStatusCode.NotFound)
+    } else {
+        appendWebAppSecurityHeaders()
+        respondBytes(bytes, ContentType.Text.JavaScript, HttpStatusCode.OK)
+    }
+}
+
 internal fun ApplicationCall.appendWebAppSecurityHeaders() {
     response.headers.append("Cache-Control", "no-store, no-cache, must-revalidate")
     response.headers.append("Pragma", "no-cache")
@@ -882,6 +910,7 @@ private fun webAppShellHtml(basePath: String): String = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Nuecagram Management</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="${basePath}/webapp/lottie.min.js"></script>
     <style>
       :root {
         --bg-color: var(--tg-theme-bg-color, #f4f5f8);
@@ -933,6 +962,10 @@ private fun webAppShellHtml(basePath: String): String = """
       .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
       .panel { display: none; }
       .panel.active { display: block; }
+      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
+      .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
+      .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
       .section { margin: 18px 0; }
@@ -963,14 +996,19 @@ private fun webAppShellHtml(basePath: String): String = """
   </head>
   <body>
     <div class="container">
-      <section id="screen-list" class="panel active">
+      <section id="screen-loading" class="panel active">
+        <div class="loading-animation" id="lottieContainer"></div>
+        <span class="spinner-label" id="loadingText"></span>
+      </section>
+
+      <section id="screen-list" class="panel">
         <h1 id="listTitle">Repositories</h1>
-        <p id="listSubtitle">Loading repositories...</p>
+        <p id="listSubtitle"></p>
         <div class="top-actions">
           <button id="btnAdd" class="primary">+ Add repository</button>
           <button id="btnAll" style="display:none;">View all repositories</button>
         </div>
-        <div id="installationsList"><div class="box">Loading repositories...</div></div>
+        <div id="installationsList"></div>
       </section>
 
       <section id="screen-detail" class="panel">
@@ -1032,6 +1070,89 @@ private fun webAppShellHtml(basePath: String): String = """
 @Suppress("LongMethod", "MagicNumber")
 private fun webAppJsScript(basePath: String): String = """
 let userCsrf = '';
+const LOADING_TEXTS = [
+  'Bribing the GitLab servers...',
+  'Waking up the paper plane...',
+  'Untangling webhook spaghetti...',
+  'Asking Telegram nicely...',
+  'Counting merge requests...',
+  'Herding notifications...',
+  'Feeding the CI pipeline...',
+  'Pretending to be fast...',
+  'Teaching the bot new tricks...',
+  'Blaming the intern...',
+  'Reticulating splines...',
+  'Negotiating with the database...',
+  'Almost there (probably)...',
+  'Checking if production is on fire...',
+  'Locating the missing semicolon...',
+  'Convincing CI to cooperate...',
+  'Reading the docs so you do not have to...',
+  'Converting caffeine into webhooks...',
+  'Wiggling the Ethernet cable...',
+  'Refactoring the universe...',
+  'Buying more RAM...',
+  'Polishing the paper plane...',
+  'Rebasing reality...',
+  'Hunting flaky tests...',
+  'Aligning the merge request chakras...',
+  'Optimizing optimizations...',
+  'Compiling feelings...',
+  'Assembling pixels...',
+  'Sharpening the admin badge...',
+  'Checking the hidden group scope...',
+  'Making Telegram behave...',
+  'Summoning the webhook spirits...',
+  'Dusting off the database indexes...',
+  'Resolving merge conflicts diplomatically...',
+  'Interpreting GitLab hieroglyphics...',
+  'Debugging the inevitable edge case...',
+  'Reheating last nights deployment...',
+  'Rolling for initiative against latency...',
+  'Translating stack traces...',
+  'Asking the bot who broke production...',
+  'Preparing a strongly worded callback query...',
+  'Generating plausible progress...',
+  'Performing advanced button science...',
+  'Double-checking the secret secrets...',
+  'Shuffling repositories into formation...',
+  'Reassuring the load balancer...',
+  'Charging the rubber duck...',
+  'Looking busy for the status page...',
+  'Removing one more legacy workaround...',
+  'Rehydrating dehydrated JSON...',
+  'Inspecting suspiciously round trip times...',
+  'Doing cloud things with tiny paper planes...',
+];
+(function() {
+  const el = document.getElementById('loadingText');
+  if (!el) return;
+  let last = -1;
+  function nextLoadingText() {
+    if (LOADING_TEXTS.length === 1) return LOADING_TEXTS[0];
+    let i = Math.floor(Math.random() * LOADING_TEXTS.length);
+    while (i === last) i = Math.floor(Math.random() * LOADING_TEXTS.length);
+    last = i;
+    return LOADING_TEXTS[i];
+  }
+  el.innerText = nextLoadingText();
+  setInterval(function() {
+    el.innerText = nextLoadingText();
+  }, 2200);
+})();
+(function initLottie() {
+  const container = document.getElementById('lottieContainer');
+  if (!container || typeof lottie === 'undefined') return;
+  try {
+    lottie.loadAnimation({
+      container: container,
+      renderer: 'svg',
+      loop: true,
+      autoplay: true,
+      path: '${basePath}/webapp/loading.json'
+    });
+  } catch (e) {}
+})();
 let sToken = '';
 let currentContext = {};
 let items = [];
@@ -1104,6 +1225,7 @@ function extractStartParam() {
 async function initWebApp() {
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
+  showScreen('loading');
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
       method: 'POST',
@@ -1131,10 +1253,8 @@ async function initWebApp() {
 }
 
 async function loadInstallations() {
-  showScreen('list');
-  renderHeader();
   const el = document.getElementById('installationsList');
-  el.innerHTML = '<div class="box">Loading repositories...</div>';
+  el.innerHTML = '';
   try {
     const qs = listMode === 'all' ? '?scope=all' : '';
     const res = await fetch('${basePath}/api/webapp/installations' + qs, { headers: getAuthHeaders() });
@@ -1154,6 +1274,8 @@ function renderHeader() {
 }
 
 function renderList() {
+  renderHeader();
+  showScreen('list');
   const el = document.getElementById('installationsList');
   if (!items.length) {
     const scoped = listMode !== 'all' && currentContext.chatId != null && currentContext.chatId < 0;
