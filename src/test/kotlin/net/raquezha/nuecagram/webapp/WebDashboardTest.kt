@@ -3,6 +3,7 @@
 package net.raquezha.nuecagram.webapp
 
 import com.google.common.truth.Truth.assertThat
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -14,6 +15,9 @@ import io.ktor.http.contentType
 import io.ktor.server.testing.testApplication
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -663,5 +667,107 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
         val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
         assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
+    }
+
+    @Test
+    fun deleteEndpointSoftDeletesInstallationAndEnforcesAuthzAnd410OnWebhook() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(9999L, installation.telegramChatId) }
+
+        val (sessionCookie, csrf) = issueSessionWithNonce(client, userId = 9999L, chatId = installation.telegramChatId)
+
+        // Attempt delete without CSRF header -> Forbidden
+        val noCsrfResp = client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(noCsrfResp.status).isEqualTo(HttpStatusCode.Forbidden)
+
+        // Non-admin attempt -> Forbidden
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 8888L, "member")
+        val (nonAdminCookie, nonAdminCsrf) = issueSessionWithNonce(
+            client,
+            userId = 8888L,
+            chatId = installation.telegramChatId,
+        )
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 8888L, "member")
+
+        val nonAdminResp = client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$nonAdminCookie")
+            header("X-CSRF-Token", nonAdminCsrf)
+        }
+        assertThat(nonAdminResp.status).isEqualTo(HttpStatusCode.Forbidden)
+
+        // Authorized admin soft-deletes installation
+        val deleteResp = client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+        }
+        assertThat(deleteResp.status).isEqualTo(HttpStatusCode.NoContent)
+
+        // Repeat delete returns 404 (already deleted)
+        val repeatDeleteResp = client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+        }
+        assertThat(repeatDeleteResp.status).isEqualTo(HttpStatusCode.NotFound)
+
+        // Detail endpoint returns 404
+        val getResp = client.get("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(getResp.status).isEqualTo(HttpStatusCode.NotFound)
+
+        // Webhook request targeting the soft-deleted installation returns 410 Gone
+        val webhookResp = client.post("/nuecagram/webhook") {
+            header("X-Gitlab-Event", "Push Hook")
+            header("X-Gitlab-Token", webhookToken)
+            setBody(
+                """
+                {
+                  "object_kind": "push",
+                  "event_name": "push",
+                  "ref": "refs/heads/main",
+                  "user_name": "Test User",
+                  "project": {"name": "Test Project", "web_url": "https://gitlab.com/test/project"},
+                  "commits": []
+                }
+                """.trimIndent(),
+            )
+        }
+        assertThat(webhookResp.status).isEqualTo(HttpStatusCode.Gone)
+    }
+
+    @Test
+    fun concurrentDeleteRequestsHandledIdempotently() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(9999L, installation.telegramChatId) }
+
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+        )
+
+        val statuses = runBlocking {
+            coroutineScope {
+                val req1 = async {
+                    client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+                        header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+                        header("X-CSRF-Token", csrf)
+                    }.status
+                }
+                val req2 = async {
+                    client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+                        header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+                        header("X-CSRF-Token", csrf)
+                    }.status
+                }
+                awaitAll(req1, req2)
+            }
+        }
+
+        assertThat(statuses).containsExactly(HttpStatusCode.NoContent, HttpStatusCode.NotFound)
     }
 }

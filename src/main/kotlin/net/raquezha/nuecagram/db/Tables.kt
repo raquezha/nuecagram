@@ -15,6 +15,7 @@ object Installations : Table("installations") {
     val telegramTopicId = long("telegram_topic_id").nullable()
     val createdAt = timestampWithTimeZone("created_at").databaseGenerated()
     val updatedAt = timestampWithTimeZone("updated_at").databaseGenerated()
+    val deletedAt = timestampWithTimeZone("deleted_at").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

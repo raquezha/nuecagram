@@ -1,0 +1,1 @@
+ALTER TABLE installations ADD COLUMN deleted_at TIMESTAMPTZ NULL;

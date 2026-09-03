@@ -520,6 +520,48 @@ val InstallationRepositoryTests by testSuite {
             // Pool cleaned up automatically on re-initialization
         }
     }
+
+    postgresTest(
+        "soft deletes installations, excludes from queries, returns 410 on webhook",
+    ) { config ->
+        migrateToLatest(config)
+        val repository = repository()
+
+        val inst = repository.createInstallation(
+            repoName = "to-be-deleted-repo",
+            chatName = "ToDelete",
+            gitlabBaseUrl = "https://gitlab.example.com",
+            gitlabProjectId = 999L,
+            telegramChatId = -100999L,
+            telegramTopicId = null,
+        )
+        repository.recordInstallationAdmin(inst.id, 9999L)
+        val cred = repository.issueWebhookSecret(inst.id)
+
+        // Verify active before soft-delete
+        val activeRes = repository.resolveWebhookInstallation(cred.raw)
+        assertThat(activeRes).isInstanceOf(net.raquezha.nuecagram.db.WebhookInstallationResult.Active::class.java)
+        assertThat(repository.installationAdminContext(inst.id)).isNotNull()
+        assertThat(repository.installationsForAdmin(9999L).map { it.id }).contains(inst.id)
+
+        // Soft delete
+        val deletedFirst = repository.softDeleteInstallation(inst.id)
+        assertThat(deletedFirst).isTrue()
+
+        // Idempotent soft delete returns false
+        val deletedSecond = repository.softDeleteInstallation(inst.id)
+        assertThat(deletedSecond).isFalse()
+
+        // Excluded from admin context queries and installationsForAdmin
+        assertThat(repository.installationAdminContext(inst.id)).isNull()
+        assertThat(repository.installationsForAdmin(9999L).map { it.id }).doesNotContain(inst.id)
+        val list = repository.listInstallationsForContext(-100999L, null)
+        assertThat(list.map { it.id }).doesNotContain(inst.id)
+
+        // Webhook resolution returns SoftDeleted
+        val deletedRes = repository.resolveWebhookInstallation(cred.raw)
+        assertThat(deletedRes).isEqualTo(net.raquezha.nuecagram.db.WebhookInstallationResult.SoftDeleted)
+    }
 }
 
 private fun repository(): InstallationRepository = InstallationRepository(DatabaseFactory)

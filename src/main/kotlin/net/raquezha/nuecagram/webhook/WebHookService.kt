@@ -9,6 +9,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.request.uri
 import java.util.UUID
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.db.WebhookInstallationResult
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_TOKEN
 import org.gitlab4j.api.utils.JacksonJson
@@ -98,9 +99,15 @@ class WebHookService(
         val webhookData = call.getWebhookData()
         handleEvents(webhookData.headerEvent)
 
-        val installation =
-            installationRepository.resolveWebhookInstallation(webhookData.gitlabToken)
-                ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "invalid X-Gitlab-Token header")
+        val installation = when (
+            val result = installationRepository.resolveWebhookInstallation(webhookData.gitlabToken)
+        ) {
+            is WebhookInstallationResult.NotFound ->
+                throw WebhookRequestException(HttpStatusCode.Unauthorized, "invalid X-Gitlab-Token header")
+            is WebhookInstallationResult.SoftDeleted ->
+                throw WebhookRequestException(HttpStatusCode.Gone, "installation soft-deleted")
+            is WebhookInstallationResult.Active -> result.context
+        }
 
         installationRepository.confirmWebhookSecret(installation.secretId)
 
