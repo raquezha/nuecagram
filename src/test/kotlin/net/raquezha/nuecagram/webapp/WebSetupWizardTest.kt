@@ -369,7 +369,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
         assertThat(resp.status).isEqualTo(HttpStatusCode.OK)
         val body = resp.bodyAsText()
         assertThat(body).contains("-1007020:42")
-        assertThat(body).contains("Devs Group")
+        assertThat(body).contains("Devs Group / Topic 42")
     }
 
     @Test

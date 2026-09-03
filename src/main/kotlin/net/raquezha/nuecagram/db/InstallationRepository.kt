@@ -196,15 +196,17 @@ class InstallationRepository(
         telegramChatId: Long,
         telegramTopicId: Long?,
     ): InstallationRecord {
-        val normalizedRepoName = repoName.trim()
+        val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
         require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
             "repoName must be non-blank and not use the legacy fallback value"
         }
+        val normalizedChatName = chatName?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
+        val normalizedGitlabUrl = gitlabBaseUrl.trim().trimEnd('/').take(MAX_COLUMN_LENGTH)
         val installation = InstallationRecord(
             id = UUID.randomUUID(),
             repoName = normalizedRepoName,
-            chatName = chatName?.trim()?.takeIf(String::isNotBlank),
-            gitlabBaseUrl = gitlabBaseUrl,
+            chatName = normalizedChatName,
+            gitlabBaseUrl = normalizedGitlabUrl,
             gitlabProjectId = gitlabProjectId,
             telegramChatId = telegramChatId,
             telegramTopicId = telegramTopicId,
@@ -343,7 +345,8 @@ class InstallationRepository(
                 it[KnownTelegramDestinations.id] = destinationId
                 it[KnownTelegramDestinations.telegramChatId] = chatId
                 it[KnownTelegramDestinations.telegramTopicId] = topicId
-                it[KnownTelegramDestinations.chatTitle] = chatTitle?.trim()?.takeIf(String::isNotBlank)
+                it[KnownTelegramDestinations.chatTitle] =
+                    chatTitle?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
                 it[KnownTelegramDestinations.lastSeenAt] = Instant.now().databaseTime()
             }
         }
@@ -453,14 +456,15 @@ class InstallationRepository(
         repoName: String,
         chatName: String?,
     ): Boolean {
-        val normalizedRepoName = repoName.trim()
+        val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
         require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
             "repoName must be non-blank and not use the legacy fallback value"
         }
+        val normalizedChatName = chatName?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
         return databaseFactory.dbTransaction {
             Installations.update({ Installations.id eq installationId }) {
                 it[Installations.repoName] = normalizedRepoName
-                it[Installations.chatName] = chatName?.trim()?.takeIf(String::isNotBlank)
+                it[Installations.chatName] = normalizedChatName
             } == 1
         }
     }
@@ -878,6 +882,7 @@ class InstallationRepository(
         val ACTOR_ID_REQUIRED_TYPES = setOf("telegram", "webapp_session")
         val auditJson = Json
         const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
+        const val MAX_COLUMN_LENGTH = 255
     }
 
     suspend fun upsertMrParticipants(
