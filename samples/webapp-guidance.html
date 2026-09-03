@@ -3,36 +3,160 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Telegram Access Required</title>
+    <title>Nuecagram Management</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/nuecagram/webapp/lottie.min.js"></script>
     <style>
       :root {
-        --bg-color: #f4f5f8;
-        --card-bg: #ffffff;
-        --text-main: #0f172a;
-        --hint: #64748b;
-        --button: #0284c7;
-        --button-text: #ffffff;
+        --bg-color: var(--tg-theme-bg-color, #f4f5f8);
+        --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+        --text-main: var(--tg-theme-text-color, #0f172a);
+        --hint: var(--tg-theme-hint-color, #64748b);
+        --button: var(--tg-theme-button-color, #0284c7);
+        --button-text: var(--tg-theme-button-text-color, #ffffff);
         --border: #e2e8f0;
+        --input-bg: #f8fafc;
+        --success: #16a34a;
+        --danger: #dc2626;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: var(--tg-theme-bg-color, #0f172a);
+          --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+          --text-main: var(--tg-theme-text-color, #f8fafc);
+          --hint: var(--tg-theme-hint-color, #94a3b8);
+          --border: #334155;
+          --input-bg: #141c2e;
+        }
       }
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-      .guidance-card { max-width: 440px; width: 100%; background: var(--card-bg); border-radius: 20px; padding: 36px 28px; text-align: center; box-shadow: inset 0 0 0 1px var(--border), 0 10px 25px -5px rgba(0,0,0,0.05); }
-      .icon { width: 64px; height: 64px; margin: 0 auto 20px; border-radius: 50%; background: #e0f2fe; color: var(--button); display: flex; align-items: center; justify-content: center; }
-      h1 { margin: 0 0 12px; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
-      p { margin: 0 0 20px; color: var(--hint); line-height: 1.5; font-size: 14px; }
-      .badge { display: inline-block; background: #f1f5f9; border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 24px; }
-      a.btn-telegram { display: block; width: 100%; background: var(--button); color: var(--button-text); text-decoration: none; padding: 12px 18px; border-radius: 12px; font-weight: 700; font-size: 14px; }
+      body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .container { max-width: 480px; margin: 0 auto; padding: 18px 14px 28px; }
+      h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.1; letter-spacing: -0.03em; }
+      h2 { margin: 18px 4px 8px; font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
+      p { margin: 0 0 14px; color: var(--hint); line-height: 1.45; }
+      button { border: 0; border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 14px; font: 700 14px inherit; box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
+      button.primary { background: var(--button); color: var(--button-text); box-shadow: none; }
+      button.danger { color: var(--danger); }
+      button.link { background: transparent; color: var(--button); box-shadow: none; padding: 8px 2px; }
+      .top-actions { display: flex; gap: 10px; margin: 16px 0 18px; flex-wrap: wrap; }
+      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 14px; border-radius: 18px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); }
+      .card.muted { opacity: .72; filter: grayscale(.25); }
+      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; }
+      .grow { min-width: 0; flex: 1; }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 13px 14px; border-top: 1px solid var(--border); }
+      .card .row { padding: 0; border-top: 0; margin-bottom: 3px; }
+      .row:first-child { border-top: 0; }
+      .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .meta { margin-top: 7px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .badge { margin-left: auto; border-radius: 999px; padding: 4px 7px; font-size: 11px; font-weight: 800; }
+      .helper.ok { color: var(--success); font-weight: 700; }
+      .badge-active { background: #dcfce7; color: var(--success); }
+      .badge-muted { background: #fee2e2; color: var(--danger); }
+      .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
+      .panel { display: none; }
+      .panel.active { display: block; }
+      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
+      .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
+      .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
+      .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+      .box { padding: 18px; }
+      .section { margin: 18px 0; }
+      .section > button { width: 100%; }
+      .section-title { margin: 18px 4px 8px; font-size: 12px; font-weight: 800; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
+      .field { padding: 13px 14px; border-top: 1px solid var(--border); margin: 0; }
+      .field:first-child { border-top: 0; }
+      label { display: block; margin-bottom: 7px; font-weight: 800; }
+      #createDestinationMeta { font-size: 12px; font-style: italic; opacity: 0.85; display: inline-block; margin-top: 4px; }
+      input, select, .codebox { width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--input-bg); color: var(--text-main); font: 15px inherit; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06); }
+      input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+      input:focus, select:focus { outline: none; border-color: var(--button); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 3px rgba(2, 132, 199, 0.2); }
+      select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230284c7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
+      option { background: var(--card-bg); color: var(--text-main); }
+      .codebox { min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      input[readonly] { color: var(--hint); }
+      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
+      .split > button { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; }
+      .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
+      .ok { color: var(--success); }
+      .err { color: var(--danger); }
+      .secret { display: block; margin-top: 8px; }
+      .secret.hidden { filter: blur(6px); user-select: none; }
+      .footer { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 14px; font-size: 12px; }
+      a { color: var(--button); }
     </style>
   </head>
   <body>
-    <div class="guidance-card">
-      <div class="icon">
-        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      </div>
-      <h1>Telegram Access Required</h1>
-      <p>This management portal must be opened inside Telegram.</p>
-      <div class="badge">Open @NuecagramBot and tap OPEN</div>
-      <a href="https://t.me/NuecagramBot" class="btn-telegram" target="_blank" rel="noopener">Open Telegram Bot</a>
+    <div class="container">
+      <section id="screen-loading" class="panel active">
+        <div class="loading-animation" id="lottieContainer"></div>
+        <span class="spinner-label" id="loadingText"></span>
+      </section>
+
+      <section id="screen-list" class="panel">
+        <h1 id="listTitle">Repositories</h1>
+        <p id="listSubtitle"></p>
+        <div class="top-actions">
+          <button id="btnAdd" class="primary">+ Add repository</button>
+          <button id="btnAll" style="display:none;">View all repositories</button>
+        </div>
+        <div id="installationsList"></div>
+      </section>
+
+      <section id="screen-detail" class="panel">
+        <button class="link" data-screen="list">‹ Back to repositories</button>
+        <div id="detailBody"></div>
+        <p class="footer"><a href="https://www.vecteezy.com/free-vector/animal" target="_blank" rel="noopener">Vectors by Vecteezy</a></p>
+      </section>
+
+      <section id="screen-edit" class="panel">
+        <button class="link" data-screen="detail">‹ Back to details</button>
+        <h1>Edit names</h1>
+        <div class="field"><label>Repository name</label><input id="editRepoName" autocomplete="off"></div>
+        <div class="field"><label>Notification label</label><input id="editChatName" autocomplete="off"></div>
+        <div id="editErr" class="helper err"></div>
+        <div class="split"><button data-screen="detail">Cancel</button><button id="btnSaveIdentity" class="primary">Save</button></div>
+      </section>
+
+      <section id="screen-wizard" class="panel">
+        <button class="link" data-screen="list">‹ Back to repositories</button>
+        <h1>Add repository</h1>
+        <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
+        <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
+        <div class="field" id="fieldDestination"><label>Target Telegram destination</label><select id="inDestination"><option value="">Loading destinations...</option></select></div>
+        <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
+        <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
+        <div class="field"><label>Repository name</label><input id="inRepoName" placeholder="nuecagram"></div>
+        <div class="field"><label>Notification label</label><input id="inChatName" placeholder="Android Team / Notifications"></div>
+        <div id="wizErr" class="helper err"></div>
+        <div class="split"><button data-screen="list">Cancel</button><button id="btnCreate" class="primary">Create</button></div>
+      </section>
+
+      <section id="screen-reveal" class="panel">
+        <h1 id="revTitle">Webhook token rotated</h1>
+        <p id="revSubtitle">Copy this webhook token now. It will only be shown once.</p>
+        <div class="group">
+          <div class="field">
+            <label>Webhook secret</label>
+            <div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>
+            <div class="split" style="margin-top:12px;">
+              <button id="btnReveal">Reveal</button>
+              <button id="btnCopy" class="primary">Copy token</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Webhook URL</label>
+            <div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button id="btnRevDone" class="primary" style="width:100%;">Done</button>
+        </div>
+      </section>
     </div>
+    <script src="/nuecagram/webapp/app.js"></script>
   </body>
 </html>

@@ -1495,7 +1495,6 @@ function showReveal(token, url, title, isRotate) {
     if (field) field.style.display = isRotate ? 'none' : '';
     urlEl.innerText = url || '';
   }
-  document.getElementById('copyHelp').innerText = '';
   showScreen('reveal');
 }
 

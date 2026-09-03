@@ -419,6 +419,33 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun allJsElementReferencesExistInShellHtmlOrJsTemplates() = testApplication {
+        configureTestApplication()
+        val jsResponse = client.get("/nuecagram/webapp/app.js")
+        assertThat(jsResponse.status).isEqualTo(HttpStatusCode.OK)
+        val js = jsResponse.bodyAsText()
+
+        val htmlResponse = client.get("/nuecagram/webapp")
+        assertThat(htmlResponse.status).isEqualTo(HttpStatusCode.OK)
+        val html = htmlResponse.bodyAsText()
+
+        val referencedIds = Regex("""getElementById\('([^']+)'\)""")
+            .findAll(js)
+            .map { it.groupValues[1] }
+            .toSet()
+
+        assertThat(referencedIds).isNotEmpty()
+
+        for (id in referencedIds) {
+            val existsInHtml = html.contains("id=\"$id\"")
+            val existsInJsTemplates = js.contains("id=\"$id\"")
+            check(existsInHtml || existsInJsTemplates) {
+                "JS references DOM element id='$id' which does not exist in shell HTML or JS templates"
+            }
+        }
+    }
+
+    @Test
     fun nonAdminUserIsRejectedWithForbidden() = testApplication {
         configureTestApplication()
         val groupChatId = -100123456L
