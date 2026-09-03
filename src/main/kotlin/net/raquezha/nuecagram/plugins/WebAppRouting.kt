@@ -233,6 +233,11 @@ private suspend fun ApplicationCall.handleWebAppAuth(
         installationRepository,
     )
 
+    extractSessionToken()
+        ?.let { installationRepository.verifyWebAppSession(it) }
+        ?.takeIf { it.telegramUserId == verified.user.id }
+        ?.let { installationRepository.deleteWebAppSession(it.sessionId) }
+
     val sessionExpiry = Instant.now().plus(SESSION_TTL_HOURS, ChronoUnit.HOURS)
     val session = installationRepository.issueWebAppSession(
         telegramUserId = verified.user.id,
@@ -591,11 +596,10 @@ private suspend fun resolveDmId(
 
 private suspend fun isTargetAdmin(
     session: WebAppSessionContext,
-    targetChatId: Long?,
+    targetChatId: Long,
     telegramService: TelegramService,
 ): Boolean {
     if (session.telegramChatId != null && session.telegramChatId < 0) return true
-    if (targetChatId == null || targetChatId >= 0) return true
     val status = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
     return isTelegramAdmin(status)
 }
@@ -1122,7 +1126,7 @@ async function initWebApp() {
     setupHandlers();
     await loadInstallations();
   } catch (e) {
-    renderError('Nuecagram needs admin access', 'Give the bot admin access in this group to manage repositories.');
+    renderError('Connection error', 'Could not reach Nuecagram. Check your connection and try again.');
   }
 }
 
@@ -1138,7 +1142,7 @@ async function loadInstallations() {
     items = await res.json();
     renderList();
   } catch (e) {
-    renderError('Nuecagram needs admin access', 'Give the bot admin access in this group to manage repositories.');
+    renderError('Connection error', 'Could not load repositories. Check your connection and try again.');
   }
 }
 
@@ -1190,11 +1194,20 @@ function renderError(title, body) {
 }
 
 async function openDetail(id) {
-  const res = await fetch('${basePath}/api/webapp/installations/' + id, { headers: getAuthHeaders() });
-  if (!res.ok) return;
-  currentItem = await res.json();
-  renderDetail();
-  showScreen('detail');
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + id, { headers: getAuthHeaders() });
+    if (!res.ok) {
+      const title = res.status === 404 ? 'Repository not found' : (res.status === 401 || res.status === 403 ? 'Access denied' : 'Could not open repository');
+      const body = res.status === 404 ? 'This repository is no longer available or you no longer have access.' : 'Try again in a moment or return to the list.';
+      renderError(title, body);
+      return;
+    }
+    currentItem = await res.json();
+    renderDetail();
+    showScreen('detail');
+  } catch (e) {
+    renderError('Connection error', 'Could not load repository details. Check your connection and try again.');
+  }
 }
 
 function renderDetail() {
