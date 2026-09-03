@@ -312,16 +312,12 @@ private suspend fun ApplicationCall.handleGetInstallations(
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
-        suspend fun isActiveAdmin(chatId: Long): Boolean {
-            val cached = adminChatIds[chatId]
-            if (cached != null) return cached
-            val status = runCatching {
-                telegramService.chatMemberStatus(chatId, session.telegramUserId)
-            }.getOrNull()
-            val isAdmin = isTelegramAdmin(status)
-            adminChatIds[chatId] = isAdmin
-            return isAdmin
-        }
+        suspend fun isActiveAdmin(chatId: Long): Boolean =
+            adminChatIds.getOrPut(chatId) {
+                runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }
+                    .map(::isTelegramAdmin)
+                    .getOrDefault(false)
+            }
         val recorded = installationRepository.installationsForAdmin(session.telegramUserId)
             .filter { inst -> isActiveAdmin(inst.telegramChatId) }
         if (recorded.isNotEmpty()) {
@@ -367,28 +363,16 @@ private suspend fun ApplicationCall.handleGetDestinations(
     val userId = session.telegramUserId
     val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull()
     val adminChatIds = mutableMapOf<Long, Boolean>()
-    suspend fun isActiveAdmin(chatId: Long): Boolean {
-        val cached = adminChatIds[chatId]
-        if (cached != null) return cached
-        val userStatus = runCatching {
-            telegramService.chatMemberStatus(chatId, userId)
-        }.getOrNull()
-        val userIsAdmin = isTelegramAdmin(userStatus)
-        if (!userIsAdmin) {
-            adminChatIds[chatId] = false
-            return false
+    suspend fun isActiveAdmin(chatId: Long): Boolean =
+        adminChatIds.getOrPut(chatId) {
+            val userIsAdmin = runCatching { telegramService.chatMemberStatus(chatId, userId) }
+                .map(::isTelegramAdmin)
+                .getOrDefault(false)
+
+            userIsAdmin && (botUserId == null || runCatching { telegramService.chatMemberStatus(chatId, botUserId) }
+                .map(::isTelegramAdmin)
+                .getOrDefault(false))
         }
-        val botIsAdmin = if (botUserId != null) {
-            val botStatus = runCatching {
-                telegramService.chatMemberStatus(chatId, botUserId)
-            }.getOrNull()
-            isTelegramAdmin(botStatus)
-        } else {
-            true
-        }
-        adminChatIds[chatId] = botIsAdmin
-        return botIsAdmin
-    }
 
     val installed = installationRepository.installationsForAdmin(userId)
         .filter { inst -> isActiveAdmin(inst.telegramChatId) }
