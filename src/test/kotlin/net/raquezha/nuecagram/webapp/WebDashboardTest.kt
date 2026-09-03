@@ -716,6 +716,20 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun groupContextRejectsDemotedBotSession() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 10001L, "member")
+
+        val (sessionCookie, _) = issueSessionWithNonce(client, userId = 9999L, chatId = installation.telegramChatId)
+
+        val listResp = client.get("/nuecagram/api/webapp/installations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.Forbidden)
+    }
+
+    @Test
     fun deleteEndpointSoftDeletesInstallationAndEnforcesAuthzAnd410OnWebhook() = testApplication {
         configureTestApplication()
         mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")

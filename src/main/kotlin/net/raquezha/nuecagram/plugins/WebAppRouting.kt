@@ -612,7 +612,6 @@ private suspend fun isTargetAdmin(
     targetChatId: Long,
     telegramService: TelegramService,
 ): Boolean {
-    if (session.telegramChatId != null && session.telegramChatId < 0) return true
     val userStatus = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
     if (!isTelegramAdmin(userStatus)) return false
     val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
@@ -840,6 +839,12 @@ private suspend fun ApplicationCall.verifyAdminStatus(
     if (chatId > 0) return true
     val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
     if (!isTelegramAdmin(status)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
+        return false
+    }
+    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
+    val botStatus = runCatching { telegramService.chatMemberStatus(chatId, botUserId) }.getOrNull()
+    if (!isTelegramAdmin(botStatus)) {
         respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
         return false
     }
