@@ -419,6 +419,49 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun allJsElementReferencesExistInShellHtmlOrJsTemplates() = testApplication {
+        configureTestApplication()
+        val jsResponse = client.get("/nuecagram/webapp/app.js")
+        assertThat(jsResponse.status).isEqualTo(HttpStatusCode.OK)
+        val js = jsResponse.bodyAsText()
+
+        val htmlResponse = client.get("/nuecagram/webapp")
+        assertThat(htmlResponse.status).isEqualTo(HttpStatusCode.OK)
+        val html = htmlResponse.bodyAsText()
+
+        val referencedIds = Regex("""getElementById\('([^']+)'\)""")
+            .findAll(js)
+            .map { it.groupValues[1] }
+            .toSet()
+
+        assertThat(referencedIds).isNotEmpty()
+
+        for (id in referencedIds) {
+            val existsInHtml = html.contains("id=\"$id\"")
+            val existsInJsTemplates = js.contains("id=\"$id\"")
+            check(existsInHtml || existsInJsTemplates) {
+                "JS references DOM element id='$id' which does not exist in shell HTML or JS templates"
+            }
+        }
+    }
+
+    @Test
+    fun webAppScriptContainsLoadingAndErrorRecoveryGuards() = testApplication {
+        configureTestApplication()
+        val html = client.get("/nuecagram/webapp").bodyAsText()
+        val js = client.get("/nuecagram/webapp/app.js").bodyAsText()
+
+        assertThat(html).contains("#screen-loading { display: none;")
+        assertThat(html).contains("#screen-loading.active { display: flex; }")
+        assertThat(js).contains("if (name !== 'loading' && loadingTimer)")
+        assertThat(js).contains("clearInterval(loadingTimer);")
+        assertThat(js).contains("showScreen('list');")
+        assertThat(js).contains("document.querySelector('#screen-list .top-actions')")
+        assertThat(js).contains("topActions.style.display = 'flex'")
+        assertThat(js).contains("catch (e) {")
+    }
+
+    @Test
     fun nonAdminUserIsRejectedWithForbidden() = testApplication {
         configureTestApplication()
         val groupChatId = -100123456L

@@ -980,7 +980,8 @@ private fun webAppShellHtml(basePath: String): String = """
       .chev { color: #0284c7; font-size: 22px; font-weight: 800; }
       .panel { display: none; }
       .panel.active { display: block; }
-      #screen-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      #screen-loading { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; gap: 12px; }
+      #screen-loading.active { display: flex; }
       .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
       .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
       .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
@@ -1142,6 +1143,7 @@ const LOADING_TEXTS = [
   'Inspecting suspiciously round trip times...',
   'Doing cloud things with tiny paper planes...',
 ];
+let loadingTimer = null;
 (function() {
   const el = document.getElementById('loadingText');
   if (!el) return;
@@ -1154,7 +1156,7 @@ const LOADING_TEXTS = [
     return LOADING_TEXTS[i];
   }
   el.innerText = nextLoadingText();
-  setInterval(function() {
+  loadingTimer = setInterval(function() {
     el.innerText = nextLoadingText();
   }, 2200);
 })();
@@ -1228,9 +1230,18 @@ function avatarFor(item, index) {
   return avatars[(n + index) % avatars.length];
 }
 
+function fallbackAvatarFor(item, index) {
+  return avatarFor(item, index + 1);
+}
+
 function showScreen(name) {
+  if (name !== 'loading' && loadingTimer) {
+    clearInterval(loadingTimer);
+    loadingTimer = null;
+  }
   document.querySelectorAll('.panel').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById('screen-' + name).classList.add('active');
+  const target = document.getElementById('screen-' + name);
+  if (target) target.classList.add('active');
 }
 
 function extractStartParam() {
@@ -1289,6 +1300,8 @@ function renderHeader() {
   document.getElementById('listTitle').innerText = scoped ? 'Repositories' : 'All repositories';
   document.getElementById('listSubtitle').innerText = scoped ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId}) + '\nNotifications go to this group/topic.' : 'Repositories you can manage across groups/topics.';
   document.getElementById('btnAll').style.display = scoped ? '' : 'none';
+  const topActions = document.querySelector('#screen-list .top-actions');
+  if (topActions) topActions.style.display = 'flex';
 }
 
 function renderList() {
@@ -1308,7 +1321,7 @@ function renderList() {
   items.forEach(function(item, index) {
     const card = document.createElement('button');
     card.className = 'card' + (item.muted ? ' muted' : '');
-    card.innerHTML = '<img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, index) + '">' +
+    card.innerHTML = '<img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, index) + '" onerror="this.onerror=null;this.src=\'${basePath}/webapp/avatars/' + fallbackAvatarFor(item, index) + '\'">' +
       '<div class="grow"><div class="row"><div class="title">' + escapeHtml(item.repoName) + '</div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span><span class="chev">›</span></div>' +
       '<div class="sub">' + escapeHtml(destinationLabel(item)) + '</div><div class="meta">' + escapeHtml(repoMeta(item)) + '</div></div>';
     card.addEventListener('click', function() { openDetail(item.id); });
@@ -1317,9 +1330,10 @@ function renderList() {
 }
 
 function renderError(title, body) {
+  showScreen('list');
   document.getElementById('listTitle').innerText = title;
   document.getElementById('listSubtitle').innerText = body;
-  const topActions = document.querySelector('.top-actions');
+  const topActions = document.querySelector('#screen-list .top-actions');
   if (topActions) topActions.style.display = 'none';
   const el = document.getElementById('installationsList');
   if (title === 'Telegram Access Required') {
@@ -1352,7 +1366,7 @@ async function openDetail(id) {
 
 function renderDetail() {
   const item = currentItem;
-  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
+  document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '" onerror="this.onerror=null;this.src=\'${basePath}/webapp/avatars/' + fallbackAvatarFor(item, 0) + '\'"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
     '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
@@ -1381,14 +1395,18 @@ async function saveIdentity() {
   const repoName = document.getElementById('editRepoName').value.trim();
   const chatName = document.getElementById('editChatName').value.trim();
   if (!repoName) { document.getElementById('editErr').innerText = 'Repository name required.'; return; }
-  const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/identity', {
-    method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ repoName: repoName, chatName: chatName })
-  });
-  if (!res.ok) { document.getElementById('editErr').innerText = 'Could not save names.'; return; }
-  currentItem = await res.json();
-  items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
-  renderDetail();
-  showScreen('detail');
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/identity', {
+      method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ repoName: repoName, chatName: chatName })
+    });
+    if (!res.ok) { document.getElementById('editErr').innerText = 'Could not save names.'; return; }
+    currentItem = await res.json();
+    items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
+    renderDetail();
+    showScreen('detail');
+  } catch (e) {
+    document.getElementById('editErr').innerText = 'Could not save names.';
+  }
 }
 
 async function openAdd() {
@@ -1449,13 +1467,17 @@ async function createInstallation() {
     payload.telegramChatId = destChatId;
     if (destTopicId !== 0) payload.telegramTopicId = destTopicId;
   }
-  const res = await fetch('${basePath}/api/webapp/installations', {
-    method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(payload)
-  });
-  if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
-  const data = await res.json();
-  showReveal(data.credential, data.webhookUrl, 'Repository created', false);
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations', {
+      method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload)
+    });
+    if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
+    const data = await res.json();
+    showReveal(data.credential, data.webhookUrl, 'Repository created', false);
+  } catch (e) {
+    document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.';
+  }
 }
 
 function confirmRotate(callback) {
@@ -1470,10 +1492,14 @@ function confirmRotate(callback) {
 function rotateInstall() {
   confirmRotate(async function(ok) {
     if (!ok) return;
-    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/rotate', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
-    if (!res.ok) { setAction('Could not rotate token.', false); return; }
-    const data = await res.json();
-    showReveal(data.credential, '', 'Webhook token rotated', true);
+    try {
+      const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/rotate', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
+      if (!res.ok) { setAction('Could not rotate token.', false); return; }
+      const data = await res.json();
+      showReveal(data.credential, '', 'Webhook token rotated', true);
+    } catch (e) {
+      setAction('Could not rotate token.', false);
+    }
   });
 }
 
@@ -1495,22 +1521,29 @@ function showReveal(token, url, title, isRotate) {
     if (field) field.style.display = isRotate ? 'none' : '';
     urlEl.innerText = url || '';
   }
-  document.getElementById('copyHelp').innerText = '';
   showScreen('reveal');
 }
 
 async function toggleMute() {
-  const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/mute', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ muted: !currentItem.muted }) });
-  if (!res.ok) { setAction('Could not update notifications.', false); return; }
-  currentItem.muted = !currentItem.muted;
-  items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
-  renderDetail();
-  setAction('Notification setting updated.', true);
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/mute', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ muted: !currentItem.muted }) });
+    if (!res.ok) { setAction('Could not update notifications.', false); return; }
+    currentItem.muted = !currentItem.muted;
+    items = items.map(function(x) { return x.id === currentItem.id ? currentItem : x; });
+    renderDetail();
+    setAction('Notification setting updated.', true);
+  } catch (e) {
+    setAction('Could not update notifications.', false);
+  }
 }
 
 async function testDelivery() {
-  const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/test', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
-  setAction(res.ok ? '✓ Test notification sent.' : 'Could not send test notification.', res.ok);
+  try {
+    const res = await fetch('${basePath}/api/webapp/installations/' + currentItem.id + '/test', { method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }) });
+    setAction(res.ok ? '✓ Test notification sent.' : 'Could not send test notification.', res.ok);
+  } catch (e) {
+    setAction('Could not send test notification.', false);
+  }
 }
 
 function setupHandlers() {
