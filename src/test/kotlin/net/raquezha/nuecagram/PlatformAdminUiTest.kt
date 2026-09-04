@@ -236,6 +236,45 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun softDeletedInstallationsAreExcludedFromPlatformAdminDashboardAndDirectory() =
+        testApplication {
+            configureTestApplication()
+            val noRedirectClient = client.config { followRedirects = false }
+            val sessionCookie = login(noRedirectClient)
+
+            val toDeleteInst = runBlocking {
+                installationRepository.createInstallation(
+                    repoName = "to-be-deleted-admin-repo",
+                    chatName = "SoftDeleteAdmin",
+                    gitlabBaseUrl = "https://gitlab.example.com",
+                    gitlabProjectId = 998877L,
+                    telegramChatId = -100998877L,
+                    telegramTopicId = null,
+                )
+            }
+
+            val beforePage = client.get("${basePath()}/admin/installations") {
+                header(HttpHeaders.Cookie, sessionCookie)
+            }
+            assertThat(beforePage.status).isEqualTo(HttpStatusCode.OK)
+            assertThat(beforePage.bodyAsText()).contains("to-be-deleted-admin-repo")
+
+            runBlocking { installationRepository.softDeleteInstallation(toDeleteInst.id) }
+
+            val dashboardPage = client.get("${basePath()}/admin") {
+                header(HttpHeaders.Cookie, sessionCookie)
+            }
+            assertThat(dashboardPage.status).isEqualTo(HttpStatusCode.OK)
+            assertThat(dashboardPage.bodyAsText()).doesNotContain("to-be-deleted-admin-repo")
+
+            val installationsPage = client.get("${basePath()}/admin/installations") {
+                header(HttpHeaders.Cookie, sessionCookie)
+            }
+            assertThat(installationsPage.status).isEqualTo(HttpStatusCode.OK)
+            assertThat(installationsPage.bodyAsText()).doesNotContain("to-be-deleted-admin-repo")
+        }
+
+    @Test
     fun expiredPlatformAdminSessionIsRejected() =
         testApplication {
             configureTestApplication()
