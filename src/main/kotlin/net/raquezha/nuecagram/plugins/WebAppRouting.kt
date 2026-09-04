@@ -418,6 +418,7 @@ private suspend fun ApplicationCall.handleGetDestinations(
     }
 
     val combined = (installed + known).distinctBy { it.id }
+        .sortedByDescending { it.telegramChatId == session.telegramChatId }
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, combined)
 }
@@ -1612,9 +1613,10 @@ async function openAdd() {
   const selectEl = document.getElementById('inDestination');
   const requestId = ++addRequestId;
 
-  document.getElementById('createDestinationName').innerText = isGroup
-    ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
-    : 'Target Telegram Destination';
+  const groupMatch = isGroup ? items.find(function(x) { return x.telegramChatId === currentContext.chatId; }) : null;
+  const groupNameText = isGroup ? (groupMatch && groupMatch.chatName ? groupMatch.chatName : destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})) : 'Target Telegram Destination';
+
+  document.getElementById('createDestinationName').innerText = groupNameText;
   document.getElementById('createDestinationMeta').innerHTML = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
     : 'Select a destination group or topic<br>below to connect your GitLab project.';
