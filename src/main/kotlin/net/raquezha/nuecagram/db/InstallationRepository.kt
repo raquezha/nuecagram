@@ -750,6 +750,14 @@ class InstallationRepository(
         WebAppSessions.deleteWhere { WebAppSessions.expiresAt lessEq now.databaseTime() }
     }
 
+    suspend fun cleanupStaleMrAndPushStates(now: Instant = Instant.now(), maxAgeDays: Long = 30): Int =
+        databaseFactory.dbTransaction {
+            val cutoff = now.minus(maxAgeDays, java.time.temporal.ChronoUnit.DAYS).databaseTime()
+            val deletedMrs = ActiveMergeRequests.deleteWhere { ActiveMergeRequests.updatedAt lessEq cutoff }
+            val deletedPushes = RecentBranchPushes.deleteWhere { RecentBranchPushes.updatedAt lessEq cutoff }
+            deletedMrs + deletedPushes
+        }
+
 
     suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
         ManagementLinks.deleteWhere { ManagementLinks.expiresAt lessEq now.databaseTime() }

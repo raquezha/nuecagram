@@ -41,9 +41,9 @@ class WebhookEventFilter {
     private fun hasTypedFieldChanges(changes: MergeRequestChanges): Boolean {
         if (changes.title?.hasChanged() == true) return true
         if (changes.description?.hasChanged() == true) return true
-        if (changes.labels != null) return true
-        if (changes.assignees != null) return true
-        if (changes.reviewers != null) return true
+        if (changes.labels?.hasChanged() == true) return true
+        if (changes.assignees?.hasChanged() == true) return true
+        if (changes.reviewers?.hasChanged() == true) return true
         if (changes.state?.hasChanged() == true) return true
         return changes.milestoneId?.hasChanged() == true
     }

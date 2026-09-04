@@ -588,6 +588,14 @@ val InstallationRepositoryTests by testSuite {
             // Clear active MR
             repository.clearActiveMr(inst.id, 501L, "feature/login")
             assertThat(repository.getActiveMrForBranch(inst.id, 501L, "feature/login")).isNull()
+
+            // Verify cleanupStaleMrAndPushStates
+            val cleaned = repository.cleanupStaleMrAndPushStates(
+                now = Instant.now().plus(31, ChronoUnit.DAYS),
+                maxAgeDays = 30,
+            )
+            assertThat(cleaned).isAtLeast(1)
+            assertThat(repository.getLatestPushSha(inst.id, 501L, "feature/login")).isNull()
         } finally {
             // Pool cleaned up automatically on re-initialization
         }
