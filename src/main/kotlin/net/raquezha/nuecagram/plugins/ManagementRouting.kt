@@ -848,16 +848,19 @@ internal fun managementDocument(
           .admin-hero p { margin: 0.4rem 0 0 0; font-size: 0.9rem; color: #6e6154; word-break: break-word; }
           .admin-panel { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; min-width: 0; word-break: break-word; }
           .admin-panel h3 { margin: 0 0 0.75rem 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; word-break: break-word; }
-          .admin-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-top: 1rem; width: 100%; max-width: 100%; box-sizing: border-box; }
-          .admin-meta-card { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 0.85rem 1rem; color: #2c251e; box-shadow: 0 2px 6px rgba(45, 30, 15, 0.03); min-width: 0; box-sizing: border-box; word-break: break-word; }
+          .admin-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 1rem; width: 100%; max-width: 100%; box-sizing: border-box; }
+          .admin-meta-card { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 0.85rem 1rem; color: #2c251e; box-shadow: 0 2px 6px rgba(45, 30, 15, 0.03); min-width: 0; box-sizing: border-box; overflow: hidden; }
           .admin-meta-card.meta-installations { border-left: 4px solid #2b7fa1; }
           .admin-meta-card.meta-audit { border-left: 4px solid #6b5b95; }
-          .admin-meta-card.meta-recovery { border-left: 4px solid #3b8b68; }
-          .admin-meta-card strong { display: block; margin-bottom: 0.25rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.725rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6e6154; }
+          .admin-meta-card.meta-muted { border-left: 4px solid #d97706; }
+          .admin-meta-card.meta-status { border-left: 4px solid #3b8b68; }
+          .admin-meta-card strong { display: block; margin-bottom: 0.25rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.725rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6e6154; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .admin-meta-card.meta-installations strong { color: #1d617d; }
           .admin-meta-card.meta-audit strong { color: #534575; }
-          .admin-meta-card.meta-recovery strong { color: #2a684d; }
-          .admin-meta-card .stat-val { font-family: 'Space Grotesk', sans-serif; font-size: 1.4rem; font-weight: 700; color: #1a1612; line-height: 1.2; }
+          .admin-meta-card.meta-muted strong { color: #b45309; }
+          .admin-meta-card.meta-status strong { color: #2a684d; }
+          .admin-meta-card .stat-val { font-family: 'Space Grotesk', sans-serif; font-size: 1.3rem; font-weight: 700; color: #1a1612; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .admin-meta-card .stat-val .status-badge { font-size: 0.95rem; font-weight: 700; }
           @media (min-width: 720px) {
             html { padding: 2rem 1rem; }
             body { margin: 1rem auto; padding: 2.5rem; }

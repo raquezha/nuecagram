@@ -1157,32 +1157,34 @@ private fun webAppShellHtml(basePath: String): String = """
       </section>
 
       <section id="screen-reveal" class="panel">
-        <h1 id="revTitle">Webhook token rotated</h1>
-        <p id="revSubtitle">Copy this webhook token now. It will only be shown once.</p>
+        <button class="link" data-screen="list">‹ Back to repositories</button>
+        <h1 id="revTitle">Repository created</h1>
+        <p id="revSubtitle">Copy the Webhook URL and Secret Token to GitLab Webhooks settings.</p>
         <div class="group">
           <div class="field">
-            <label>Webhook secret</label>
-            <div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>
-            <div class="split" style="margin-top:12px;">
-              <button id="btnReveal">Reveal</button>
-              <button id="btnCopy" class="primary">Copy token</button>
-            </div>
+            <label>1. Webhook URL</label>
+            <div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
+            <button id="btnCopyUrl" class="primary" style="width:100%;margin-top:10px;">Copy Webhook URL</button>
           </div>
           <div class="field">
-            <label>Webhook URL</label>
-            <div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
+            <label>2. Webhook secret token</label>
+            <div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>
+            <div class="split" style="margin-top:10px;">
+              <button id="btnReveal">Reveal</button>
+              <button id="btnCopy" class="primary">Copy Secret Token</button>
+            </div>
           </div>
         </div>
         <div id="revGuideBox" class="box" style="margin-top:14px;padding:12px 14px;font-size:13px;line-height:1.45;display:none;">
-          <strong style="color:var(--text-main);display:block;margin-bottom:6px;">📋 Next Steps in GitLab:</strong>
+          <strong style="color:var(--text-main);display:block;margin-bottom:6px;">📋 How to complete setup in GitLab:</strong>
           <ol style="margin:0;padding-left:18px;color:var(--hint);">
-            <li>Tap <strong>↗ Open GitLab Project</strong> below</li>
-            <li>In GitLab, navigate to <strong>Settings ➔ Webhooks</strong></li>
-            <li>Paste the <strong>Webhook URL</strong> and <strong>Webhook Secret</strong> from above, then save!</li>
+            <li>Tap <strong>Copy Webhook URL</strong> &amp; <strong>↗ Open GitLab Project</strong></li>
+            <li>In GitLab, navigate to <strong>Settings ➔ Webhooks</strong> and paste the URL</li>
+            <li>Switch back here, tap <strong>Copy Secret Token</strong>, then paste &amp; save in GitLab</li>
           </ol>
         </div>
         <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;">
-          <a id="btnRevGitlabHooks" href="#" target="_blank" rel="noopener" class="primary" style="display:none;text-align:center;text-decoration:none;padding:11px 14px;border-radius:12px;">↗ Open GitLab Project</a>
+          <a id="btnRevGitlabHooks" href="#" target="_blank" rel="noopener" class="primary" style="display:none;text-align:center;text-decoration:none;padding:11px 14px;border-radius:12px;width:100%;">↗ Open GitLab Project</a>
           <button id="btnRevDone" class="primary" style="width:100%;">Done</button>
         </div>
       </section>
@@ -1388,6 +1390,11 @@ function extractStartParam() {
 async function initWebApp() {
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
+  setupHandlers();
+  if (window.location.protocol === 'file:') {
+    loadInstallations();
+    return;
+  }
   showScreen('loading');
   try {
     const res = await fetch('${basePath}/api/webapp/auth', {
@@ -1396,7 +1403,7 @@ async function initWebApp() {
       body: JSON.stringify({ initData: (tg && tg.initData) || '', startParam: extractStartParam() })
     });
     if (!res.ok) {
-      if (res.status === 401) {
+      if (res.status === 400 || res.status === 401 || !tg || !tg.initData) {
         renderError('Telegram Access Required', 'This management portal must be opened inside Telegram.\nOpen @NuecagramBot and tap OPEN.');
       } else {
         renderError(res.status === 403 ? 'Admin access required' : 'Authentication required', 'Only Telegram group admins can manage repositories here.');
@@ -1408,7 +1415,6 @@ async function initWebApp() {
     if (data.sessionToken) sToken = data.sessionToken;
     currentContext = { chatId: data.telegramChatId, topicId: data.telegramTopicId };
     listMode = (currentContext.chatId != null && currentContext.chatId < 0) ? 'scoped' : 'all';
-    setupHandlers();
     await loadInstallations();
   } catch (e) {
     renderError('Connection error', 'Could not reach Nuecagram. Check your connection and try again.');
@@ -1416,6 +1422,14 @@ async function initWebApp() {
 }
 
 async function loadInstallations(silent) {
+  if (window.location.protocol === 'file:') {
+    items = [
+      { id: '1b179442-8888-4444-9999-1234567890ab', repoName: 'nuecagram', chatName: 'Android Team / Notifications', gitlabBaseUrl: 'https://gitlab.com', gitlabProjectId: 381, telegramChatId: -100123456789, telegramTopicId: 2, muted: false },
+      { id: '2c289553-9999-5555-0000-2345678901bc', repoName: 'mobile-app', chatName: 'iOS Team / Notifications', gitlabBaseUrl: 'https://gitlab.com', gitlabProjectId: 482, telegramChatId: -100987654321, telegramTopicId: null, muted: true }
+    ];
+    renderList();
+    return;
+  }
   if (!silent) {
     const el = document.getElementById('installationsList');
     if (el) el.innerHTML = '';
@@ -1516,8 +1530,8 @@ function renderDetail() {
   const item = currentItem;
   const gitlabPermalink = item.gitlabBaseUrl.replace(/\/+$/, '') + (item.gitlabProjectId ? '/projects/' + item.gitlabProjectId : '');
   document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '" onerror="this.onerror=null;this.src=\'${basePath}/webapp/avatars/' + fallbackAvatarFor(item, 0) + '\'"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
-    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(gitlabPermalink) + '\', this.querySelector(\'.meta\'))"><div class="grow"><strong>GitLab</strong><div class="meta">' + escapeHtml(gitlabPermalink) + '</div></div><a href="' + escapeHtml(gitlabPermalink) + '" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:4px 8px;border-radius:6px;background:var(--input-bg);" onclick="event.stopPropagation();" aria-label="Open GitLab">↗</a></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
-    '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(gitlabPermalink) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><div style="display:flex;align-items:center;gap:6px;min-width:0;"><span class="meta">' + escapeHtml(gitlabPermalink) + '</span><a href="' + escapeHtml(gitlabPermalink) + '" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--input-bg);flex-shrink:0;" onclick="event.stopPropagation();" aria-label="Open GitLab">↗</a></div></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><div class="grow"><strong>Telegram</strong><div class="sub" style="font-weight:700;margin-top:2px;">' + escapeHtml(destinationLabel(item)) + '</div><div class="meta" style="margin-top:2px;">' + escapeHtml(destinationMeta(item)) + '</div></div></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="split"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
     '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><div style="display:flex;flex-direction:column;gap:10px;"><button id="btnRotate" class="danger">Rotate webhook token ›</button><button id="btnDelete" class="danger">Delete repository ›</button></div></div>';
   document.getElementById('btnTest').addEventListener('click', testDelivery);
@@ -1814,11 +1828,21 @@ function setupHandlers() {
   document.getElementById('btnAll').addEventListener('click', function() { listMode = 'all'; loadInstallations(); });
   document.getElementById('btnSaveIdentity').addEventListener('click', saveIdentity);
   document.getElementById('btnCreate').addEventListener('click', createInstallation);
-  document.getElementById('btnRevDone').addEventListener('click', loadInstallations);
+  document.getElementById('btnRevDone').addEventListener('click', function() {
+    showScreen('list');
+    renderList();
+    loadInstallations(true);
+  });
   document.getElementById('btnReveal').addEventListener('click', function() {
     const secret = document.getElementById('revSecret');
     const hidden = secret.classList.toggle('hidden');
     document.getElementById('btnReveal').innerText = hidden ? 'Reveal' : 'Hide';
+  });
+  document.getElementById('btnCopyUrl').addEventListener('click', function() {
+    const urlEl = document.getElementById('revUrl');
+    const url = urlEl.innerText;
+    if (navigator.clipboard) navigator.clipboard.writeText(url);
+    copyValue(url, urlEl);
   });
   document.getElementById('btnCopy').addEventListener('click', function() {
     const secret = document.getElementById('revSecret');

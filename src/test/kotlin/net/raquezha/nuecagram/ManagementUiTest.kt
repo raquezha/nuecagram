@@ -340,12 +340,20 @@ class ManagementUiTest : BaseEventTestHelper() {
                 header(HttpHeaders.Cookie, adminSession)
             }.bodyAsText()
 
+            val webAppJs = client.get("${basePath()}/webapp/app.js").bodyAsText()
+
             runCatching {
                 val dir = java.io.File("samples").apply { mkdirs() }
                 java.io.File(dir, "webapp-guidance.html").writeText(webAppGuidance)
-                java.io.File(dir, "webapp-shell.html").writeText(webAppShell)
 
-                val webAppListMockup = webAppShell.replace(
+                val webAppStandaloneShell = webAppShell.replace(
+                    """<script src="${basePath()}/webapp/app.js"></script>""",
+                    """<script>$webAppJs</script>""",
+                )
+
+                java.io.File(dir, "webapp-shell.html").writeText(webAppStandaloneShell)
+
+                val webAppListMockup = webAppStandaloneShell.replace(
                     """<section id="screen-loading" class="panel active">""",
                     """<section id="screen-loading" class="panel">""",
                 ).replace(
@@ -371,7 +379,7 @@ class ManagementUiTest : BaseEventTestHelper() {
                     """.trimIndent(),
                 )
 
-                val webAppDetailMockup = webAppShell.replace(
+                val webAppDetailMockup = webAppStandaloneShell.replace(
                     """<section id="screen-loading" class="panel active">""",
                     """<section id="screen-loading" class="panel">""",
                 ).replace(
@@ -393,11 +401,11 @@ class ManagementUiTest : BaseEventTestHelper() {
                         <div class="section-title">Repository</div>
                         <div class="group">
                           <div class="row" style="cursor:pointer">
-                            <div class="grow">
-                              <strong>GitLab</strong>
-                              <div class="meta">https://gitlab.com/projects/381</div>
+                            <strong>GitLab</strong>
+                            <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+                              <span class="meta">https://gitlab.com/projects/381</span>
+                              <a href="https://gitlab.com/projects/381" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--input-bg);flex-shrink:0;">↗</a>
                             </div>
-                            <a href="https://gitlab.com/projects/381" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:4px 8px;border-radius:6px;background:var(--input-bg);">↗</a>
                           </div>
                           <div class="row" style="cursor:pointer">
                             <strong>Installation ID</strong>
@@ -409,8 +417,11 @@ class ManagementUiTest : BaseEventTestHelper() {
                         <div class="section-title">Destination</div>
                         <div class="group">
                           <div class="row">
-                            <strong>Telegram</strong>
-                            <span class="meta">Chat -100123456789 · Topic 2</span>
+                            <div class="grow">
+                              <strong>Telegram</strong>
+                              <div class="sub" style="font-weight:700;margin-top:2px;">Android Team / Notifications</div>
+                              <div class="meta" style="margin-top:2px;">Chat -100123456789 · Topic 2</div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -437,8 +448,53 @@ class ManagementUiTest : BaseEventTestHelper() {
                     """.trimIndent(),
                 )
 
+                val targetRevSecret = """<div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" """ +
+                    """onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>"""
+                val replacementRevSecret = """<div id="revSecret" class="codebox secret hidden" """ +
+                    """style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) """ +
+                    """copyValue(this.innerText, this)">secret_token_1234567890_nuecagram_sample</div>"""
+
+                val targetRevUrl = """<div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" """ +
+                    """onclick="copyValue(this.innerText, this)"></div>"""
+                val replacementRevUrl = """<div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;">""" +
+                    """https://android.nweca.com/nuecagram/webhook</div>"""
+
+                val targetRevHooks = """<a id="btnRevGitlabHooks" href="#" target="_blank" rel="noopener" """ +
+                    """class="primary" style="display:none;text-align:center;text-decoration:none;""" +
+                    """padding:11px 14px;border-radius:12px;width:100%;">↗ Open GitLab Project</a>"""
+                val replacementRevHooks = """<a id="btnRevGitlabHooks" href="https://gitlab.com/projects/381" """ +
+                    """target="_blank" rel="noopener" class="primary" style="display:block;""" +
+                    """text-align:center;text-decoration:none;padding:11px 14px;border-radius:12px;width:100%;">""" +
+                    """↗ Open GitLab Project</a>"""
+
+                val targetGuide = """<div id="revGuideBox" class="box" style="margin-top:14px;""" +
+                    """padding:12px 14px;font-size:13px;line-height:1.45;display:none;">"""
+                val replacementGuide = """<div id="revGuideBox" class="box" style="margin-top:14px;""" +
+                    """padding:12px 14px;font-size:13px;line-height:1.45;display:block;">"""
+
+                val webAppRevealMockup = webAppStandaloneShell.replace(
+                    """<section id="screen-loading" class="panel active">""",
+                    """<section id="screen-loading" class="panel">""",
+                ).replace(
+                    """<section id="screen-reveal" class="panel">""",
+                    """<section id="screen-reveal" class="panel active">""",
+                ).replace(
+                    targetRevSecret,
+                    replacementRevSecret,
+                ).replace(
+                    targetRevUrl,
+                    replacementRevUrl,
+                ).replace(
+                    targetRevHooks,
+                    replacementRevHooks,
+                ).replace(
+                    targetGuide,
+                    replacementGuide,
+                )
+
                 java.io.File(dir, "webapp-repository-list.html").writeText(webAppListMockup)
                 java.io.File(dir, "webapp-repository-detail.html").writeText(webAppDetailMockup)
+                java.io.File(dir, "webapp-repository-reveal.html").writeText(webAppRevealMockup)
                 java.io.File(dir, "manage-onboarding.html").writeText(setup)
                 java.io.File(dir, "manage-dashboard.html").writeText(manageDashboard)
                 java.io.File(dir, "manage-recovery.html").writeText(manageRecovery)
@@ -501,6 +557,14 @@ class ManagementUiTest : BaseEventTestHelper() {
                         <div class="card-desc">Repository detail screen with 50/50 action buttons and GitLab permalink link button</div>
                       </div>
                       <a class="btn" href="webapp-repository-detail.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">5. WebApp Post-Creation Reveal & Setup Guidance</div>
+                        <div class="card-desc">Post-creation reveal screen displaying generated webhook secret, URL, 3-step setup guide, and GitLab project button</div>
+                      </div>
+                      <a class="btn" href="webapp-repository-reveal.html" target="_blank">Preview</a>
                     </div>
 
                     <div class="card">
