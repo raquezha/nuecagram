@@ -17,6 +17,9 @@ import io.ktor.server.routing.post
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
@@ -37,7 +40,7 @@ private const val WEBAPP_CSRF_COOKIE_NAME = "nuecagram_webapp_csrf"
 private const val CSRF_HEADER_NAME = "X-CSRF-Token"
 private const val SESSION_TTL_HOURS = 8L
 private const val SESSION_TTL_SECONDS = SESSION_TTL_HOURS * 60L * 60L
-private const val CONTAINER_MAX_WIDTH_PX = 480
+private const val CONTAINER_MAX_WIDTH_PX = 605
 
 @Serializable
 private data class AuthRequestPayload(
@@ -362,19 +365,30 @@ private suspend fun ApplicationCall.handleGetDestinations(
     val session = authenticateWebAppSession(installationRepository) ?: return
     val userId = session.telegramUserId
     val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull()
-    val adminChatIds = mutableMapOf<Long, Boolean>()
-    suspend fun isActiveAdmin(chatId: Long): Boolean =
-        adminChatIds.getOrPut(chatId) {
-            val userIsAdmin = runCatching { telegramService.chatMemberStatus(chatId, userId) }
-                .map(::isTelegramAdmin)
-                .getOrDefault(false)
 
-            userIsAdmin && (botUserId == null || runCatching { telegramService.chatMemberStatus(chatId, botUserId) }
-                .map(::isTelegramAdmin)
-                .getOrDefault(false))
-        }
+    val installedList = installationRepository.installationsForAdmin(userId)
+    val knownList = installationRepository.knownTelegramDestinations()
+    val allChatIds = (installedList.map { it.telegramChatId } + knownList.map { it.telegramChatId }).distinct()
 
-    val installed = installationRepository.installationsForAdmin(userId)
+    val activeAdminMap = coroutineScope {
+        allChatIds.map { chatId ->
+            async {
+                val userIsAdmin = runCatching { telegramService.chatMemberStatus(chatId, userId) }
+                    .map(::isTelegramAdmin)
+                    .getOrDefault(false)
+
+                val isActive = userIsAdmin && (botUserId == null || runCatching {
+                    telegramService.chatMemberStatus(chatId, botUserId)
+                }.map(::isTelegramAdmin).getOrDefault(false))
+
+                chatId to isActive
+            }
+        }.awaitAll().toMap()
+    }
+
+    fun isActiveAdmin(chatId: Long): Boolean = activeAdminMap[chatId] == true
+
+    val installed = installedList
         .filter { inst -> isActiveAdmin(inst.telegramChatId) }
         .map { inst ->
             val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
@@ -387,7 +401,7 @@ private suspend fun ApplicationCall.handleGetDestinations(
             )
         }
 
-    val known = installationRepository.knownTelegramDestinations().mapNotNull { dest ->
+    val known = knownList.mapNotNull { dest ->
         val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
         val baseTitle = dest.chatTitle?.takeIf(String::isNotBlank) ?: "Chat #${dest.telegramChatId}"
         val label = "$baseTitle$topicSuffix"
@@ -511,6 +525,12 @@ private suspend fun ApplicationCall.handleUpdateIdentity(
     respond(HttpStatusCode.OK, installationRepository.installationAdminContext(item.id)!!.toResponsePayload())
 }
 
+private fun String?.escapeTelegramHtml(): String =
+    this.orEmpty()
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+
 private suspend fun ApplicationCall.handleTestInstallation(
     installationRepository: InstallationRepository,
     telegramService: TelegramService,
@@ -531,10 +551,21 @@ private suspend fun ApplicationCall.handleTestInstallation(
         return
     }
 
+    val safeRepoLabel = item.repositoryButtonLabel().escapeTelegramHtml()
+    val actorMention = when {
+        !session.username.isNullOrBlank() -> "@${session.username.trim().removePrefix("@").escapeTelegramHtml()}"
+        !session.firstName.isNullOrBlank() ->
+            "<a href=\"tg://user?id=${session.telegramUserId}\">${session.firstName.trim().escapeTelegramHtml()}</a>"
+        else -> "<a href=\"tg://user?id=${session.telegramUserId}\">Admin</a>"
+    }
+
     telegramService.sendMessage(
         Message(
             chatId = item.telegramChatId.toString(),
-            text = "Nuecagram notification test for ${item.repositoryButtonLabel()}.",
+            text = "🧪 <b>Test Notification</b>\n\n" +
+                "Nuecagram test notification for <b>$safeRepoLabel</b>.\n" +
+                "Triggered by $actorMention.\n\n" +
+                "Notification delivery is active and working properly.",
             threadId = item.telegramTopicId,
         ),
     )
@@ -1042,6 +1073,9 @@ private fun webAppShellHtml(basePath: String): String = """
       .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
       .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
       .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
+      .dest-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--button); border-radius: 50%; animation: dest-spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
+      @keyframes dest-spin { to { transform: rotate(360deg); } }
+      .dest-loading-box { display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; color: var(--hint); font-size: 14px; }
       .box, .group { border-radius: 16px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
       .box { padding: 18px; }
       .section { margin: 18px 0; }
@@ -1059,7 +1093,9 @@ private fun webAppShellHtml(basePath: String): String = """
       option { background: var(--card-bg); color: var(--text-main); }
       .codebox { min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       input[readonly] { color: var(--hint); }
-      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: center; margin-top: 16px; }
+      .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: stretch; margin-top: 16px; }
+      .split > button { width: 100%; min-height: 44px; padding: 11px 10px; display: flex; align-items: center; justify-content: center; text-align: center; box-sizing: border-box; }
+      .section > .split { margin-top: 8px; }
       .split > button { width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; }
       .helper { min-height: 18px; margin-top: 8px; font-size: 12px; color: var(--hint); }
       .ok { color: var(--success); }
@@ -1472,7 +1508,7 @@ function renderDetail() {
   document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '" onerror="this.onerror=null;this.src=\'${basePath}/webapp/avatars/' + fallbackAvatarFor(item, 0) + '\'"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
     '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
-    '<div class="section"><div class="section-title">Actions</div><div class="top-actions"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
+    '<div class="section"><div class="section-title">Actions</div><div class="split"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
     '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><div style="display:flex;flex-direction:column;gap:10px;"><button id="btnRotate" class="danger">Rotate webhook token ›</button><button id="btnDelete" class="danger">Delete repository ›</button></div></div>';
   document.getElementById('btnTest').addEventListener('click', testDelivery);
   document.getElementById('btnMute').addEventListener('click', toggleMute);
@@ -1513,6 +1549,25 @@ async function saveIdentity() {
   }
 }
 
+let cachedDestinations = null;
+let addRequestId = 0;
+
+function renderDestinationOptions(dests) {
+  const selectEl = document.getElementById('inDestination');
+  if (!selectEl) return;
+  if (dests && dests.length > 0) {
+    selectEl.innerHTML = dests.map(function(d) {
+      return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
+    }).join('');
+    selectEl.disabled = false;
+    selectEl.selectedIndex = 0;
+    updateChatNameFromDestination();
+  } else {
+    selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
+    selectEl.disabled = false;
+  }
+}
+
 function updateChatNameFromDestination() {
   const selectEl = document.getElementById('inDestination');
   const chatNameEl = document.getElementById('inChatName');
@@ -1531,10 +1586,10 @@ function updateChatNameFromDestination() {
 async function openAdd() {
   const isGroup = currentContext.chatId != null && currentContext.chatId < 0;
   const selectEl = document.getElementById('inDestination');
-  const groupText = isGroup ? destinationLabel({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId}) : '';
+  const requestId = ++addRequestId;
 
   document.getElementById('createDestinationName').innerText = isGroup
-    ? groupText
+    ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
     : 'Target Telegram Destination';
   document.getElementById('createDestinationMeta').innerHTML = isGroup
     ? destinationMeta({telegramChatId: currentContext.chatId, telegramTopicId: currentContext.topicId})
@@ -1542,37 +1597,44 @@ async function openAdd() {
   document.getElementById('wizErr').innerText = '';
   const inChatName = document.getElementById('inChatName');
   if (inChatName) {
-    inChatName.value = isGroup ? groupText : '';
+    inChatName.value = '';
     inChatName.setAttribute('data-autofilled', 'true');
   }
+
+  showScreen('wizard');
 
   if (isGroup) {
     document.getElementById('fieldDestination').style.display = 'none';
   } else {
     document.getElementById('fieldDestination').style.display = '';
-    selectEl.innerHTML = '<option value="">Loading destinations...</option>';
+    if (cachedDestinations) {
+      renderDestinationOptions(cachedDestinations);
+    } else {
+      selectEl.innerHTML = '<option value="">Loading destinations...</option>';
+      selectEl.disabled = true;
+    }
     try {
       const res = await fetch('${basePath}/api/webapp/destinations', { headers: getAuthHeaders() });
+      if (requestId !== addRequestId) return;
       if (res.ok) {
         const dests = await res.json();
-        if (dests.length > 0) {
-          selectEl.innerHTML = dests.map(function(d) {
-            return '<option value="' + escapeHtml(d.id) + '">' + escapeHtml(d.name) + '</option>';
-          }).join('');
-          selectEl.selectedIndex = 0;
-          updateChatNameFromDestination();
-        } else {
-          selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
-        }
+        if (requestId !== addRequestId) return;
+        cachedDestinations = dests;
+        renderDestinationOptions(dests);
       } else {
-        selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+        if (!cachedDestinations) {
+          selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+          selectEl.disabled = false;
+        }
       }
     } catch (e) {
-      selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+      if (requestId !== addRequestId) return;
+      if (!cachedDestinations) {
+        selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+        selectEl.disabled = false;
+      }
     }
   }
-
-  showScreen('wizard');
 }
 
 async function createInstallation() {

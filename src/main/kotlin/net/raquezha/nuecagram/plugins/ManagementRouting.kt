@@ -692,7 +692,7 @@ internal fun managementDocument(
         <style>
           html { background-color: #eee4d5; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.4) 0%, rgba(205,185,160,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1600'%3E%3Cfilter id='organic-crunchy'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.005 0.011' numOctaves='3' result='folds'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.025 0.045' numOctaves='5' result='grain'/%3E%3CfeComposite in='folds' in2='grain' operator='arithmetic' k1='0.5' k2='0.5' k3='0' k4='0' result='combined'/%3E%3CfeDiffuseLighting in='combined' lighting-color='%23ffffff' surfaceScale='12' result='diffuse'%3E%3CfeDistantLight azimuth='55' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='combined' surfaceScale='9' specularConstant='1.2' specularExponent='8' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='55' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.85' k3='0.85' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.88' intercept='0.12'/%3E%3CfeFuncG type='linear' slope='0.84' intercept='0.12'/%3E%3CfeFuncB type='linear' slope='0.78' intercept='0.12'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23organic-crunchy)' opacity='0.48'/%3E%3C/svg%3E"); background-repeat: repeat; min-height: 100vh; padding: 0.75rem; box-sizing: border-box; }
           body { font-family: 'Reddit Mono', monospace; margin: 0 auto; max-width: 48rem; line-height: 1.6; padding: 1.25rem; color: #2c251e; background-color: #f6f2ec; background-image: radial-gradient(ellipse at center, rgba(255,255,255,0.5) 0%, rgba(225,215,200,0.3) 100%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600'%3E%3Cfilter id='crumpled'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.015 0.035' numOctaves='6' result='noise'/%3E%3CfeDiffuseLighting in='noise' lighting-color='%23ffffff' surfaceScale='14' result='diffuse'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feDiffuseLighting%3E%3CfeSpecularLighting in='noise' surfaceScale='12' specularConstant='1.8' specularExponent='6' lighting-color='%23ffffff' result='specular'%3E%3CfeDistantLight azimuth='45' elevation='35'/%3E%3C/feSpecularLighting%3E%3CfeArithmetic in='diffuse' in2='specular' k1='0' k2='0.8' k3='0.8' k4='0' result='lightMap'/%3E%3CfeComponentTransfer in='lightMap'%3E%3CfeFuncR type='linear' slope='0.85' intercept='0.15'/%3E%3CfeFuncG type='linear' slope='0.82' intercept='0.15'/%3E%3CfeFuncB type='linear' slope='0.75' intercept='0.15'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23crumpled)' opacity='0.65'/%3E%3C/svg%3E"); border: 1px solid #c8b9a6; border-radius: 0.75rem; box-shadow: 0 20px 60px rgba(45, 30, 15, 0.25), inset 0 0 100px rgba(195, 175, 150, 0.2); }
-          code { font-family: 'Reddit Mono', monospace; background: #eae1d5; color: #8b3a00; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
+          code { font-family: 'Reddit Mono', monospace; background: #eae1d5; color: #8b3a00; padding: 0.15rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; white-space: nowrap; word-break: keep-all; }
           code.cmd { font-family: 'Reddit Mono', monospace; background: #229ed9; color: #ffffff; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-weight: 600; font-size: 0.9em; }
           .cmd-label { display: inline-block; font-family: 'Space Grotesk', sans-serif; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: #1c8bc0; color: #ffffff; padding: 0.15rem 0.4rem; border-radius: 0.25rem; margin-right: 0.3rem; }
           .step-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
@@ -738,7 +738,7 @@ internal fun managementDocument(
             .control-row { flex-direction: row; align-items: center; }
           }
           *:focus-visible { outline: 2px solid #2b7fa1; outline-offset: 2px; }
-          .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; }
+          .status-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-weight: 600; white-space: nowrap; }
           .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
           .status-active { color: #2a684d; }
           .status-active .status-dot { background: #2a684d; box-shadow: 0 0 0 2px rgba(42,104,77,0.18); }
@@ -811,8 +811,8 @@ internal fun managementDocument(
           .table-wrapper::-webkit-scrollbar-track { background: #eee4d5; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb { background: #c8b9a6; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb:hover { background: #a89986; }
-          table { width: 100%; min-width: 34rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
-          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1.25rem; text-align: left; border-bottom: 2px solid #dcd1c0; }
+          table { width: 100%; min-width: 44rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
+          th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1.25rem; text-align: left; border-bottom: 2px solid #dcd1c0; white-space: nowrap; }
           td { padding: 0.75rem 1.25rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
           tr:last-child td { border-bottom: none; }
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
@@ -839,17 +839,17 @@ internal fun managementDocument(
           .table-link:hover { color: #1c8bc0; text-decoration: underline; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
           .site-footer a:hover { text-decoration: underline; }
-          .admin-page { max-width: 56rem; }
+          .admin-page { max-width: 56rem; width: 100%; box-sizing: border-box; }
           .admin-spacer { height: 0.25rem; }
-          .admin-shell { display: grid; gap: 1rem; }
-          .admin-hero { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-top: 3px solid #2b7fa1; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
+          .admin-shell { display: grid; gap: 1rem; width: 100%; max-width: 100%; box-sizing: border-box; min-width: 0; }
+          .admin-hero { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-top: 3px solid #2b7fa1; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; min-width: 0; word-break: break-word; }
           .admin-kicker { display: inline-block; margin-bottom: 0.4rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #2b7fa1; }
-          .admin-hero h1, .admin-hero h2 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; color: #1a1612; }
-          .admin-hero p { margin: 0.4rem 0 0 0; font-size: 0.9rem; color: #6e6154; }
-          .admin-panel { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); }
-          .admin-panel h3 { margin: 0 0 0.75rem 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; }
-          .admin-meta { display: grid; gap: 0.75rem; margin-top: 1rem; }
-          .admin-meta-card { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 0.85rem 1rem; color: #2c251e; box-shadow: 0 2px 6px rgba(45, 30, 15, 0.03); }
+          .admin-hero h1, .admin-hero h2 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.6rem; color: #1a1612; word-break: break-word; }
+          .admin-hero p { margin: 0.4rem 0 0 0; font-size: 0.9rem; color: #6e6154; word-break: break-word; }
+          .admin-panel { background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; min-width: 0; word-break: break-word; }
+          .admin-panel h3 { margin: 0 0 0.75rem 0; font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; color: #1a1612; word-break: break-word; }
+          .admin-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-top: 1rem; width: 100%; max-width: 100%; box-sizing: border-box; }
+          .admin-meta-card { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-radius: 0.5rem; padding: 0.85rem 1rem; color: #2c251e; box-shadow: 0 2px 6px rgba(45, 30, 15, 0.03); min-width: 0; box-sizing: border-box; word-break: break-word; }
           .admin-meta-card.meta-installations { border-left: 4px solid #2b7fa1; }
           .admin-meta-card.meta-audit { border-left: 4px solid #6b5b95; }
           .admin-meta-card.meta-recovery { border-left: 4px solid #3b8b68; }
