@@ -1688,6 +1688,7 @@ async function createInstallation() {
     });
     if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
     const data = await res.json();
+    cachedDestinations = null;
     const gitlabProjectUrl = payload.gitlabBaseUrl.replace(/\/+$/, '') + (payload.gitlabProjectId ? '/projects/' + payload.gitlabProjectId : '');
     showReveal(data.credential, data.webhookUrl, 'Repository created', false, gitlabProjectUrl);
   } catch (e) {
@@ -1751,6 +1752,7 @@ async function confirmDeleteInstallation() {
     }
     items = items.filter(function(x) { return x.id !== currentItem.id; });
     currentItem = null;
+    cachedDestinations = null;
     showScreen('list');
     await loadInstallations();
   } catch (e) {
