@@ -340,10 +340,161 @@ class ManagementUiTest : BaseEventTestHelper() {
                 header(HttpHeaders.Cookie, adminSession)
             }.bodyAsText()
 
+            val webAppJs = client.get("${basePath()}/webapp/app.js").bodyAsText()
+
             runCatching {
                 val dir = java.io.File("samples").apply { mkdirs() }
                 java.io.File(dir, "webapp-guidance.html").writeText(webAppGuidance)
-                java.io.File(dir, "webapp-shell.html").writeText(webAppShell)
+
+                val webAppStandaloneShell = webAppShell.replace(
+                    """<script src="${basePath()}/webapp/app.js"></script>""",
+                    """<script>$webAppJs</script>""",
+                )
+
+                java.io.File(dir, "webapp-shell.html").writeText(webAppStandaloneShell)
+
+                val webAppListMockup = webAppStandaloneShell.replace(
+                    """<section id="screen-loading" class="panel active">""",
+                    """<section id="screen-loading" class="panel">""",
+                ).replace(
+                    """<section id="screen-list" class="panel">""",
+                    """<section id="screen-list" class="panel active">""",
+                ).replace(
+                    """<div id="installationsList"></div>""",
+                    """
+                    <div id="installationsList">
+                      <button class="card">
+                        <img class="avatar" alt="" src="${basePath()}/webapp/avatars/01-wildlife-avatar-1-giraffe.png">
+                        <div class="grow">
+                          <div class="row">
+                            <div class="title">nuecagram</div>
+                            <span class="badge badge-active">ACTIVE</span>
+                            <span class="chev">›</span>
+                          </div>
+                          <div class="sub">Android Team / Notifications</div>
+                          <div class="meta">gitlab.com/nuecagram · id 1b179442</div>
+                        </div>
+                      </button>
+                    </div>
+                    """.trimIndent(),
+                )
+
+                val webAppDetailMockup = webAppStandaloneShell.replace(
+                    """<section id="screen-loading" class="panel active">""",
+                    """<section id="screen-loading" class="panel">""",
+                ).replace(
+                    """<section id="screen-detail" class="panel">""",
+                    """<section id="screen-detail" class="panel active">""",
+                ).replace(
+                    """<div id="detailBody"></div>""",
+                    """
+                    <div id="detailBody">
+                      <div class="card">
+                        <img class="avatar" alt="" src="${basePath()}/webapp/avatars/01-wildlife-avatar-1-giraffe.png">
+                        <div class="grow">
+                          <div class="title">nuecagram</div>
+                          <div class="sub">Android Team / Notifications</div>
+                        </div>
+                        <span class="badge badge-active">ACTIVE</span>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Repository</div>
+                        <div class="group">
+                          <div class="row" style="cursor:pointer">
+                            <strong>GitLab</strong>
+                            <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+                              <span class="meta">https://gitlab.com/projects/381</span>
+                              <a href="https://gitlab.com/projects/381" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:2px 6px;border-radius:6px;background:var(--input-bg);flex-shrink:0;">↗</a>
+                            </div>
+                          </div>
+                          <div class="row" style="cursor:pointer">
+                            <strong>Installation ID</strong>
+                            <span class="meta">1b179442-8888-4444-9999-1234567890ab</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Destination</div>
+                        <div class="group">
+                          <div class="row">
+                            <div class="grow">
+                              <strong>Telegram</strong>
+                              <div class="sub" style="font-weight:700;margin-top:2px;">Android Team / Notifications</div>
+                              <div class="meta" style="margin-top:2px;">Chat -100123456789 · Topic 2</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Actions</div>
+                        <div class="split">
+                          <button id="btnTest">Test notification</button>
+                          <button id="btnMute">Mute notifications</button>
+                        </div>
+                        <div id="actionHelp" class="helper"></div>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Settings</div>
+                        <button id="btnEdit">Edit names ›</button>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Danger zone</div>
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                          <button id="btnRotate" class="danger">Rotate webhook token ›</button>
+                          <button id="btnDelete" class="danger">Delete repository ›</button>
+                        </div>
+                      </div>
+                    </div>
+                    """.trimIndent(),
+                )
+
+                val targetRevSecret = """<div id="revSecret" class="codebox secret hidden" style="cursor:pointer;" """ +
+                    """onclick="if(!this.classList.contains('hidden')) copyValue(this.innerText, this)"></div>"""
+                val replacementRevSecret = """<div id="revSecret" class="codebox secret hidden" """ +
+                    """style="cursor:pointer;" onclick="if(!this.classList.contains('hidden')) """ +
+                    """copyValue(this.innerText, this)">secret_token_1234567890_nuecagram_sample</div>"""
+
+                val targetRevUrl = """<div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" """ +
+                    """onclick="copyValue(this.innerText, this)"></div>"""
+                val replacementRevUrl = """<div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;">""" +
+                    """https://android.nweca.com/nuecagram/webhook</div>"""
+
+                val targetRevHooks = """<a id="btnRevGitlabHooks" href="#" target="_blank" rel="noopener" """ +
+                    """class="primary" style="display:none;text-align:center;text-decoration:none;""" +
+                    """padding:11px 14px;border-radius:12px;width:100%;">↗ Open GitLab Project</a>"""
+                val replacementRevHooks = """<a id="btnRevGitlabHooks" href="https://gitlab.com/projects/381" """ +
+                    """target="_blank" rel="noopener" class="primary" style="display:block;""" +
+                    """text-align:center;text-decoration:none;padding:11px 14px;border-radius:12px;width:100%;">""" +
+                    """↗ Open GitLab Project</a>"""
+
+                val targetGuide = """<div id="revGuideBox" class="box" style="margin-top:14px;""" +
+                    """padding:12px 14px;font-size:13px;line-height:1.45;display:none;">"""
+                val replacementGuide = """<div id="revGuideBox" class="box" style="margin-top:14px;""" +
+                    """padding:12px 14px;font-size:13px;line-height:1.45;display:block;">"""
+
+                val webAppRevealMockup = webAppStandaloneShell.replace(
+                    """<section id="screen-loading" class="panel active">""",
+                    """<section id="screen-loading" class="panel">""",
+                ).replace(
+                    """<section id="screen-reveal" class="panel">""",
+                    """<section id="screen-reveal" class="panel active">""",
+                ).replace(
+                    targetRevSecret,
+                    replacementRevSecret,
+                ).replace(
+                    targetRevUrl,
+                    replacementRevUrl,
+                ).replace(
+                    targetRevHooks,
+                    replacementRevHooks,
+                ).replace(
+                    targetGuide,
+                    replacementGuide,
+                )
+
+                java.io.File(dir, "webapp-repository-list.html").writeText(webAppListMockup)
+                java.io.File(dir, "webapp-repository-detail.html").writeText(webAppDetailMockup)
+                java.io.File(dir, "webapp-repository-reveal.html").writeText(webAppRevealMockup)
                 java.io.File(dir, "manage-onboarding.html").writeText(setup)
                 java.io.File(dir, "manage-dashboard.html").writeText(manageDashboard)
                 java.io.File(dir, "manage-recovery.html").writeText(manageRecovery)
@@ -390,6 +541,30 @@ class ManagementUiTest : BaseEventTestHelper() {
                         <div class="card-desc">User-facing Telegram WebApp card layout and management UI</div>
                       </div>
                       <a class="btn" href="webapp-shell.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">3. WebApp Repository List View</div>
+                        <div class="card-desc">Populated repository list screen with active/muted badges and avatars</div>
+                      </div>
+                      <a class="btn" href="webapp-repository-list.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">4. WebApp Repository Detail View</div>
+                        <div class="card-desc">Repository detail screen with 50/50 action buttons and GitLab permalink link button</div>
+                      </div>
+                      <a class="btn" href="webapp-repository-detail.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">5. WebApp Post-Creation Reveal & Setup Guidance</div>
+                        <div class="card-desc">Post-creation reveal screen displaying generated webhook secret, URL, 3-step setup guide, and GitLab project button</div>
+                      </div>
+                      <a class="btn" href="webapp-repository-reveal.html" target="_blank">Preview</a>
                     </div>
 
                     <div class="card">

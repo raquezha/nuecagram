@@ -604,22 +604,24 @@ private fun FlowContent.renderAuditDetailChip(line: String) {
     }
 }
 
+private val AUDIT_DISPLAY_ZONE: java.time.ZoneOffset = java.time.ZoneOffset.ofHours(8)
+
 private fun Instant.formatAuditTime(): String {
     val formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.US)
-        .withZone(java.time.ZoneOffset.UTC)
+        .withZone(AUDIT_DISPLAY_ZONE)
     return formatter.format(this)
 }
 
 private fun Instant.formatAuditDate(): String {
     val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd", java.util.Locale.US)
-        .withZone(java.time.ZoneOffset.UTC)
+        .withZone(AUDIT_DISPLAY_ZONE)
     return formatter.format(this)
 }
 
 private fun Instant.formatAuditFullTooltip(): String {
     val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-        .withZone(java.time.ZoneOffset.UTC)
-    return formatter.format(this) + " UTC"
+        .withZone(AUDIT_DISPLAY_ZONE)
+    return formatter.format(this) + " UTC+08:00"
 }
 
 private fun String.formatAuditActionLabel(): String =

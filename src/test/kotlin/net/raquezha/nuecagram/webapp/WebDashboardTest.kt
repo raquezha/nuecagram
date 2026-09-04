@@ -483,7 +483,9 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(js).contains("confirmRotateInstallation")
         assertThat(js).contains("openDeleteConfirm")
         assertThat(js).contains("confirmDeleteInstallation")
-        assertThat(js).contains("updateChatNameFromDestination")
+        assertThat(html).contains("id=\"btnRevGitlabHooks\"")
+        assertThat(js).contains("btnRevGitlabHooks")
+        assertThat(js).contains("/projects/")
     }
 
     @Test

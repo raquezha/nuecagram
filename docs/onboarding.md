@@ -14,7 +14,7 @@ Nuecagram features a **DM-first** management experience. Group administrators ta
 
 1. Open `@NuecagramBot` in Telegram and tap **OPEN** to open the Web App portal.
 2. Tap **+ Add repository**.
-3. Select your target Telegram destination group or topic and enter your GitLab Base URL and Project ID.
+3. Select your target Telegram destination group or topic (requires both you and @NuecagramBot to be Administrators) and enter your GitLab Base URL and Project ID.
 4. Copy the webhook URL and secret token from the in-app reveal screen, then configure your GitLab webhook.
 5. Use DM commands such as `/manage`, `/status`, `/test`, `/rotate`, `/mute`, `/unmute`, and `/digest` to manage the installation.
 6. Use the inline menu in DM when you want callback navigation instead of typing commands.
