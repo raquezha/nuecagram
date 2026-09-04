@@ -3,6 +3,7 @@ package net.raquezha.nuecagram.db
 import java.util.UUID
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.SortOrder
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.jdbc.selectAll
 
 private const val PLATFORM_ADMIN_SEARCH_FIELDS = 5
@@ -35,6 +36,7 @@ class PlatformAdminReadRepository(
 ) {
     suspend fun installations(): List<InstallationAdminContext> = databaseFactory.dbTransaction {
         installationWithMuteQuery()
+            .where { Installations.deletedAt.isNull() }
             .orderBy(Installations.createdAt to SortOrder.DESC)
             .map { it.toAdminContext() }
     }
@@ -149,6 +151,8 @@ class PlatformAdminReadRepository(
     private fun installationsFilter(status: String?, search: String?): InstallationsFilter {
         val whereClauses = mutableListOf<String>()
         val params = mutableListOf<Any>()
+
+        whereClauses += "i.deleted_at IS NULL"
 
         when (status?.trim()?.lowercase()) {
             "active" -> whereClauses += "COALESCE(m.muted, FALSE) = FALSE"
