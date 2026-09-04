@@ -410,7 +410,9 @@ class WebhookRequestHandler(
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val projectId = event.project?.id ?: event.objectAttributes?.targetProjectId
+        val projectId = event.project?.id
+            ?: event.objectAttributes?.targetProjectId
+            ?: event.objectAttributes?.sourceProjectId
         val mrIid = event.objectAttributes?.iid
         val authorUsername = event.user?.username
         val reviewers = event.reviewers.orEmpty().mapNotNull { it.username }
