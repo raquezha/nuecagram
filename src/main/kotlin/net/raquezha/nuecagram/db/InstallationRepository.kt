@@ -138,6 +138,17 @@ data class MrParticipants(
     val reviewerUsernames: List<String>,
 )
 
+data class ActiveMergeRequest(
+    val mrIid: Long,
+    val sourceBranch: String,
+    val lastCommitSha: String?,
+)
+
+data class RecentBranchPush(
+    val branch: String,
+    val latestPushSha: String,
+)
+
 data class InstallationContext(
     val secretId: UUID,
     val installationId: UUID,
@@ -953,6 +964,96 @@ class InstallationRepository(
                     val reviewers = if (rawReviewers.isBlank()) emptyList() else rawReviewers.split(",")
                     MrParticipants(authorUsername = author, reviewerUsernames = reviewers)
                 }
+        }
+    }
+
+    suspend fun upsertActiveMr(
+        installationId: UUID,
+        projectId: Long,
+        sourceBranch: String,
+        mrIid: Long,
+        lastCommitSha: String?,
+    ) {
+        databaseFactory.dbTransaction {
+            ActiveMergeRequests.upsert {
+                it[ActiveMergeRequests.installationId] = installationId
+                it[ActiveMergeRequests.projectId] = projectId
+                it[ActiveMergeRequests.sourceBranch] = sourceBranch
+                it[ActiveMergeRequests.mrIid] = mrIid
+                it[ActiveMergeRequests.lastCommitSha] = lastCommitSha
+                it[ActiveMergeRequests.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
+            }
+        }
+    }
+
+    suspend fun getActiveMrForBranch(
+        installationId: UUID,
+        projectId: Long,
+        sourceBranch: String,
+    ): ActiveMergeRequest? {
+        return databaseFactory.dbTransaction {
+            ActiveMergeRequests.selectAll()
+                .where {
+                    (ActiveMergeRequests.installationId eq installationId) and
+                        (ActiveMergeRequests.projectId eq projectId) and
+                        (ActiveMergeRequests.sourceBranch eq sourceBranch)
+                }
+                .singleOrNull()
+                ?.let { row ->
+                    ActiveMergeRequest(
+                        mrIid = row[ActiveMergeRequests.mrIid],
+                        sourceBranch = row[ActiveMergeRequests.sourceBranch],
+                        lastCommitSha = row[ActiveMergeRequests.lastCommitSha],
+                    )
+                }
+        }
+    }
+
+    suspend fun clearActiveMr(
+        installationId: UUID,
+        projectId: Long,
+        sourceBranch: String,
+    ) {
+        databaseFactory.dbTransaction {
+            ActiveMergeRequests.deleteWhere {
+                (ActiveMergeRequests.installationId eq installationId) and
+                    (ActiveMergeRequests.projectId eq projectId) and
+                    (ActiveMergeRequests.sourceBranch eq sourceBranch)
+            }
+        }
+    }
+
+    suspend fun upsertLatestPushSha(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+        latestPushSha: String,
+    ) {
+        databaseFactory.dbTransaction {
+            RecentBranchPushes.upsert {
+                it[RecentBranchPushes.installationId] = installationId
+                it[RecentBranchPushes.projectId] = projectId
+                it[RecentBranchPushes.branch] = branch
+                it[RecentBranchPushes.latestPushSha] = latestPushSha
+                it[RecentBranchPushes.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
+            }
+        }
+    }
+
+    suspend fun getLatestPushSha(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? {
+        return databaseFactory.dbTransaction {
+            RecentBranchPushes.selectAll()
+                .where {
+                    (RecentBranchPushes.installationId eq installationId) and
+                        (RecentBranchPushes.projectId eq projectId) and
+                        (RecentBranchPushes.branch eq branch)
+                }
+                .singleOrNull()
+                ?.get(RecentBranchPushes.latestPushSha)
         }
     }
 }

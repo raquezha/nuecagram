@@ -73,10 +73,10 @@ class WebhookMessageFormatter {
         private const val SHORT_SHA_LENGTH = 7
     }
 
-    fun formatEventMessage(event: Event): String =
+    fun formatEventMessage(event: Event, mrIid: Long? = null): String =
         when (event) {
             is PipelineEvent -> formatPipelineEvent(event)
-            is PushEvent -> formatPushEventMessage(event)
+            is PushEvent -> formatPushEventMessage(event, mrIid)
             is TagPushEvent -> formatTagPushEvent(event)
             is WikiPageEvent -> formatWikiPageEvent(event)
             is DeploymentEvent -> formatDeployEventMessage(event)
@@ -649,7 +649,7 @@ class WebhookMessageFormatter {
 
     private fun String.extractIssueNumber(): String? = Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
 
-    private fun formatPushEventMessage(event: PushEvent): String {
+    fun formatPushEventMessage(event: PushEvent, mrIid: Long? = null): String {
         val beforeSha = event.before ?: ""
         val afterSha = event.after ?: ""
 
@@ -673,9 +673,9 @@ class WebhookMessageFormatter {
         }
 
         val compareUrl = "$projectWebUrl/-/compare/$beforeSha...$afterSha"
-
+        val mrBadge = if (mrIid != null) " (!${mrIid})" else ""
         return buildString {
-            append("📤 Push to ${ref.bold()}\n")
+            append("📤 Push to ${ref.bold()}$mrBadge\n")
             append("${projectName.bold()} • ${compareUrl.link("$commitCount commit(s)")}\n")
             append("\n")
             appendPushCommits(commits)
