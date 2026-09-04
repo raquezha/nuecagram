@@ -344,6 +344,101 @@ class ManagementUiTest : BaseEventTestHelper() {
                 val dir = java.io.File("samples").apply { mkdirs() }
                 java.io.File(dir, "webapp-guidance.html").writeText(webAppGuidance)
                 java.io.File(dir, "webapp-shell.html").writeText(webAppShell)
+
+                val webAppListMockup = webAppShell.replace(
+                    """<section id="screen-loading" class="panel active">""",
+                    """<section id="screen-loading" class="panel">""",
+                ).replace(
+                    """<section id="screen-list" class="panel">""",
+                    """<section id="screen-list" class="panel active">""",
+                ).replace(
+                    """<div id="installationsList"></div>""",
+                    """
+                    <div id="installationsList">
+                      <button class="card">
+                        <img class="avatar" alt="" src="${basePath()}/webapp/avatars/01-wildlife-avatar-1-giraffe.png">
+                        <div class="grow">
+                          <div class="row">
+                            <div class="title">nuecagram</div>
+                            <span class="badge badge-active">ACTIVE</span>
+                            <span class="chev">›</span>
+                          </div>
+                          <div class="sub">Android Team / Notifications</div>
+                          <div class="meta">gitlab.com/nuecagram · id 1b179442</div>
+                        </div>
+                      </button>
+                    </div>
+                    """.trimIndent(),
+                )
+
+                val webAppDetailMockup = webAppShell.replace(
+                    """<section id="screen-loading" class="panel active">""",
+                    """<section id="screen-loading" class="panel">""",
+                ).replace(
+                    """<section id="screen-detail" class="panel">""",
+                    """<section id="screen-detail" class="panel active">""",
+                ).replace(
+                    """<div id="detailBody"></div>""",
+                    """
+                    <div id="detailBody">
+                      <div class="card">
+                        <img class="avatar" alt="" src="${basePath()}/webapp/avatars/01-wildlife-avatar-1-giraffe.png">
+                        <div class="grow">
+                          <div class="title">nuecagram</div>
+                          <div class="sub">Android Team / Notifications</div>
+                        </div>
+                        <span class="badge badge-active">ACTIVE</span>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Repository</div>
+                        <div class="group">
+                          <div class="row" style="cursor:pointer">
+                            <div class="grow">
+                              <strong>GitLab</strong>
+                              <div class="meta">https://gitlab.com/projects/381</div>
+                            </div>
+                            <a href="https://gitlab.com/projects/381" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:4px 8px;border-radius:6px;background:var(--input-bg);">↗</a>
+                          </div>
+                          <div class="row" style="cursor:pointer">
+                            <strong>Installation ID</strong>
+                            <span class="meta">1b179442-8888-4444-9999-1234567890ab</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Destination</div>
+                        <div class="group">
+                          <div class="row">
+                            <strong>Telegram</strong>
+                            <span class="meta">Chat -100123456789 · Topic 2</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Actions</div>
+                        <div class="split">
+                          <button id="btnTest">Test notification</button>
+                          <button id="btnMute">Mute notifications</button>
+                        </div>
+                        <div id="actionHelp" class="helper"></div>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Settings</div>
+                        <button id="btnEdit">Edit names ›</button>
+                      </div>
+                      <div class="section">
+                        <div class="section-title">Danger zone</div>
+                        <div style="display:flex;flex-direction:column;gap:10px;">
+                          <button id="btnRotate" class="danger">Rotate webhook token ›</button>
+                          <button id="btnDelete" class="danger">Delete repository ›</button>
+                        </div>
+                      </div>
+                    </div>
+                    """.trimIndent(),
+                )
+
+                java.io.File(dir, "webapp-repository-list.html").writeText(webAppListMockup)
+                java.io.File(dir, "webapp-repository-detail.html").writeText(webAppDetailMockup)
                 java.io.File(dir, "manage-onboarding.html").writeText(setup)
                 java.io.File(dir, "manage-dashboard.html").writeText(manageDashboard)
                 java.io.File(dir, "manage-recovery.html").writeText(manageRecovery)
@@ -390,6 +485,22 @@ class ManagementUiTest : BaseEventTestHelper() {
                         <div class="card-desc">User-facing Telegram WebApp card layout and management UI</div>
                       </div>
                       <a class="btn" href="webapp-shell.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">3. WebApp Repository List View</div>
+                        <div class="card-desc">Populated repository list screen with active/muted badges and avatars</div>
+                      </div>
+                      <a class="btn" href="webapp-repository-list.html" target="_blank">Preview</a>
+                    </div>
+
+                    <div class="card">
+                      <div>
+                        <div class="card-title">4. WebApp Repository Detail View</div>
+                        <div class="card-desc">Repository detail screen with 50/50 action buttons and GitLab permalink link button</div>
+                      </div>
+                      <a class="btn" href="webapp-repository-detail.html" target="_blank">Preview</a>
                     </div>
 
                     <div class="card">

@@ -565,7 +565,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
             text = "🧪 <b>Test Notification</b>\n\n" +
                 "Nuecagram test notification for <b>$safeRepoLabel</b>.\n" +
                 "Triggered by $actorMention.\n\n" +
-                "Notification delivery is active and working properly.",
+                "<i>Notification delivery is active and working properly.</i>",
             threadId = item.telegramTopicId,
         ),
     )
@@ -1173,7 +1173,16 @@ private fun webAppShellHtml(basePath: String): String = """
             <div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" onclick="copyValue(this.innerText, this)"></div>
           </div>
         </div>
-        <div style="margin-top:16px;">
+        <div id="revGuideBox" class="box" style="margin-top:14px;padding:12px 14px;font-size:13px;line-height:1.45;display:none;">
+          <strong style="color:var(--text-main);display:block;margin-bottom:6px;">📋 Next Steps in GitLab:</strong>
+          <ol style="margin:0;padding-left:18px;color:var(--hint);">
+            <li>Tap <strong>↗ Open GitLab Project</strong> below</li>
+            <li>In GitLab, navigate to <strong>Settings ➔ Webhooks</strong></li>
+            <li>Paste the <strong>Webhook URL</strong> and <strong>Webhook Secret</strong> from above, then save!</li>
+          </ol>
+        </div>
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;">
+          <a id="btnRevGitlabHooks" href="#" target="_blank" rel="noopener" class="primary" style="display:none;text-align:center;text-decoration:none;padding:11px 14px;border-radius:12px;">↗ Open GitLab Project</a>
           <button id="btnRevDone" class="primary" style="width:100%;">Done</button>
         </div>
       </section>
@@ -1505,8 +1514,9 @@ async function openDetail(id) {
 
 function renderDetail() {
   const item = currentItem;
+  const gitlabPermalink = item.gitlabBaseUrl.replace(/\/+$/, '') + (item.gitlabProjectId ? '/projects/' + item.gitlabProjectId : '');
   document.getElementById('detailBody').innerHTML = '<div class="card"><img class="avatar" alt="" aria-hidden="true" src="${basePath}/webapp/avatars/' + avatarFor(item, 0) + '" onerror="this.onerror=null;this.src=\'${basePath}/webapp/avatars/' + fallbackAvatarFor(item, 0) + '\'"><div class="grow"><div class="title">' + escapeHtml(item.repoName) + '</div><div class="sub">' + escapeHtml(destinationLabel(item)) + '</div></div><span class="badge ' + (item.muted ? 'badge-muted">MUTED' : 'badge-active">ACTIVE') + '</span></div>' +
-    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '\', this.querySelector(\'.meta\'))"><strong>GitLab</strong><span class="meta">' + escapeHtml(item.gitlabBaseUrl + (item.gitlabProjectId ? '/#' + item.gitlabProjectId : '')) + '</span></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
+    '<div class="section"><div class="section-title">Repository</div><div class="group"><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(gitlabPermalink) + '\', this.querySelector(\'.meta\'))"><div class="grow"><strong>GitLab</strong><div class="meta">' + escapeHtml(gitlabPermalink) + '</div></div><a href="' + escapeHtml(gitlabPermalink) + '" target="_blank" rel="noopener" style="color:var(--button);font-size:16px;font-weight:700;text-decoration:none;padding:4px 8px;border-radius:6px;background:var(--input-bg);" onclick="event.stopPropagation();" aria-label="Open GitLab">↗</a></div><div class="row" style="cursor:pointer" onclick="copyValue(\'' + escapeHtml(item.id) + '\', this.querySelector(\'.meta\'))"><strong>Installation ID</strong><span class="meta">' + escapeHtml(item.id) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Destination</div><div class="group"><div class="row"><strong>Telegram</strong><span class="meta">' + escapeHtml(destinationMeta(item)) + '</span></div></div></div>' +
     '<div class="section"><div class="section-title">Actions</div><div class="split"><button id="btnTest">Test notification</button><button id="btnMute">' + (item.muted ? 'Unmute notifications' : 'Mute notifications') + '</button></div><div id="actionHelp" class="helper"></div></div>' +
     '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><div style="display:flex;flex-direction:column;gap:10px;"><button id="btnRotate" class="danger">Rotate webhook token ›</button><button id="btnDelete" class="danger">Delete repository ›</button></div></div>';
@@ -1664,7 +1674,8 @@ async function createInstallation() {
     });
     if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
     const data = await res.json();
-    showReveal(data.credential, data.webhookUrl, 'Repository created', false);
+    const gitlabProjectUrl = payload.gitlabBaseUrl.replace(/\/+$/, '') + (payload.gitlabProjectId ? '/projects/' + payload.gitlabProjectId : '');
+    showReveal(data.credential, data.webhookUrl, 'Repository created', false, gitlabProjectUrl);
   } catch (e) {
     document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.';
   }
@@ -1734,7 +1745,7 @@ async function confirmDeleteInstallation() {
   }
 }
 
-function showReveal(token, url, title, isRotate) {
+function showReveal(token, url, title, isRotate, gitlabHooksUrl) {
   document.getElementById('revTitle').innerText = title;
   const sub = document.getElementById('revSubtitle');
   if (sub) {
@@ -1751,6 +1762,17 @@ function showReveal(token, url, title, isRotate) {
     const field = urlEl.closest('.field');
     if (field) field.style.display = isRotate ? 'none' : '';
     urlEl.innerText = url || '';
+  }
+  const guideBox = document.getElementById('revGuideBox');
+  if (guideBox) guideBox.style.display = isRotate ? 'none' : 'block';
+  const hooksBtn = document.getElementById('btnRevGitlabHooks');
+  if (hooksBtn) {
+    if (gitlabHooksUrl) {
+      hooksBtn.href = gitlabHooksUrl;
+      hooksBtn.style.display = 'block';
+    } else {
+      hooksBtn.style.display = 'none';
+    }
   }
   showScreen('reveal');
 }
