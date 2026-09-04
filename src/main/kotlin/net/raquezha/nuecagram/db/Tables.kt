@@ -149,6 +149,27 @@ object MrParticipantCaches : Table("mr_participant_caches") {
     override val primaryKey = PrimaryKey(installationId, projectId, mrIid)
 }
 
+object ActiveMergeRequests : Table("active_merge_requests") {
+    val installationId = javaUUID("installation_id")
+    val projectId = long("project_id")
+    val sourceBranch = varchar("source_branch", 255)
+    val mrIid = long("mr_iid")
+    val lastCommitSha = varchar("last_commit_sha", 255).nullable()
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(installationId, projectId, sourceBranch)
+}
+
+object RecentBranchPushes : Table("recent_branch_pushes") {
+    val installationId = javaUUID("installation_id")
+    val projectId = long("project_id")
+    val branch = varchar("branch", 255)
+    val latestPushSha = varchar("latest_push_sha", 255)
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(installationId, projectId, branch)
+}
+
 object TelegramLaunchNonces : Table("telegram_launch_nonces") {
     val id = javaUUID("id")
     val nonceDigest = binary("nonce_digest")

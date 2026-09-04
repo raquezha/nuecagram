@@ -562,6 +562,44 @@ val InstallationRepositoryTests by testSuite {
         val deletedRes = repository.resolveWebhookInstallation(cred.raw)
         assertThat(deletedRes).isEqualTo(net.raquezha.nuecagram.db.WebhookInstallationResult.SoftDeleted)
     }
+
+    postgresTest("persists and retrieves active MR and recent branch push state") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val inst = repository.createInstallation("https://gitlab.example.com/state/test", 501, -2001, null)
+
+            // Verify initial state is null
+            assertThat(repository.getActiveMrForBranch(inst.id, 501L, "feature/login")).isNull()
+            assertThat(repository.getLatestPushSha(inst.id, 501L, "feature/login")).isNull()
+
+            // Upsert active MR
+            repository.upsertActiveMr(inst.id, 501L, "feature/login", 42L, "abc1234")
+            val activeMr = repository.getActiveMrForBranch(inst.id, 501L, "feature/login")
+            assertThat(activeMr).isNotNull()
+            assertThat(activeMr?.mrIid).isEqualTo(42L)
+            assertThat(activeMr?.sourceBranch).isEqualTo("feature/login")
+            assertThat(activeMr?.lastCommitSha).isEqualTo("abc1234")
+
+            // Upsert latest push SHA
+            repository.upsertLatestPushSha(inst.id, 501L, "feature/login", "def5678")
+            assertThat(repository.getLatestPushSha(inst.id, 501L, "feature/login")).isEqualTo("def5678")
+
+            // Clear active MR
+            repository.clearActiveMr(inst.id, 501L, "feature/login")
+            assertThat(repository.getActiveMrForBranch(inst.id, 501L, "feature/login")).isNull()
+
+            // Verify cleanupStaleMrAndPushStates
+            val cleaned = repository.cleanupStaleMrAndPushStates(
+                now = Instant.now().plus(31, ChronoUnit.DAYS),
+                maxAgeDays = 30,
+            )
+            assertThat(cleaned).isAtLeast(1)
+            assertThat(repository.getLatestPushSha(inst.id, 501L, "feature/login")).isNull()
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
 }
 
 private fun repository(): InstallationRepository = InstallationRepository(DatabaseFactory)
