@@ -373,7 +373,11 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val projectId = event.projectId ?: event.project?.id
-        val branch = event.ref?.removePrefix("refs/heads/")?.trim()
+        val branch = if (event.ref?.startsWith("refs/heads/") == true) {
+            event.ref.removePrefix("refs/heads/").trim()
+        } else {
+            null
+        }
         val afterSha = event.after
 
         val isBranchDelete = afterSha.isNullOrBlank() || afterSha.startsWith("00000000")
@@ -410,9 +414,9 @@ class WebhookRequestHandler(
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val projectId = event.project?.id
+        val projectId = event.objectAttributes?.sourceProjectId
+            ?: event.project?.id
             ?: event.objectAttributes?.targetProjectId
-            ?: event.objectAttributes?.sourceProjectId
         val mrIid = event.objectAttributes?.iid
         val authorUsername = event.user?.username
         val reviewers = event.reviewers.orEmpty().mapNotNull { it.username }

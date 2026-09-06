@@ -1006,7 +1006,7 @@ class InstallationRepository(
                         (ActiveMergeRequests.projectId eq projectId) and
                         (ActiveMergeRequests.sourceBranch eq sourceBranch)
                 }
-                .singleOrNull()
+                .firstOrNull()
                 ?.let { row ->
                     ActiveMergeRequest(
                         mrIid = row[ActiveMergeRequests.mrIid],
@@ -1060,7 +1060,7 @@ class InstallationRepository(
                         (RecentBranchPushes.projectId eq projectId) and
                         (RecentBranchPushes.branch eq branch)
                 }
-                .singleOrNull()
+                .firstOrNull()
                 ?.get(RecentBranchPushes.latestPushSha)
         }
     }
