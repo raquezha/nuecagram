@@ -1,4 +1,4 @@
-package net.raquezha.nuecagram
+package net.raquezha
 
 import com.google.common.truth.Truth.assertThat
 import net.raquezha.nuecagram.webhook.FilterDecision
@@ -98,6 +98,18 @@ class WebhookEventFilterTest {
         })
         val decision = filter.evaluate(event, "sha123")
         assertThat(decision).isEqualTo(FilterDecision.PROCESS)
+    }
+
+    @Test
+    fun `evaluates MR update with unchanged extra map fields as SKIP`() {
+        val event = createMrUpdateEvent("sha123", MergeRequestChanges().apply {
+            set("target_branch", ChangeContainer<Any>().apply {
+                previous = "main"
+                current = "main"
+            })
+        })
+        val decision = filter.evaluate(event, "sha123")
+        assertThat(decision).isEqualTo(FilterDecision.SKIP_REDUNDANT_PUSH_MR_UPDATE)
     }
 
     @Test

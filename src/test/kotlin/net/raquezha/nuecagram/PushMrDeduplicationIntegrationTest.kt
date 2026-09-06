@@ -23,8 +23,9 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
 
         val pushMsg = awaitSentMessage { it.text.contains("Push to") }
         assertThat(pushMsg).isNotNull()
-        assertThat(pushMsg?.text).contains("nuecalytics")
+        assertThat(pushMsg?.text).contains("Push to <b>nuecalytics</b>")
         assertThat(pushMsg?.text).contains("!42")
+        assertThat(pushMsg?.text).contains("https://gitlab.com/android-team/dispatcher-app/-/merge_requests/42")
     }
 
     @Test

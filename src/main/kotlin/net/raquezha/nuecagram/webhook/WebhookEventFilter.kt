@@ -63,6 +63,16 @@ class WebhookEventFilter {
             "reviewers",
             "milestone_id",
         )
-        return extraChanges.keys.any { it in structuralKeys }
+        return extraChanges.entries.any { (key, container) ->
+            key in structuralKeys && hasContainerChanged(container)
+        }
     }
+
+    private fun hasContainerChanged(container: Any?): Boolean =
+        when (container) {
+            is ChangeContainer<*> -> container.previous != container.current
+            is Map<*, *> -> container["previous"] != container["current"]
+            null -> false
+            else -> true
+        }
 }
