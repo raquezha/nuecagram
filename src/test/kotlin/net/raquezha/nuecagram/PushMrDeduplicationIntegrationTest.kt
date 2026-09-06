@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
 
     @Test
@@ -45,6 +46,23 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun testStructuralMrPropertyUpdateSendsNotification() = testApplication {
+        configureTestApplication()
+        val commitSha = "abc2222"
+
+        postMrOpenEvent(commitSha)
+        awaitActiveMr("nuecalytics", 42L)
+
+        postPushEvent(commitSha)
+        awaitLatestPushSha("nuecalytics", commitSha)
+
+        postStructuralMrTitleUpdateEvent(commitSha)
+
+        val mrUpdateMsg = awaitSentMessage { it.text.contains("updated") && it.text.contains("!42") }
+        assertThat(mrUpdateMsg).isNotNull()
+    }
+
+    @Test
     fun testMrCloseClearsActiveMrState() = testApplication {
         configureTestApplication()
         val commitSha = "abc2222"
@@ -56,11 +74,22 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
         awaitClearedActiveMr("nuecalytics")
     }
 
+    @Test
+    fun testBranchDeletionClearsActiveMrState() = testApplication {
+        configureTestApplication()
+        val commitSha = "abc2222"
+
+        postMrOpenEvent(commitSha)
+        awaitActiveMr("nuecalytics", 42L)
+
+        postBranchDeletePushEvent()
+        awaitClearedActiveMr("nuecalytics")
+    }
+
     private suspend fun ApplicationTestBuilder.postMrOpenEvent(commitSha: String) {
         val payload = """
 {
-  "object_kind": "merge_request",
-  "event_type": "merge_request",
+  "object_kind": "merge_request", "event_type": "merge_request",
   "user": { "id": 1, "name": "Alice Author", "username": "alice" },
   "project": { "id": 282, "name": "dispatcher-app", "web_url": "https://gitlab.com/android-team/dispatcher-app" },
   "object_attributes": {
@@ -91,6 +120,21 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
         assertThat(res).isEqualTo("Webhook received successfully")
     }
 
+    private suspend fun ApplicationTestBuilder.postBranchDeletePushEvent() {
+        val deleteSha = "0".repeat(40)
+        val payload = """
+{
+  "object_kind": "push", "event_name": "push",
+  "before": "abc1111", "after": "$deleteSha",
+  "ref": "refs/heads/nuecalytics", "user_name": "Razyl Vidal", "project_id": 282,
+  "project": { "id": 282, "name": "dispatcher-app", "web_url": "https://gitlab.com/android-team/dispatcher-app" },
+  "commits": [], "total_commits_count": 0
+}
+        """.trimIndent()
+        val res = postWebhook("Push Hook", payload)
+        assertThat(res).isEqualTo("Webhook received successfully")
+    }
+
     private suspend fun ApplicationTestBuilder.postRedundantMrUpdateEvent(commitSha: String) {
         val payload = """
 {
@@ -103,6 +147,24 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
     "last_commit": { "id": "$commitSha", "message": "Enable crashlytics collection" }
   },
   "changes": { "updated_at": { "previous": "2024-05-21T16:24:28Z", "current": "2024-05-21T16:25:00Z" } }
+}
+        """.trimIndent()
+        val res = postWebhook("Merge Request Hook", payload)
+        assertThat(res).isEqualTo("Webhook received successfully")
+    }
+
+    private suspend fun ApplicationTestBuilder.postStructuralMrTitleUpdateEvent(commitSha: String) {
+        val payload = """
+{
+  "object_kind": "merge_request", "event_type": "merge_request",
+  "user": { "id": 1, "name": "Alice Author", "username": "alice" },
+  "project": { "id": 282, "name": "dispatcher-app", "web_url": "https://gitlab.com/android-team/dispatcher-app" },
+  "object_attributes": {
+    "id": 99, "iid": 42, "title": "New Title",
+    "source_branch": "nuecalytics", "target_branch": "main", "action": "update",
+    "last_commit": { "id": "$commitSha", "message": "Enable crashlytics collection" }
+  },
+  "changes": { "title": { "previous": "Old Title", "current": "New Title" } }
 }
         """.trimIndent()
         val res = postWebhook("Merge Request Hook", payload)
