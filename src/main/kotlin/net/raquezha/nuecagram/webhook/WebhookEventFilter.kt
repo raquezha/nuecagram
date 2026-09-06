@@ -26,7 +26,7 @@ class WebhookEventFilter {
         }
 
         val lastCommitSha = event.objectAttributes?.lastCommit?.id
-        return if (!lastCommitSha.isNullOrBlank() && lastCommitSha == latestPushSha) {
+        return if (!lastCommitSha.isNullOrBlank() && lastCommitSha.equals(latestPushSha, ignoreCase = true)) {
             FilterDecision.SKIP_REDUNDANT_PUSH_MR_UPDATE
         } else {
             FilterDecision.PROCESS

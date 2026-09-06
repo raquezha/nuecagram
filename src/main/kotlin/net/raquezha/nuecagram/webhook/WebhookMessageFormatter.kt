@@ -663,7 +663,7 @@ class WebhookMessageFormatter {
         val projectWebUrl = event.project?.webUrl ?: event.repository?.homepage ?: ""
 
         // Extract branch name from ref
-        val ref = event.ref?.removePrefix("refs/heads/") ?: "unknown"
+        val ref = (event.ref?.removePrefix("refs/heads/") ?: "unknown").ifBlank { "unknown" }
         val commits = event.commits.orEmpty()
         val commitCount = event.totalCommitsCount ?: commits.size
 
@@ -673,7 +673,7 @@ class WebhookMessageFormatter {
         }
 
         val compareUrl = "$projectWebUrl/-/compare/$beforeSha...$afterSha"
-        val mrBadge = if (mrIid != null) " (!${mrIid})" else ""
+        val mrBadge = formatMrBadge(mrIid, projectWebUrl)
         return buildString {
             append("📤 Push to ${ref.bold()}$mrBadge\n")
             append("${projectName.bold()} • ${compareUrl.link("$commitCount commit(s)")}\n")
@@ -681,6 +681,16 @@ class WebhookMessageFormatter {
             appendPushCommits(commits)
             append("\n")
             append("Pushed by ${userName.bold()}")
+        }
+    }
+
+    private fun formatMrBadge(mrIid: Long?, projectWebUrl: String): String {
+        if (mrIid == null) return ""
+        val label = "!$mrIid"
+        return if (projectWebUrl.isNotBlank()) {
+            " (${"$projectWebUrl/-/merge_requests/$mrIid".link(label)})"
+        } else {
+            " ($label)"
         }
     }
 

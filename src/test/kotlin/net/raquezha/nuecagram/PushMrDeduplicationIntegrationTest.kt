@@ -23,7 +23,7 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
         val pushMsg = awaitSentMessage { it.text.contains("Push to") }
         assertThat(pushMsg).isNotNull()
         assertThat(pushMsg?.text).contains("nuecalytics")
-        assertThat(pushMsg?.text).contains("(!42)")
+        assertThat(pushMsg?.text).contains("!42")
     }
 
     @Test
