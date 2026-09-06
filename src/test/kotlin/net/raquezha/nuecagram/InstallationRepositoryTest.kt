@@ -589,6 +589,12 @@ val InstallationRepositoryTests by testSuite {
             repository.clearActiveMr(inst.id, 501L, "feature/login")
             assertThat(repository.getActiveMrForBranch(inst.id, 501L, "feature/login")).isNull()
 
+            // Verify processed webhook event deduplication
+            val firstRecord = repository.tryRecordProcessedEvent("evt-12345", inst.id, "push")
+            val secondRecord = repository.tryRecordProcessedEvent("evt-12345", inst.id, "push")
+            assertThat(firstRecord).isTrue()
+            assertThat(secondRecord).isFalse()
+
             // Verify cleanupStaleMrAndPushStates
             val cleaned = repository.cleanupStaleMrAndPushStates(
                 now = Instant.now().plus(31, ChronoUnit.DAYS),

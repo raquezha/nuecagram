@@ -141,6 +141,7 @@ data class MrParticipants(
 data class ActiveMergeRequest(
     val mrIid: Long,
     val sourceBranch: String,
+    val targetProjectId: Long?,
     val lastCommitSha: String?,
 )
 
@@ -755,7 +756,8 @@ class InstallationRepository(
             val cutoff = now.minus(maxAgeDays, java.time.temporal.ChronoUnit.DAYS).databaseTime()
             val deletedMrs = ActiveMergeRequests.deleteWhere { ActiveMergeRequests.updatedAt lessEq cutoff }
             val deletedPushes = RecentBranchPushes.deleteWhere { RecentBranchPushes.updatedAt lessEq cutoff }
-            deletedMrs + deletedPushes
+            val deletedEvents = ProcessedWebhookEvents.deleteWhere { ProcessedWebhookEvents.processedAt lessEq cutoff }
+            deletedMrs + deletedPushes + deletedEvents
         }
 
 
@@ -931,6 +933,8 @@ class InstallationRepository(
         val auditJson = Json
         const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
         const val MAX_COLUMN_LENGTH = 255
+        const val MAX_BRANCH_LENGTH = 1024
+        const val MAX_EVENT_TYPE_LENGTH = 100
     }
 
     suspend fun upsertMrParticipants(
@@ -980,14 +984,17 @@ class InstallationRepository(
         projectId: Long,
         sourceBranch: String,
         mrIid: Long,
-        lastCommitSha: String?,
+        lastCommitSha: String? = null,
+        targetProjectId: Long? = null,
     ) {
+        val safeBranch = sourceBranch.take(MAX_BRANCH_LENGTH)
         databaseFactory.dbTransaction {
             ActiveMergeRequests.upsert {
                 it[ActiveMergeRequests.installationId] = installationId
                 it[ActiveMergeRequests.projectId] = projectId
-                it[ActiveMergeRequests.sourceBranch] = sourceBranch
+                it[ActiveMergeRequests.sourceBranch] = safeBranch
                 it[ActiveMergeRequests.mrIid] = mrIid
+                it[ActiveMergeRequests.targetProjectId] = targetProjectId
                 it[ActiveMergeRequests.lastCommitSha] = lastCommitSha
                 it[ActiveMergeRequests.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
             }
@@ -999,18 +1006,20 @@ class InstallationRepository(
         projectId: Long,
         sourceBranch: String,
     ): ActiveMergeRequest? {
+        val safeBranch = sourceBranch.take(MAX_BRANCH_LENGTH)
         return databaseFactory.dbTransaction {
             ActiveMergeRequests.selectAll()
                 .where {
                     (ActiveMergeRequests.installationId eq installationId) and
                         (ActiveMergeRequests.projectId eq projectId) and
-                        (ActiveMergeRequests.sourceBranch eq sourceBranch)
+                        (ActiveMergeRequests.sourceBranch eq safeBranch)
                 }
                 .firstOrNull()
                 ?.let { row ->
                     ActiveMergeRequest(
                         mrIid = row[ActiveMergeRequests.mrIid],
                         sourceBranch = row[ActiveMergeRequests.sourceBranch],
+                        targetProjectId = row[ActiveMergeRequests.targetProjectId],
                         lastCommitSha = row[ActiveMergeRequests.lastCommitSha],
                     )
                 }
@@ -1022,11 +1031,12 @@ class InstallationRepository(
         projectId: Long,
         sourceBranch: String,
     ) {
+        val safeBranch = sourceBranch.take(MAX_BRANCH_LENGTH)
         databaseFactory.dbTransaction {
             ActiveMergeRequests.deleteWhere {
                 (ActiveMergeRequests.installationId eq installationId) and
                     (ActiveMergeRequests.projectId eq projectId) and
-                    (ActiveMergeRequests.sourceBranch eq sourceBranch)
+                    (ActiveMergeRequests.sourceBranch eq safeBranch)
             }
         }
     }
@@ -1037,11 +1047,12 @@ class InstallationRepository(
         branch: String,
         latestPushSha: String,
     ) {
+        val safeBranch = branch.take(MAX_BRANCH_LENGTH)
         databaseFactory.dbTransaction {
             RecentBranchPushes.upsert {
                 it[RecentBranchPushes.installationId] = installationId
                 it[RecentBranchPushes.projectId] = projectId
-                it[RecentBranchPushes.branch] = branch
+                it[RecentBranchPushes.branch] = safeBranch
                 it[RecentBranchPushes.latestPushSha] = latestPushSha
                 it[RecentBranchPushes.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
             }
@@ -1053,15 +1064,33 @@ class InstallationRepository(
         projectId: Long,
         branch: String,
     ): String? {
+        val safeBranch = branch.take(MAX_BRANCH_LENGTH)
         return databaseFactory.dbTransaction {
             RecentBranchPushes.selectAll()
                 .where {
                     (RecentBranchPushes.installationId eq installationId) and
                         (RecentBranchPushes.projectId eq projectId) and
-                        (RecentBranchPushes.branch eq branch)
+                        (RecentBranchPushes.branch eq safeBranch)
                 }
                 .firstOrNull()
                 ?.get(RecentBranchPushes.latestPushSha)
+        }
+    }
+
+    suspend fun tryRecordProcessedEvent(
+        eventUuid: String,
+        installationId: UUID?,
+        eventType: String,
+    ): Boolean {
+        if (eventUuid.isBlank()) return true
+        return databaseFactory.dbTransaction {
+            val inserted = ProcessedWebhookEvents.insertIgnore {
+                it[ProcessedWebhookEvents.eventUuid] = eventUuid.take(MAX_COLUMN_LENGTH)
+                it[ProcessedWebhookEvents.installationId] = installationId
+                it[ProcessedWebhookEvents.eventType] = eventType.take(MAX_EVENT_TYPE_LENGTH)
+                it[ProcessedWebhookEvents.processedAt] = OffsetDateTime.now(ZoneOffset.UTC)
+            }
+            inserted.insertedCount > 0
         }
     }
 }

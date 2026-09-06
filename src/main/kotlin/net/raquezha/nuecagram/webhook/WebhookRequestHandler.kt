@@ -442,6 +442,7 @@ class WebhookRequestHandler(
                             projectId = projectId,
                             sourceBranch = sourceBranch,
                             mrIid = mrIid,
+                            targetProjectId = event.objectAttributes?.targetProjectId,
                             lastCommitSha = lastCommitSha,
                         )
                     }

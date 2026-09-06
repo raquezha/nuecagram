@@ -152,8 +152,9 @@ object MrParticipantCaches : Table("mr_participant_caches") {
 object ActiveMergeRequests : Table("active_merge_requests") {
     val installationId = javaUUID("installation_id")
     val projectId = long("project_id")
-    val sourceBranch = varchar("source_branch", 255)
+    val sourceBranch = varchar("source_branch", 1024)
     val mrIid = long("mr_iid")
+    val targetProjectId = long("target_project_id").nullable()
     val lastCommitSha = varchar("last_commit_sha", 255).nullable()
     val updatedAt = timestampWithTimeZone("updated_at")
 
@@ -163,11 +164,20 @@ object ActiveMergeRequests : Table("active_merge_requests") {
 object RecentBranchPushes : Table("recent_branch_pushes") {
     val installationId = javaUUID("installation_id")
     val projectId = long("project_id")
-    val branch = varchar("branch", 255)
+    val branch = varchar("branch", 1024)
     val latestPushSha = varchar("latest_push_sha", 255)
     val updatedAt = timestampWithTimeZone("updated_at")
 
     override val primaryKey = PrimaryKey(installationId, projectId, branch)
+}
+
+object ProcessedWebhookEvents : Table("processed_webhook_events") {
+    val eventUuid = varchar("event_uuid", 255)
+    val installationId = javaUUID("installation_id").nullable()
+    val eventType = varchar("event_type", 100)
+    val processedAt = timestampWithTimeZone("processed_at")
+
+    override val primaryKey = PrimaryKey(eventUuid)
 }
 
 object TelegramLaunchNonces : Table("telegram_launch_nonces") {

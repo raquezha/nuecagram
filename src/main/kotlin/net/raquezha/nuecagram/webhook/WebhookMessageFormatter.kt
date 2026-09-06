@@ -687,8 +687,9 @@ class WebhookMessageFormatter {
     private fun formatMrBadge(mrIid: Long?, projectWebUrl: String): String {
         if (mrIid == null) return ""
         val label = "!$mrIid"
-        return if (projectWebUrl.isNotBlank()) {
-            " (${"$projectWebUrl/-/merge_requests/$mrIid".link(label)})"
+        val cleanUrl = projectWebUrl.trimEnd('/')
+        return if (cleanUrl.isNotBlank()) {
+            " (${"$cleanUrl/-/merge_requests/$mrIid".link(label)})"
         } else {
             " ($label)"
         }
