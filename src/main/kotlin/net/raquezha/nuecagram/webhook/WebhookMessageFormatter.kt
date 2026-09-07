@@ -73,10 +73,10 @@ class WebhookMessageFormatter {
         private const val SHORT_SHA_LENGTH = 7
     }
 
-    fun formatEventMessage(event: Event): String =
+    fun formatEventMessage(event: Event, mrIid: Long? = null): String =
         when (event) {
             is PipelineEvent -> formatPipelineEvent(event)
-            is PushEvent -> formatPushEventMessage(event)
+            is PushEvent -> formatPushEventMessage(event, mrIid)
             is TagPushEvent -> formatTagPushEvent(event)
             is WikiPageEvent -> formatWikiPageEvent(event)
             is DeploymentEvent -> formatDeployEventMessage(event)
@@ -649,7 +649,7 @@ class WebhookMessageFormatter {
 
     private fun String.extractIssueNumber(): String? = Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
 
-    private fun formatPushEventMessage(event: PushEvent): String {
+    fun formatPushEventMessage(event: PushEvent, mrIid: Long? = null): String {
         val beforeSha = event.before ?: ""
         val afterSha = event.after ?: ""
 
@@ -663,7 +663,7 @@ class WebhookMessageFormatter {
         val projectWebUrl = event.project?.webUrl ?: event.repository?.homepage ?: ""
 
         // Extract branch name from ref
-        val ref = event.ref?.removePrefix("refs/heads/") ?: "unknown"
+        val ref = (event.ref?.removePrefix("refs/heads/") ?: "unknown").ifBlank { "unknown" }
         val commits = event.commits.orEmpty()
         val commitCount = event.totalCommitsCount ?: commits.size
 
@@ -673,14 +673,25 @@ class WebhookMessageFormatter {
         }
 
         val compareUrl = "$projectWebUrl/-/compare/$beforeSha...$afterSha"
-
+        val mrBadge = formatMrBadge(mrIid, projectWebUrl)
         return buildString {
-            append("📤 Push to ${ref.bold()}\n")
+            append("📤 Push to ${ref.bold()}$mrBadge\n")
             append("${projectName.bold()} • ${compareUrl.link("$commitCount commit(s)")}\n")
             append("\n")
             appendPushCommits(commits)
             append("\n")
             append("Pushed by ${userName.bold()}")
+        }
+    }
+
+    private fun formatMrBadge(mrIid: Long?, projectWebUrl: String): String {
+        if (mrIid == null) return ""
+        val label = "!$mrIid"
+        val cleanUrl = projectWebUrl.trimEnd('/')
+        return if (cleanUrl.isNotBlank()) {
+            " (${"$cleanUrl/-/merge_requests/$mrIid".link(label)})"
+        } else {
+            " ($label)"
         }
     }
 

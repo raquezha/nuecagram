@@ -8,6 +8,7 @@ import net.raquezha.nuecagram.telegram.TelegramService
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.MergeRequestEvent
 import org.gitlab4j.api.webhook.PipelineEvent
+import org.gitlab4j.api.webhook.PushEvent
 import net.raquezha.nuecagram.db.InstallationRepository
 import org.koin.ktor.ext.inject
 
@@ -24,6 +25,8 @@ class WebhookRequestHandler(
     private val application: Application,
     private val randomMessageProvider: RandomMessageProvider,
 ) {
+    private val eventFilter = WebhookEventFilter()
+
     /** Buffered channel with capacity limit to prevent memory exhaustion */
     private val queue = Channel<EventData>(capacity = QUEUE_CAPACITY)
 
@@ -124,6 +127,14 @@ class WebhookRequestHandler(
                     ctx = ctx,
                 )
             }
+            is PushEvent -> {
+                handlePushEvent(
+                    installationId = installationId,
+                    event = event,
+                    chatDetails = chatDetails,
+                    ctx = ctx,
+                )
+            }
             else -> {
                 handleGenericEvent(
                     event = data.event,
@@ -191,8 +202,14 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
-        val mrIid = event.mergeRequest?.iid
         val projectId = event.project?.id
+        val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.trim()
+        val activeMr = if (projectId != null && !branch.isNullOrBlank()) {
+            ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
+        } else {
+            null
+        }
+        val mrIid = event.mergeRequest?.iid ?: activeMr?.mrIid
         val cachedParticipants = if (mrIid != null && projectId != null) {
             ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
         } else {
@@ -355,16 +372,63 @@ class WebhookRequestHandler(
         ctx.logger.debug { "Sent message $messageId for ${event.objectKind}" }
     }
 
+    private suspend fun handlePushEvent(
+        installationId: java.util.UUID,
+        event: PushEvent,
+        chatDetails: ChatDetails,
+        ctx: EventProcessingContext,
+    ) {
+        val projectId = event.projectId ?: event.project?.id
+        val branch = if (event.ref?.startsWith("refs/heads/") == true) {
+            event.ref.removePrefix("refs/heads/").trim()
+        } else {
+            null
+        }
+        val afterSha = event.after
+
+        val isBranchDelete = afterSha.isNullOrBlank() || afterSha.startsWith("00000000")
+        val mrIid = if (projectId != null && !branch.isNullOrBlank()) {
+            if (isBranchDelete) {
+                ctx.installationRepository.clearActiveMr(installationId, projectId, branch)
+                null
+            } else {
+                ctx.installationRepository.upsertLatestPushSha(installationId, projectId, branch, afterSha)
+                val activeMr = ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
+                activeMr?.mrIid
+            }
+        } else {
+            null
+        }
+
+        val messageId =
+            ctx.telegramService.sendMessage(
+                Message(
+                    chatId = chatDetails.chatId,
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                    messageId = null,
+                    text = ctx.formatter.formatPushEventMessage(event, mrIid),
+                    parseMode = PARSE_MODE,
+                    disableWebPagePreview = true,
+                ),
+            )
+        ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
+    }
+
     private suspend fun handleMergeRequestEvent(
         installationId: java.util.UUID,
         event: org.gitlab4j.api.webhook.MergeRequestEvent,
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val projectId = event.project?.id ?: event.objectAttributes?.targetProjectId
+        val projectId = event.objectAttributes?.sourceProjectId
+            ?: event.project?.id
+            ?: event.objectAttributes?.targetProjectId
         val mrIid = event.objectAttributes?.iid
         val authorUsername = event.user?.username
         val reviewers = event.reviewers.orEmpty().mapNotNull { it.username }
+        val sourceBranch = event.objectAttributes?.sourceBranch?.trim()
+        val lastCommitSha = event.objectAttributes?.lastCommit?.id
+        val action = event.objectAttributes?.action?.lowercase()
 
         if (projectId != null && mrIid != null) {
             ctx.installationRepository.upsertMrParticipants(
@@ -375,6 +439,35 @@ class WebhookRequestHandler(
                 reviewerUsernames = reviewers,
             )
             ctx.logger.debug { "MR !$mrIid (project $projectId): cached author=$authorUsername, reviewers=$reviewers" }
+
+            if (!sourceBranch.isNullOrBlank()) {
+                when (action) {
+                    "open", "reopen", "update", "approved", "unapproved", "approval", "unapproval" -> {
+                        ctx.installationRepository.upsertActiveMr(
+                            installationId = installationId,
+                            projectId = projectId,
+                            sourceBranch = sourceBranch,
+                            mrIid = mrIid,
+                            targetProjectId = event.objectAttributes?.targetProjectId,
+                            lastCommitSha = lastCommitSha,
+                        )
+                    }
+                    "close", "merge", "destroy", "delete" -> {
+                        ctx.installationRepository.clearActiveMr(
+                            installationId = installationId,
+                            projectId = projectId,
+                            sourceBranch = sourceBranch,
+                        )
+                    }
+                }
+
+                val latestPushSha = ctx.installationRepository.getLatestPushSha(installationId, projectId, sourceBranch)
+                val decision = eventFilter.evaluate(event, latestPushSha)
+                if (decision == FilterDecision.SKIP_REDUNDANT_PUSH_MR_UPDATE) {
+                    ctx.logger.debug { "Skipping redundant MR update for !$mrIid on branch $sourceBranch" }
+                    throw SkipEventException()
+                }
+            }
         }
 
         handleGenericEvent(

@@ -8,7 +8,8 @@ data class EventData(
     val event: Event,
     val headerEvent: String,
     val chatDetails: ChatDetails,
+    val eventUuid: String? = null,
 ) {
     fun log(): String =
-        "Webhook event=$headerEvent objectKind=${event.objectKind} installationId=$installationId"
+        "Webhook event=$headerEvent objectKind=${event.objectKind} installationId=$installationId eventUuid=$eventUuid"
 }
