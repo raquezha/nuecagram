@@ -63,6 +63,7 @@ class WebHookService(
         val event: Event,
         val headerEvent: String,
         val gitlabToken: String,
+        val eventUuid: String? = null,
     )
 
     private data class JobEntry(
@@ -115,11 +116,24 @@ class WebHookService(
             throw SkipEventException()
         }
 
+        if (!webhookData.eventUuid.isNullOrBlank()) {
+            val isFirstDelivery = installationRepository.tryRecordProcessedEvent(
+                eventUuid = webhookData.eventUuid,
+                installationId = installation.installationId,
+                eventType = webhookData.headerEvent,
+            )
+            if (!isFirstDelivery) {
+                logger.debug { "Skipping duplicate webhook delivery eventUuid=${webhookData.eventUuid}" }
+                throw SkipEventException()
+            }
+        }
+
         return EventData(
             installationId = installation.installationId,
             event = webhookData.event,
             headerEvent = webhookData.headerEvent,
             chatDetails = installation.chatDetails,
+            eventUuid = webhookData.eventUuid,
         )
     }
 
@@ -315,13 +329,17 @@ class WebHookService(
         val gitlabToken =
             request.headers[GITLAB_TOKEN]?.trim()?.takeIf(String::isNotBlank)
                 ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "missing 'X-Gitlab-Token' header")
+        val eventUuid =
+            request.headers[NuecagramHeaders.GITLAB_WEBHOOK_UUID]?.trim()
+        println("SERVICE_EVENT_UUID: '$eventUuid'")
+        logger.debug { "Received webhook header eventUuid=$eventUuid" }
         val event =
             runCatching { jacksonJson.unmarshal(Event::class.java, body) }.getOrElse {
                 throw WebhookRequestException(HttpStatusCode.BadRequest, "invalid webhook payload")
             }
         event.requestUrl = request.uri
         event.requestQueryString = request.queryString()
-        return ParsedWebhookData(event, eventName, gitlabToken)
+        return ParsedWebhookData(event, eventName, gitlabToken, eventUuid)
     }
 
     private fun handleEvents(eventName: String) {

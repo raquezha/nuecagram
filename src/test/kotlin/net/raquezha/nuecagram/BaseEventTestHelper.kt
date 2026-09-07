@@ -59,6 +59,7 @@ abstract class BaseEventTestHelper : KoinTest {
         (telegramService as MockTelegramService).reset()
 
         runBlocking {
+            installationRepository.clearProcessedWebhookEvents()
             val installationNumber = installationCounter.incrementAndGet()
             installation =
                 installationRepository.createInstallation(
@@ -72,10 +73,8 @@ abstract class BaseEventTestHelper : KoinTest {
         testHeaders =
             HeadersBuilder().apply {
                 append(HttpHeaders.UserAgent, USER_AGENT)
-                append("X-Gitlab-Webhook-UUID", WEBHOOK_UUID)
                 append("X-Gitlab-Instance", INSTANCE)
                 append("X-Gitlab-Token", webhookToken)
-                append("X-Gitlab-Event-UUID", EVENT_UUID)
             }
     }
 
@@ -87,29 +86,18 @@ abstract class BaseEventTestHelper : KoinTest {
         gitlabEvent: String,
         payload: String,
         token: String = webhookToken,
-        extraHeaders: HeadersBuilder.() -> Unit = {},
+        extraHeaders: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {},
     ): HttpResponse =
         client.post(configuredRoute("/webhook")) {
             setBody(payload)
             contentType(ContentType.Application.Json)
-            headers {
-                header(HttpHeaders.ContentType, ContentType.Application.Json)
-                header(GITLAB_EVENT, gitlabEvent)
-                testHeaders.entries().forEach { entry ->
-                    if (entry.key != GITLAB_TOKEN) {
-                        entry.value.forEach { value ->
-                            header(entry.key, value)
-                        }
-                    }
-                }
-                header(GITLAB_TOKEN, token)
-                val legacyPrefix =
-                    intArrayOf(88, 45, 78, 117, 101, 99, 97, 103, 114, 97, 109)
-                        .map(Int::toChar)
-                        .joinToString("")
-                header("$legacyPrefix-Chat-Id", "999999")
-                header("$legacyPrefix-Topic-Id", "888888")
-                extraHeaders()
+            header(HttpHeaders.ContentType, ContentType.Application.Json)
+            header(GITLAB_EVENT, gitlabEvent)
+            header(GITLAB_TOKEN, token)
+            extraHeaders()
+            if (headers[net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_WEBHOOK_UUID] == null) {
+                val generatedUuid = java.util.UUID.randomUUID().toString()
+                header(net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_WEBHOOK_UUID, generatedUuid)
             }
         }
 

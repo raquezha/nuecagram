@@ -1,6 +1,8 @@
 package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
+import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsText
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.delay
@@ -85,6 +87,19 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
 
         postBranchDeletePushEvent()
         awaitClearedActiveMr("nuecalytics")
+    }
+
+    @Test
+    fun testDuplicateWebhookDeliveryWithSameUuidIsSkipped() = testApplication {
+        configureTestApplication()
+        val commitSha = "abc9999"
+        val sameUuid = "retry-uuid-12345"
+
+        val firstRes = postWebhookWithFixedUuid(sameUuid, commitSha)
+        assertThat(firstRes).isEqualTo("Webhook received successfully")
+
+        val duplicateRes = postWebhookWithFixedUuid(sameUuid, commitSha)
+        assertThat(duplicateRes).isEqualTo("Event skipped: not relevant")
     }
 
     private suspend fun ApplicationTestBuilder.postMrOpenEvent(commitSha: String) {
@@ -186,6 +201,28 @@ class PushMrDeduplicationIntegrationTest : BaseEventTestHelper() {
         """.trimIndent()
         val res = postWebhook("Merge Request Hook", payload)
         assertThat(res).isEqualTo("Webhook received successfully")
+    }
+
+    private suspend fun ApplicationTestBuilder.postWebhookWithFixedUuid(
+        uuid: String,
+        commitSha: String,
+    ): String {
+        val payload = """
+{
+  "object_kind": "push", "event_name": "push",
+  "before": "abc1111", "after": "$commitSha",
+  "ref": "refs/heads/nuecalytics", "user_name": "Razyl Vidal", "project_id": 282,
+  "project": { "id": 282, "name": "dispatcher-app", "web_url": "https://gitlab.com/android-team/dispatcher-app" },
+  "commits": [
+    { "id": "$commitSha", "title": "Enable crashlytics collection", "url": "https://gitlab.com/android-team/dispatcher-app/-/commit/$commitSha" }
+  ],
+  "total_commits_count": 1
+}
+        """.trimIndent()
+        val res = postWebhookResponse("Push Hook", payload, extraHeaders = {
+            header("X-Gitlab-Webhook-UUID", uuid)
+        })
+        return res.bodyAsText()
     }
 
     private fun awaitActiveMr(branch: String, expectedIid: Long) = runBlocking {

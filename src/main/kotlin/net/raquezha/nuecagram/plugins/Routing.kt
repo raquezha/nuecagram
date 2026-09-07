@@ -137,6 +137,7 @@ fun Application.configureRouting() {
                 delay(CLEANUP_INTERVAL_MS)
                 try {
                     webhookService.cleanupStaleEntries()
+                    installationRepository.cleanupStaleMrAndPushStates()
                     installationRepository.cleanupExpiredManagementLinks()
                     installationRepository.cleanupExpiredManagementSessions()
                     installationRepository.cleanupExpiredPlatformAdminSessions()

@@ -1078,19 +1078,38 @@ class InstallationRepository(
     }
 
     suspend fun tryRecordProcessedEvent(
-        eventUuid: String,
+        eventUuid: String?,
         installationId: UUID?,
         eventType: String,
     ): Boolean {
-        if (eventUuid.isBlank()) return true
+        val trimmedUuid = eventUuid?.trim() ?: return true
+        if (trimmedUuid.isBlank()) return true
+        val safeUuid = trimmedUuid.take(MAX_COLUMN_LENGTH)
+        val safeType = eventType.take(MAX_EVENT_TYPE_LENGTH)
         return databaseFactory.dbTransaction {
-            val inserted = ProcessedWebhookEvents.insertIgnore {
-                it[ProcessedWebhookEvents.eventUuid] = eventUuid.take(MAX_COLUMN_LENGTH)
-                it[ProcessedWebhookEvents.installationId] = installationId
-                it[ProcessedWebhookEvents.eventType] = eventType.take(MAX_EVENT_TYPE_LENGTH)
-                it[ProcessedWebhookEvents.processedAt] = OffsetDateTime.now(ZoneOffset.UTC)
+            val exists = ProcessedWebhookEvents.selectAll()
+                .where {
+                    (ProcessedWebhookEvents.eventUuid eq safeUuid) and
+                        (ProcessedWebhookEvents.eventType eq safeType)
+                }
+                .count() > 0
+            if (exists) {
+                false
+            } else {
+                ProcessedWebhookEvents.insertIgnore {
+                    it[ProcessedWebhookEvents.eventUuid] = safeUuid
+                    it[ProcessedWebhookEvents.installationId] = installationId
+                    it[ProcessedWebhookEvents.eventType] = safeType
+                    it[ProcessedWebhookEvents.processedAt] = OffsetDateTime.now(ZoneOffset.UTC)
+                }
+                true
             }
-            inserted.insertedCount > 0
+        }
+    }
+
+    suspend fun clearProcessedWebhookEvents() {
+        databaseFactory.dbTransaction {
+            ProcessedWebhookEvents.deleteWhere { ProcessedWebhookEvents.eventUuid.isNotNull() }
         }
     }
 }

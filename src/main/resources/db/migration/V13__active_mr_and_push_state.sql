@@ -24,10 +24,11 @@ CREATE TABLE recent_branch_pushes (
 CREATE INDEX idx_recent_branch_pushes_updated_at ON recent_branch_pushes (updated_at);
 
 CREATE TABLE processed_webhook_events (
-    event_uuid VARCHAR(255) PRIMARY KEY,
+    event_uuid VARCHAR(255) NOT NULL,
     installation_id UUID REFERENCES installations(id) ON DELETE CASCADE,
     event_type VARCHAR(100) NOT NULL,
-    processed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (event_uuid, event_type)
 );
 
 CREATE INDEX idx_processed_webhook_events_installation_id ON processed_webhook_events (installation_id);

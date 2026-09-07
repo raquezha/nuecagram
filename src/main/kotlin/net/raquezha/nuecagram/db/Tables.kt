@@ -177,7 +177,7 @@ object ProcessedWebhookEvents : Table("processed_webhook_events") {
     val eventType = varchar("event_type", 100)
     val processedAt = timestampWithTimeZone("processed_at")
 
-    override val primaryKey = PrimaryKey(eventUuid)
+    override val primaryKey = PrimaryKey(eventUuid, eventType)
 }
 
 object TelegramLaunchNonces : Table("telegram_launch_nonces") {
