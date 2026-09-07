@@ -933,7 +933,7 @@ class InstallationRepository(
         val auditJson = Json
         const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
         const val MAX_COLUMN_LENGTH = 255
-        const val MAX_BRANCH_LENGTH = 1024
+        const val MAX_BRANCH_LENGTH = 512
         const val MAX_EVENT_TYPE_LENGTH = 100
     }
 

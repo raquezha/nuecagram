@@ -152,7 +152,7 @@ object MrParticipantCaches : Table("mr_participant_caches") {
 object ActiveMergeRequests : Table("active_merge_requests") {
     val installationId = javaUUID("installation_id")
     val projectId = long("project_id")
-    val sourceBranch = varchar("source_branch", 1024)
+    val sourceBranch = varchar("source_branch", 512)
     val mrIid = long("mr_iid")
     val targetProjectId = long("target_project_id").nullable()
     val lastCommitSha = varchar("last_commit_sha", 255).nullable()
@@ -164,7 +164,7 @@ object ActiveMergeRequests : Table("active_merge_requests") {
 object RecentBranchPushes : Table("recent_branch_pushes") {
     val installationId = javaUUID("installation_id")
     val projectId = long("project_id")
-    val branch = varchar("branch", 1024)
+    val branch = varchar("branch", 512)
     val latestPushSha = varchar("latest_push_sha", 255)
     val updatedAt = timestampWithTimeZone("updated_at")
 
