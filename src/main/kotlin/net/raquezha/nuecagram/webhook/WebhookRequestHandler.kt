@@ -442,7 +442,7 @@ class WebhookRequestHandler(
 
             if (!sourceBranch.isNullOrBlank()) {
                 when (action) {
-                    "open", "reopen", "update", "approved", "unapproved" -> {
+                    "open", "reopen", "update", "approved", "unapproved", "approval", "unapproval" -> {
                         ctx.installationRepository.upsertActiveMr(
                             installationId = installationId,
                             projectId = projectId,
