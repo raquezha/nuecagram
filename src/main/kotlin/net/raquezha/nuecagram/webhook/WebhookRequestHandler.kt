@@ -202,8 +202,14 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
-        val mrIid = event.mergeRequest?.iid
         val projectId = event.project?.id
+        val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.trim()
+        val activeMr = if (projectId != null && !branch.isNullOrBlank()) {
+            ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
+        } else {
+            null
+        }
+        val mrIid = event.mergeRequest?.iid ?: activeMr?.mrIid
         val cachedParticipants = if (mrIid != null && projectId != null) {
             ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
         } else {
