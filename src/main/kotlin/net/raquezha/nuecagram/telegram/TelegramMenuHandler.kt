@@ -2,6 +2,7 @@ package net.raquezha.nuecagram.telegram
 
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
+import net.raquezha.nuecagram.db.models.ActorType
 import net.raquezha.nuecagram.db.models.AuditMetadataPatch
 import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
@@ -158,7 +159,7 @@ class TelegramMenuHandler(
                 val managementLink = installationRepository.issueManagementLink(inst.id, managementLinkExpiry())
                 installationRepository.writeAuditEvent(
                     installationId = inst.id,
-                    actorType = "telegram",
+                    actorType = ActorType.TELEGRAM,
                     actorId = userId.toString(),
                     action = "telegram_management_link",
                     metadataPatch = AuditMetadataPatch(
@@ -299,7 +300,7 @@ class TelegramMenuHandler(
         installationRepository.setMuted(inst.id, muted)
         installationRepository.writeAuditEvent(
             installationId = inst.id,
-            actorType = "telegram",
+            actorType = ActorType.TELEGRAM,
             actorId = userId.toString(),
             action = if (muted) "telegram_mute" else "telegram_unmute",
             metadataPatch = AuditMetadataPatch(
@@ -352,7 +353,7 @@ class TelegramMenuHandler(
         )
         installationRepository.writeAuditEvent(
             installationId = inst.id,
-            actorType = "telegram",
+            actorType = ActorType.TELEGRAM,
             actorId = userId.toString(),
             action = "telegram_rotate",
             metadataPatch = AuditMetadataPatch(
@@ -823,7 +824,7 @@ class TelegramMenuHandler(
         installationRepository.setMuted(inst.id, muted)
         installationRepository.writeAuditEvent(
             installationId = inst.id,
-            actorType = "telegram",
+            actorType = ActorType.TELEGRAM,
             actorId = userId.toString(),
             action = if (muted) "telegram_mute" else "telegram_unmute",
             metadataPatch = AuditMetadataPatch(
@@ -847,7 +848,7 @@ class TelegramMenuHandler(
         )
         installationRepository.writeAuditEvent(
             installationId = inst.id,
-            actorType = "telegram",
+            actorType = ActorType.TELEGRAM,
             actorId = userId.toString(),
             action = "telegram_delivery_test",
             metadataPatch = AuditMetadataPatch(

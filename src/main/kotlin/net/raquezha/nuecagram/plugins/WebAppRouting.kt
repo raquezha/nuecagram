@@ -23,6 +23,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.models.ActorType
 import net.raquezha.nuecagram.db.models.AuditIdentityDelta
 import net.raquezha.nuecagram.db.models.AuditMetadataPatch
 import net.raquezha.nuecagram.db.models.InstallationAdminContext
@@ -459,7 +460,7 @@ private suspend fun ApplicationCall.handleMuteInstallation(
     installationRepository.setMuted(item.id, targetMuted)
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = if (targetMuted) "webapp_mute" else "webapp_unmute",
         metadataPatch = AuditMetadataPatch(
@@ -507,7 +508,7 @@ private suspend fun ApplicationCall.handleUpdateIdentity(
     installationRepository.updateIdentity(item.id, normalizedRepoName, normalizedChatName)
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = "webapp_identity_update",
         metadataPatch = AuditMetadataPatch(
@@ -573,7 +574,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
 
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = "webapp_test",
         metadataPatch = AuditMetadataPatch(
@@ -718,7 +719,7 @@ private suspend fun createAndRespond(
     val tok = installationRepository.issueWebhookSecret(installation.id)
     installationRepository.writeAuditEvent(
         installationId = installation.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = telegramUserId.toString(),
         action = "webapp_setup",
         metadataPatch = actorMetadata,
@@ -787,7 +788,7 @@ private suspend fun ApplicationCall.handleDeleteInstallation(
 
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = "webapp_delete",
         metadataPatch = AuditMetadataPatch(
@@ -834,7 +835,7 @@ private suspend fun ApplicationCall.processRotateInstallation(
             )
             installationRepository.writeAuditEvent(
                 installationId = item.id,
-                actorType = "webapp_session",
+                actorType = ActorType.WEBAPP_SESSION,
                 actorId = session.telegramUserId.toString(),
                 action = "webapp_rotate",
                 metadataPatch = AuditMetadataPatch(

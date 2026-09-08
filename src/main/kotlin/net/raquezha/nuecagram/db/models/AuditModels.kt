@@ -38,3 +38,27 @@ data class AuditMetadataPatch(
     val topicId: Long? = null,
     val identityDelta: AuditIdentityDelta? = null,
 )
+
+object AuditMetadataKeys {
+    const val INSTALLATION_ID = "installation_id"
+    const val ACTOR_ID = "actor_id"
+    const val USERNAME = "username"
+    const val FIRST_NAME = "first_name"
+    const val REPO_NAME = "repo_name"
+    const val NICKNAME = "nickname"
+    const val CHAT_ID = "chat_id"
+    const val TOPIC_ID = "topic_id"
+    const val OLD_REPO_NAME = "old_repo_name"
+    const val NEW_REPO_NAME = "new_repo_name"
+    const val OLD_NICKNAME = "old_nickname"
+    const val NEW_NICKNAME = "new_nickname"
+}
+
+object ActorType {
+    const val TELEGRAM = "telegram"
+    const val WEBAPP_SESSION = "webapp_session"
+    const val PLATFORM_ADMIN = "platform_admin"
+    const val MANAGEMENT_SESSION = "management_session"
+
+    val REQUIRED_ACTOR_ID = setOf(TELEGRAM, WEBAPP_SESSION)
+}

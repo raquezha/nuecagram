@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import net.raquezha.nuecagram.db.models.ActorType
+import net.raquezha.nuecagram.db.models.AuditMetadataKeys
 import net.raquezha.nuecagram.db.models.AuditMetadataPatch
 import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import org.jetbrains.exposed.v1.core.JoinType
@@ -26,7 +28,7 @@ class AuditEventRepository(
         metadataJson: String = "{}",
         metadataPatch: AuditMetadataPatch = AuditMetadataPatch(),
     ): Boolean {
-        if (actorType in ACTOR_ID_REQUIRED_TYPES && actorId.isNullOrBlank()) return false
+        if (actorType in ActorType.REQUIRED_ACTOR_ID && actorId.isNullOrBlank()) return false
 
         databaseFactory.dbTransaction {
             val installationSnapshot = installationId?.let { id ->
@@ -78,23 +80,22 @@ class AuditEventRepository(
             runCatching { auditJson.parseToJsonElement(existingMetadataJson).jsonObject }
                 .getOrDefault(JsonObject(emptyMap()))
         val fields = existing.toMutableMap()
-        fields.putString("installation_id", installationId?.toString())
-        fields.putString("actor_id", actorId)
-        fields.putString("username", metadataPatch.actorUsername)
-        fields.putString("first_name", metadataPatch.actorFirstName)
-        fields.putString("repo_name", metadataPatch.repoName ?: installation?.repoName)
-        fields.putString("nickname", metadataPatch.nickname ?: installation?.chatName)
-        fields.putLong("chat_id", metadataPatch.chatId ?: installation?.telegramChatId)
-        fields.putLong("topic_id", metadataPatch.topicId ?: installation?.telegramTopicId)
-        fields.putString("old_repo_name", metadataPatch.identityDelta?.oldRepoName)
-        fields.putString("new_repo_name", metadataPatch.identityDelta?.newRepoName)
-        fields.putString("old_nickname", metadataPatch.identityDelta?.oldNickname)
-        fields.putString("new_nickname", metadataPatch.identityDelta?.newNickname)
+        fields.putString(AuditMetadataKeys.INSTALLATION_ID, installationId?.toString())
+        fields.putString(AuditMetadataKeys.ACTOR_ID, actorId)
+        fields.putString(AuditMetadataKeys.USERNAME, metadataPatch.actorUsername)
+        fields.putString(AuditMetadataKeys.FIRST_NAME, metadataPatch.actorFirstName)
+        fields.putString(AuditMetadataKeys.REPO_NAME, metadataPatch.repoName ?: installation?.repoName)
+        fields.putString(AuditMetadataKeys.NICKNAME, metadataPatch.nickname ?: installation?.chatName)
+        fields.putLong(AuditMetadataKeys.CHAT_ID, metadataPatch.chatId ?: installation?.telegramChatId)
+        fields.putLong(AuditMetadataKeys.TOPIC_ID, metadataPatch.topicId ?: installation?.telegramTopicId)
+        fields.putString(AuditMetadataKeys.OLD_REPO_NAME, metadataPatch.identityDelta?.oldRepoName)
+        fields.putString(AuditMetadataKeys.NEW_REPO_NAME, metadataPatch.identityDelta?.newRepoName)
+        fields.putString(AuditMetadataKeys.OLD_NICKNAME, metadataPatch.identityDelta?.oldNickname)
+        fields.putString(AuditMetadataKeys.NEW_NICKNAME, metadataPatch.identityDelta?.newNickname)
         return auditJson.encodeToString(JsonObject.serializer(), JsonObject(fields))
     }
 
     private companion object {
-        val ACTOR_ID_REQUIRED_TYPES = setOf("telegram", "webapp_session")
         val auditJson = Json
     }
 }
