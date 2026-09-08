@@ -4,6 +4,7 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
+import net.raquezha.nuecagram.db.models.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -12,10 +13,8 @@ import kotlinx.serialization.json.jsonObject
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greater
-import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.lessEq
-import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -288,14 +287,6 @@ class AuthSessionRepository(
         databaseFactory.dbTransaction {
             PlatformAdminSessions.deleteWhere { PlatformAdminSessions.expiresAt lessEq now.databaseTime() }
         }
-
-    suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
-        val databaseNow = now.databaseTime()
-        WebhookSecrets.deleteWhere {
-            (WebhookSecrets.revokedAt.isNotNull() and (WebhookSecrets.revokedAt lessEq databaseNow)) or
-                (WebhookSecrets.expiresAt.isNotNull() and (WebhookSecrets.expiresAt lessEq databaseNow))
-        }
-    }
 
     suspend fun writeAuditEvent(
         installationId: UUID?,

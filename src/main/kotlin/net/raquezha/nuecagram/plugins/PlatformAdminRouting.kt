@@ -19,11 +19,11 @@ import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.CredentialCodec
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.redactedUrl
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.db.PlatformAdminAuditRecord
+import net.raquezha.nuecagram.db.models.PlatformAdminAuditRecord
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
-import net.raquezha.nuecagram.db.PlatformAdminSessionContext
+import net.raquezha.nuecagram.db.models.PlatformAdminSessionContext
 import org.koin.ktor.ext.inject
 import kotlinx.html.a
 import kotlinx.html.button

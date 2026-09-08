@@ -2,8 +2,8 @@ package net.raquezha.nuecagram.telegram
 
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.configuredPublicUrl
-import net.raquezha.nuecagram.db.AuditMetadataPatch
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.AuditMetadataPatch
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import java.time.Duration
 import java.time.Instant

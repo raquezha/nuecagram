@@ -4,17 +4,14 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
+import net.raquezha.nuecagram.db.models.*
 import net.raquezha.nuecagram.webhook.ChatDetails
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
-import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.core.greater
 import org.jetbrains.exposed.v1.core.isNull
-import org.jetbrains.exposed.v1.core.neq
-import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.insert
@@ -28,18 +25,13 @@ class InstallationRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
     private val webhookStateRepository: WebhookStateRepository = WebhookStateRepository(databaseFactory),
     private val authSessionRepository: AuthSessionRepository = AuthSessionRepository(databaseFactory),
+    private val webhookSecretRepository: WebhookSecretRepository = WebhookSecretRepository(databaseFactory),
 ) {
     private companion object {
         const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
         const val MAX_COLUMN_LENGTH = 255
     }
 
-    private data class StoredSecretCandidate(
-        val id: UUID,
-        val installationId: UUID,
-        val digest: ByteArray,
-        val hash: String,
-    )
     suspend fun createInstallation(
         repoName: String,
         chatName: String? = null,
@@ -94,56 +86,23 @@ class InstallationRepository(
     suspend fun issueWebhookSecret(
         installationId: UUID,
         expiresAt: Instant? = null,
-    ): IssuedCredential = databaseFactory.dbTransaction {
-        issueWebhookSecret(installationId, expiresAt)
-    }
+    ): IssuedCredential = webhookSecretRepository.issueWebhookSecret(installationId, expiresAt)
 
     suspend fun rotateWebhookSecret(
         installationId: UUID,
         graceUntil: Instant,
         expiresAt: Instant? = null,
-    ): IssuedCredential = databaseFactory.dbTransaction {
-        val issued = issueWebhookSecret(installationId, expiresAt)
-        WebhookSecrets.update({
-            (WebhookSecrets.installationId eq installationId) and
-                (WebhookSecrets.id neq issued.id) and WebhookSecrets.revokedAt.isNull()
-        }) {
-            it[revokedAt] = graceUntil.databaseTime()
-        }
-        issued
-    }
+    ): IssuedCredential = webhookSecretRepository.rotateWebhookSecret(installationId, graceUntil, expiresAt)
 
     suspend fun confirmWebhookSecret(
         secretId: UUID,
         confirmedAt: Instant = Instant.now(),
-    ): Boolean = databaseFactory.dbTransaction {
-        WebhookSecrets.update({
-            (WebhookSecrets.id eq secretId) and WebhookSecrets.confirmedAt.isNull()
-        }) {
-            it[WebhookSecrets.confirmedAt] = confirmedAt.databaseTime()
-        } == 1
-    }
+    ): Boolean = webhookSecretRepository.confirmWebhookSecret(secretId, confirmedAt)
 
     suspend fun verifyWebhookSecret(
         raw: String,
         now: Instant = Instant.now(),
-    ): VerifiedSecret? = databaseFactory.dbTransaction {
-        val databaseNow = now.databaseTime()
-        WebhookSecrets.selectAll().where {
-            (WebhookSecrets.secretDigest eq CredentialCodec.digest(raw)) and
-                (WebhookSecrets.revokedAt.isNull() or (WebhookSecrets.revokedAt greater databaseNow)) and
-                (WebhookSecrets.expiresAt.isNull() or (WebhookSecrets.expiresAt greater databaseNow))
-        }.mapNotNull { row ->
-            val hash = row[WebhookSecrets.secretHash] ?: return@mapNotNull null
-            StoredSecretCandidate(
-                row[WebhookSecrets.id],
-                row[WebhookSecrets.installationId],
-                row[WebhookSecrets.secretDigest],
-                hash,
-            )
-        }.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
-            ?.let { VerifiedSecret(it.id, it.installationId) }
-    }
+    ): VerifiedSecret? = webhookSecretRepository.verifyWebhookSecret(raw, now)
 
     suspend fun resolveWebhookInstallation(
         raw: String,
@@ -452,7 +411,7 @@ class InstallationRepository(
         authSessionRepository.cleanupExpiredPlatformAdminSessions(now)
 
     suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int =
-        authSessionRepository.cleanupExpiredWebhookSecrets(now)
+        webhookSecretRepository.cleanupExpiredWebhookSecrets(now)
 
     suspend fun writeAuditEvent(
         installationId: UUID?,
@@ -469,22 +428,6 @@ class InstallationRepository(
         metadataJson = metadataJson,
         metadataPatch = metadataPatch,
     )
-
-    private fun Transaction.issueWebhookSecret(
-        installationId: UUID,
-        expiresAt: Instant?,
-    ): IssuedCredential {
-        val id = UUID.randomUUID()
-        val (raw, stored) = CredentialCodec.issueCredential()
-        WebhookSecrets.insert {
-            it[WebhookSecrets.id] = id
-            it[WebhookSecrets.installationId] = installationId
-            it[secretDigest] = stored.digest
-            it[secretHash] = stored.hash
-            it[WebhookSecrets.expiresAt] = expiresAt?.databaseTime()
-        }
-        return IssuedCredential(id, installationId, raw)
-    }
 
     suspend fun softDeleteInstallation(id: UUID): Boolean = databaseFactory.dbTransaction {
         val count = Installations.update({ (Installations.id eq id) and (Installations.deletedAt.isNull()) }) {

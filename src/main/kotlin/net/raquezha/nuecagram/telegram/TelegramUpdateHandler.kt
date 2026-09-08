@@ -3,8 +3,8 @@
 package net.raquezha.nuecagram.telegram
 
 import net.raquezha.nuecagram.ConfigWithSecrets
-import net.raquezha.nuecagram.db.AuditMetadataPatch
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.AuditMetadataPatch
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."

@@ -13,6 +13,7 @@ import kotlinx.coroutines.coroutineScope
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
+import net.raquezha.nuecagram.db.models.WebhookInstallationResult
 import net.raquezha.nuecagram.testing.postgresTest
 
 val InstallationRepositoryTests by testSuite {
@@ -276,10 +277,10 @@ val InstallationRepositoryTests by testSuite {
                 actorType = "telegram",
                 actorId = "42",
                 action = "rotation.confirmed",
-                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                metadataPatch = net.raquezha.nuecagram.db.models.AuditMetadataPatch(
                     actorUsername = "alice",
                     actorFirstName = "Alice",
-                    identityDelta = net.raquezha.nuecagram.db.AuditIdentityDelta(
+                    identityDelta = net.raquezha.nuecagram.db.models.AuditIdentityDelta(
                         oldRepoName = "old/repo",
                         newRepoName = "new/repo",
                         oldNickname = "old room",
@@ -460,7 +461,7 @@ val InstallationRepositoryTests by testSuite {
                 "telegram",
                 "1",
                 "telegram_setup",
-                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(actorUsername = "alice"),
+                metadataPatch = net.raquezha.nuecagram.db.models.AuditMetadataPatch(actorUsername = "alice"),
             )
             repository.writeAuditEvent(inst.id, "webapp_session", "1", "webapp_setup")
             repository.writeAuditEvent(inst.id, "telegram", "1", "telegram_rotate")
@@ -473,9 +474,9 @@ val InstallationRepositoryTests by testSuite {
                 "webapp_session",
                 "1",
                 "webapp_identity_update",
-                metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                metadataPatch = net.raquezha.nuecagram.db.models.AuditMetadataPatch(
                     actorFirstName = "Alice",
-                    identityDelta = net.raquezha.nuecagram.db.AuditIdentityDelta(
+                    identityDelta = net.raquezha.nuecagram.db.models.AuditIdentityDelta(
                         oldRepoName = "old/repo",
                         newRepoName = "new/repo",
                         oldNickname = "old room",
@@ -540,7 +541,7 @@ val InstallationRepositoryTests by testSuite {
 
         // Verify active before soft-delete
         val activeRes = repository.resolveWebhookInstallation(cred.raw)
-        assertThat(activeRes).isInstanceOf(net.raquezha.nuecagram.db.WebhookInstallationResult.Active::class.java)
+        assertThat(activeRes).isInstanceOf(WebhookInstallationResult.Active::class.java)
         assertThat(repository.installationAdminContext(inst.id)).isNotNull()
         assertThat(repository.installationsForAdmin(9999L).map { it.id }).contains(inst.id)
 
@@ -560,7 +561,7 @@ val InstallationRepositoryTests by testSuite {
 
         // Webhook resolution returns SoftDeleted
         val deletedRes = repository.resolveWebhookInstallation(cred.raw)
-        assertThat(deletedRes).isEqualTo(net.raquezha.nuecagram.db.WebhookInstallationResult.SoftDeleted)
+        assertThat(deletedRes).isEqualTo(net.raquezha.nuecagram.db.models.WebhookInstallationResult.SoftDeleted)
     }
 
     postgresTest("persists and retrieves active MR and recent branch push state") { config ->

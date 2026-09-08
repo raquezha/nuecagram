@@ -23,11 +23,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
-import net.raquezha.nuecagram.db.AuditIdentityDelta
-import net.raquezha.nuecagram.db.AuditMetadataPatch
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.AuditIdentityDelta
+import net.raquezha.nuecagram.db.models.AuditMetadataPatch
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.db.WebAppSessionContext
+import net.raquezha.nuecagram.db.models.WebAppSessionContext
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramWebAppAuth
@@ -730,8 +730,8 @@ private suspend fun createAndRespond(
 }
 
 private fun toCreateResponse(
-    r: net.raquezha.nuecagram.db.InstallationRecord,
-    t: net.raquezha.nuecagram.db.IssuedCredential,
+    r: net.raquezha.nuecagram.db.models.InstallationRecord,
+    t: net.raquezha.nuecagram.db.models.IssuedCredential,
     url: String,
 ): CreateInstallationResponsePayload =
     CreateInstallationResponsePayload(
@@ -923,7 +923,7 @@ private fun InstallationAdminContext.toResponsePayload() = InstallationResponseP
     muted = muted,
 )
 
-private fun net.raquezha.nuecagram.db.InstallationRecord.toAdminContext(muted: Boolean) =
+private fun net.raquezha.nuecagram.db.models.InstallationRecord.toAdminContext(muted: Boolean) =
     InstallationAdminContext(
         id = id,
         repoName = repoName,

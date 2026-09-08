@@ -1,6 +1,7 @@
 package net.raquezha.nuecagram.db
 
 import java.util.UUID
+import net.raquezha.nuecagram.db.models.*
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.isNull
