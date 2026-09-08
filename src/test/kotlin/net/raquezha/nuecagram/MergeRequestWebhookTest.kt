@@ -68,6 +68,107 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             assertThat(cached?.reviewerUsernames).containsExactly("bob", "charlie").inOrder()
         }
 
+    @Test
+    fun testWebhookMergeRequestReviewerUpdatesEditExistingMessageAndReplyOnce() =
+        testApplication {
+            configureTestApplication()
+
+            postWebhook(EVENT_MERGE, mrPayload(action = "open", reviewers = emptyList()))
+            waitForMessages(1)
+
+            postWebhook(
+                EVENT_MERGE,
+                mrPayload(
+                    action = "update",
+                    reviewers = listOf("bob"),
+                    previousReviewers = emptyList(),
+                    currentReviewers = listOf("bob"),
+                ),
+            )
+            val afterAdd = waitForMessages(3)
+            assertThat(afterAdd[1].messageId).isEqualTo("1")
+            assertThat(afterAdd[2].replyToMessageId).isEqualTo(1L)
+            assertThat(afterAdd[2].text).contains("@bob you were added to review !42")
+
+            postWebhook(
+                EVENT_MERGE,
+                mrPayload(action = "update", reviewers = listOf("bob"), titleChanged = true),
+            )
+            val afterTitleOnly = waitForMessages(4)
+            assertThat(afterTitleOnly[3].messageId).isEqualTo("1")
+
+            postWebhook(
+                EVENT_MERGE,
+                mrPayload(
+                    action = "update",
+                    reviewers = emptyList(),
+                    previousReviewers = listOf("bob"),
+                    currentReviewers = emptyList(),
+                ),
+            )
+            val afterRemove = waitForMessages(6)
+            assertThat(afterRemove[4].messageId).isEqualTo("1")
+            assertThat(afterRemove[5].replyToMessageId).isEqualTo(1L)
+            assertThat(afterRemove[5].text).contains("bob was removed from review on !42")
+        }
+
+    private fun waitForMessages(count: Int) = kotlinx.coroutines.runBlocking {
+        val mock = telegramService as net.raquezha.nuecagram.telegram.MockTelegramService
+        repeat(100) {
+            val messages = mock.sentMessages()
+            if (messages.size >= count) return@runBlocking messages
+            kotlinx.coroutines.delay(50)
+        }
+        mock.sentMessages()
+    }
+
+    private fun mrPayload(
+        action: String,
+        reviewers: List<String>,
+        previousReviewers: List<String>? = null,
+        currentReviewers: List<String>? = null,
+        titleChanged: Boolean = false,
+    ): String {
+        val changes = buildList {
+            if (previousReviewers != null && currentReviewers != null) {
+                add(
+                    "\"reviewers\": { " +
+                        "\"previous\": ${reviewerJson(previousReviewers)}, " +
+                        "\"current\": ${reviewerJson(currentReviewers)} }",
+                )
+            }
+            if (titleChanged) {
+                add("\"title\": { \"previous\": \"Old title\", \"current\": \"Feature branch\" }")
+            }
+        }.joinToString(",")
+        val changesBlock = changes.takeIf(String::isNotBlank)?.let { ", \"changes\": { $it }" }.orEmpty()
+        return """
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": { "id": 1, "name": "Alice Author", "username": "alice" },
+  "project": { "id": 101, "name": "Gitlab Test", "web_url": "http://example.com/gitlabhq/gitlab-test" },
+  "object_attributes": {
+    "id": 99,
+    "iid": 42,
+    "action": "$action",
+    "source_branch": "feature",
+    "target_branch": "main",
+    "source_project_id": 101,
+    "target_project_id": 101,
+    "title": "Feature branch",
+    "url": "http://example.com/gitlabhq/gitlab-test/-/merge_requests/42"
+  },
+  "reviewers": ${reviewerJson(reviewers)}$changesBlock
+}
+""".trimIndent()
+    }
+
+    private fun reviewerJson(usernames: List<String>): String =
+        usernames.joinToString(prefix = "[", postfix = "]") { username ->
+            """{ "id": 2, "name": "$username", "username": "$username" }"""
+        }
+
     companion object {
         val SAMPLE_PAYLOAD =
             """

@@ -5,11 +5,12 @@ import io.ktor.server.application.Application
 import kotlinx.coroutines.channels.Channel
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
+import net.raquezha.nuecagram.db.InstallationRepository
+import org.gitlab4j.api.models.Reviewer
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.MergeRequestEvent
 import org.gitlab4j.api.webhook.PipelineEvent
 import org.gitlab4j.api.webhook.PushEvent
-import net.raquezha.nuecagram.db.InstallationRepository
 import org.koin.ktor.ext.inject
 
 private data class EventProcessingContext(
@@ -18,6 +19,16 @@ private data class EventProcessingContext(
     val telegramService: TelegramService,
     val formatter: WebhookMessageFormatter,
     val logger: KLogger,
+)
+
+private data class MergeRequestState(
+    val projectId: Long?,
+    val mrIid: Long?,
+    val authorUsername: String?,
+    val reviewers: List<String>,
+    val sourceBranch: String?,
+    val lastCommitSha: String?,
+    val action: String?,
 )
 
 @Suppress("TooManyFunctions")
@@ -416,65 +427,158 @@ class WebhookRequestHandler(
 
     private suspend fun handleMergeRequestEvent(
         installationId: java.util.UUID,
-        event: org.gitlab4j.api.webhook.MergeRequestEvent,
+        event: MergeRequestEvent,
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val projectId = event.objectAttributes?.sourceProjectId
-            ?: event.project?.id
-            ?: event.objectAttributes?.targetProjectId
-        val mrIid = event.objectAttributes?.iid
-        val authorUsername = event.user?.username
-        val reviewers = event.reviewers.orEmpty().mapNotNull { it.username }
-        val sourceBranch = event.objectAttributes?.sourceBranch?.trim()
-        val lastCommitSha = event.objectAttributes?.lastCommit?.id
-        val action = event.objectAttributes?.action?.lowercase()
+        val state = event.toMergeRequestState()
+        val reviewerChange = reviewerChange(event)
 
-        if (projectId != null && mrIid != null) {
-            ctx.installationRepository.upsertMrParticipants(
-                installationId = installationId,
-                projectId = projectId,
-                mrIid = mrIid,
-                authorUsername = authorUsername,
-                reviewerUsernames = reviewers,
-            )
-            ctx.logger.debug { "MR !$mrIid (project $projectId): cached author=$authorUsername, reviewers=$reviewers" }
+        if (state.projectId != null && state.mrIid != null) {
+            cacheMergeRequestState(installationId, state, event, ctx)
+            skipRedundantMergeRequestUpdate(installationId, state, event, ctx)
+        }
 
-            if (!sourceBranch.isNullOrBlank()) {
-                when (action) {
-                    "open", "reopen", "update", "approved", "unapproved", "approval", "unapproval" -> {
-                        ctx.installationRepository.upsertActiveMr(
-                            installationId = installationId,
-                            projectId = projectId,
-                            sourceBranch = sourceBranch,
-                            mrIid = mrIid,
-                            targetProjectId = event.objectAttributes?.targetProjectId,
-                            lastCommitSha = lastCommitSha,
-                        )
-                    }
-                    "close", "merge", "destroy", "delete" -> {
-                        ctx.installationRepository.clearActiveMr(
-                            installationId = installationId,
-                            projectId = projectId,
-                            sourceBranch = sourceBranch,
-                        )
-                    }
-                }
+        val existingMessageId = if (state.projectId != null && state.mrIid != null) {
+            ctx.webhookService.getMrMessageId(installationId, state.projectId, state.mrIid)
+        } else {
+            null
+        }
 
-                val latestPushSha = ctx.installationRepository.getLatestPushSha(installationId, projectId, sourceBranch)
-                val decision = eventFilter.evaluate(event, latestPushSha)
-                if (decision == FilterDecision.SKIP_REDUNDANT_PUSH_MR_UPDATE) {
-                    ctx.logger.debug { "Skipping redundant MR update for !$mrIid on branch $sourceBranch" }
-                    throw SkipEventException()
-                }
+        if (state.action == "update" && existingMessageId == null && reviewerChange.isEmpty()) {
+            ctx.logger.debug { "Skipping non-actionable MR update for !${state.mrIid}" }
+            throw SkipEventException()
+        }
+
+        val messageId = ctx.telegramService.sendMessage(
+            Message(
+                chatId = chatDetails.chatId,
+                threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                messageId = existingMessageId,
+                text = ctx.formatter.formatEventMessage(event),
+                parseMode = PARSE_MODE,
+                disableWebPagePreview = true,
+            ),
+        )
+
+        if (state.projectId != null && state.mrIid != null) {
+            when (state.action) {
+                "close", "merge", "destroy", "delete" ->
+                    ctx.webhookService.clearMrMessageId(installationId, state.projectId, state.mrIid)
+                else -> ctx.webhookService.setMrMessageId(installationId, state.projectId, state.mrIid, messageId)
             }
         }
 
-        handleGenericEvent(
-            event = event,
-            chatDetails = chatDetails,
-            ctx = ctx,
+        sendReviewerChangeReplies(reviewerChange, chatDetails, messageId, event, ctx)
+    }
+
+    private fun MergeRequestEvent.toMergeRequestState() = MergeRequestState(
+        projectId = objectAttributes?.sourceProjectId
+            ?: project?.id
+            ?: objectAttributes?.targetProjectId,
+        mrIid = objectAttributes?.iid,
+        authorUsername = user?.username,
+        reviewers = reviewers.orEmpty().mapNotNull { it.username },
+        sourceBranch = objectAttributes?.sourceBranch?.trim(),
+        lastCommitSha = objectAttributes?.lastCommit?.id,
+        action = objectAttributes?.action?.lowercase(),
+    )
+
+    private suspend fun cacheMergeRequestState(
+        installationId: java.util.UUID,
+        state: MergeRequestState,
+        event: MergeRequestEvent,
+        ctx: EventProcessingContext,
+    ) {
+        ctx.installationRepository.upsertMrParticipants(
+            installationId = installationId,
+            projectId = state.projectId!!,
+            mrIid = state.mrIid!!,
+            authorUsername = state.authorUsername,
+            reviewerUsernames = state.reviewers,
         )
+        ctx.logger.debug {
+            "MR !${state.mrIid} (project ${state.projectId}): " +
+                "cached author=${state.authorUsername}, reviewers=${state.reviewers}"
+        }
+
+        if (state.sourceBranch.isNullOrBlank()) return
+        when (state.action) {
+            "open", "reopen", "update", "approved", "unapproved", "approval", "unapproval" -> {
+                ctx.installationRepository.upsertActiveMr(
+                    installationId = installationId,
+                    projectId = state.projectId,
+                    sourceBranch = state.sourceBranch,
+                    mrIid = state.mrIid,
+                    targetProjectId = event.objectAttributes?.targetProjectId,
+                    lastCommitSha = state.lastCommitSha,
+                )
+            }
+            "close", "merge", "destroy", "delete" -> {
+                ctx.installationRepository.clearActiveMr(installationId, state.projectId, state.sourceBranch)
+            }
+        }
+    }
+
+    private suspend fun skipRedundantMergeRequestUpdate(
+        installationId: java.util.UUID,
+        state: MergeRequestState,
+        event: MergeRequestEvent,
+        ctx: EventProcessingContext,
+    ) {
+        if (state.sourceBranch.isNullOrBlank()) return
+        val latestPushSha = ctx.installationRepository.getLatestPushSha(
+            installationId,
+            state.projectId!!,
+            state.sourceBranch,
+        )
+        if (eventFilter.evaluate(event, latestPushSha) == FilterDecision.SKIP_REDUNDANT_PUSH_MR_UPDATE) {
+            ctx.logger.debug { "Skipping redundant MR update for !${state.mrIid} on branch ${state.sourceBranch}" }
+            throw SkipEventException()
+        }
+    }
+
+    private data class ReviewerChange(
+        val added: List<String>,
+        val removed: List<String>,
+    ) {
+        fun isEmpty(): Boolean = added.isEmpty() && removed.isEmpty()
+    }
+
+    private fun reviewerChange(event: MergeRequestEvent): ReviewerChange {
+        val reviewers = event.changes?.reviewers ?: return ReviewerChange(emptyList(), emptyList())
+        val previous = reviewers.previous.orEmpty().mapNotNull { it.reviewerHandle() }.toSet()
+        val current = reviewers.current.orEmpty().mapNotNull { it.reviewerHandle() }.toSet()
+        return ReviewerChange(
+            added = (current - previous).sorted(),
+            removed = (previous - current).sorted(),
+        )
+    }
+
+    private fun Reviewer.reviewerHandle(): String? =
+        username?.takeIf(String::isNotBlank) ?: name?.takeIf(String::isNotBlank)
+
+    private suspend fun sendReviewerChangeReplies(
+        change: ReviewerChange,
+        chatDetails: ChatDetails,
+        messageId: String,
+        event: MergeRequestEvent,
+        ctx: EventProcessingContext,
+    ) {
+        val mr = "!${event.objectAttributes?.iid ?: "?"}"
+        val messages = change.added.map { "@$it you were added to review $mr." } +
+            change.removed.map { "$it was removed from review on $mr." }
+        messages.forEach { text ->
+            ctx.telegramService.sendMessage(
+                Message(
+                    chatId = chatDetails.chatId,
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                    text = text,
+                    parseMode = PARSE_MODE,
+                    replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+                ),
+            )
+        }
     }
 
     private fun formatPipelineCompletionReply(
