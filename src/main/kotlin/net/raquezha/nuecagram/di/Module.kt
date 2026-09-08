@@ -19,6 +19,8 @@ import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.AuditEventRepository
 import net.raquezha.nuecagram.db.AuthSessionRepository
 import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.InstallationAdminRepository
+import net.raquezha.nuecagram.db.InstallationLifecycleRepository
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.ManagementSessionRepository
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
@@ -109,7 +111,9 @@ val provideDatabaseModule =
         single { AuthSessionRepository(get(), get(), get(), get(), get()) }
         single { WebhookSecretRepository(get()) }
         single { TelegramDestinationRepository(get()) }
-        single { InstallationRepository(get(), get(), get(), get(), get()) }
+        single { InstallationLifecycleRepository(get(), get()) }
+        single { InstallationAdminRepository(get(), get()) }
+        single { InstallationRepository(get(), get(), get(), get(), get(), get(), get()) }
         single { PlatformAdminReadRepository(get()) }
     }
 

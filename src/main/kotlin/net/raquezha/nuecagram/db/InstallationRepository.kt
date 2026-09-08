@@ -1,23 +1,8 @@
 package net.raquezha.nuecagram.db
 
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
 import net.raquezha.nuecagram.db.models.*
-import net.raquezha.nuecagram.webhook.ChatDetails
-import org.jetbrains.exposed.v1.core.JoinType
-import org.jetbrains.exposed.v1.core.ResultRow
-import org.jetbrains.exposed.v1.core.SortOrder
-import org.jetbrains.exposed.v1.core.and
-import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.core.isNull
-import org.jetbrains.exposed.v1.jdbc.Query
-import org.jetbrains.exposed.v1.jdbc.andWhere
-import org.jetbrains.exposed.v1.jdbc.insert
-import org.jetbrains.exposed.v1.jdbc.selectAll
-import org.jetbrains.exposed.v1.jdbc.update
-import org.jetbrains.exposed.v1.jdbc.upsert
 
 @Suppress("TooManyFunctions")
 class InstallationRepository(
@@ -27,12 +12,11 @@ class InstallationRepository(
     private val webhookSecretRepository: WebhookSecretRepository = WebhookSecretRepository(databaseFactory),
     private val telegramDestinationRepository: TelegramDestinationRepository =
         TelegramDestinationRepository(databaseFactory),
+    private val lifecycleRepository: InstallationLifecycleRepository =
+        InstallationLifecycleRepository(databaseFactory, webhookSecretRepository),
+    private val adminRepository: InstallationAdminRepository =
+        InstallationAdminRepository(databaseFactory, lifecycleRepository),
 ) {
-    private companion object {
-        const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
-        const val MAX_COLUMN_LENGTH = 255
-    }
-
     suspend fun createInstallation(
         repoName: String,
         chatName: String? = null,
@@ -40,49 +24,26 @@ class InstallationRepository(
         gitlabProjectId: Long?,
         telegramChatId: Long,
         telegramTopicId: Long?,
-    ): InstallationRecord {
-        val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
-        require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
-            "repoName must be non-blank and not use the legacy fallback value"
-        }
-        val normalizedChatName = chatName?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
-        val normalizedGitlabUrl = gitlabBaseUrl.redactedUrl().trim().trimEnd('/').take(MAX_COLUMN_LENGTH)
-        val installation = InstallationRecord(
-            id = UUID.randomUUID(),
-            repoName = normalizedRepoName,
-            chatName = normalizedChatName,
-            gitlabBaseUrl = normalizedGitlabUrl,
-            gitlabProjectId = gitlabProjectId,
-            telegramChatId = telegramChatId,
-            telegramTopicId = telegramTopicId,
-        )
-        databaseFactory.dbTransaction {
-            Installations.insert {
-                it[id] = installation.id
-                it[Installations.repoName] = installation.repoName
-                it[Installations.chatName] = installation.chatName
-                it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
-                it[Installations.gitlabProjectId] = installation.gitlabProjectId
-                it[Installations.telegramChatId] = installation.telegramChatId
-                it[Installations.telegramTopicId] = installation.telegramTopicId
-            }
-        }
-        return installation
-    }
+    ): InstallationRecord = lifecycleRepository.createInstallation(
+        repoName = repoName,
+        chatName = chatName,
+        gitlabBaseUrl = gitlabBaseUrl,
+        gitlabProjectId = gitlabProjectId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
 
     suspend fun createInstallation(
         gitlabBaseUrl: String,
         gitlabProjectId: Long?,
         telegramChatId: Long,
         telegramTopicId: Long?,
-    ): InstallationRecord =
-        createInstallation(
-            repoName = deriveRepositoryName(gitlabBaseUrl, gitlabProjectId),
-            gitlabBaseUrl = gitlabBaseUrl,
-            gitlabProjectId = gitlabProjectId,
-            telegramChatId = telegramChatId,
-            telegramTopicId = telegramTopicId,
-        )
+    ): InstallationRecord = lifecycleRepository.createInstallation(
+        gitlabBaseUrl = gitlabBaseUrl,
+        gitlabProjectId = gitlabProjectId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
 
     suspend fun issueWebhookSecret(
         installationId: UUID,
@@ -108,41 +69,7 @@ class InstallationRepository(
     suspend fun resolveWebhookInstallation(
         raw: String,
         now: Instant = Instant.now(),
-    ): WebhookInstallationResult {
-        val verified = verifyWebhookSecret(raw, now) ?: return WebhookInstallationResult.NotFound
-        return databaseFactory.dbTransaction {
-            val row = installationWithMuteQuery(verified.installationId, includeDeleted = true).firstOrNull()
-                ?: return@dbTransaction WebhookInstallationResult.NotFound
-
-            if (row[Installations.deletedAt] != null) {
-                return@dbTransaction WebhookInstallationResult.SoftDeleted
-            }
-
-            WebhookInstallationResult.Active(
-                InstallationContext(
-                    verified.secretId,
-                    verified.installationId,
-                    ChatDetails(
-                        row[Installations.telegramChatId].toString(),
-                        row[Installations.telegramTopicId]?.toString(),
-                    ),
-                    row.getOrNull(MuteStates.muted) ?: false,
-                ),
-            )
-        }
-    }
-
-    private fun deriveRepositoryName(gitlabBaseUrl: String, gitlabProjectId: Long?): String {
-        if (gitlabProjectId != null) return "Project #$gitlabProjectId"
-        val cleanUrl = gitlabBaseUrl.redactedUrl()
-        return cleanUrl.trim()
-            .substringAfter("://", cleanUrl.trim())
-            .substringAfter('/', "")
-            .trim('/')
-            .takeIf(String::isNotBlank)
-            ?: cleanUrl.trim().trim('/').takeIf(String::isNotBlank)
-            ?: UNKNOWN_REPOSITORY_NAME
-    }
+    ): WebhookInstallationResult = lifecycleRepository.resolveWebhookInstallation(raw, now)
 
     suspend fun recordTelegramUpdate(updateId: Long): Boolean =
         telegramDestinationRepository.recordTelegramUpdate(updateId)
@@ -166,123 +93,40 @@ class InstallationRepository(
         telegramDestinationRepository.knownTelegramDestinations()
 
     suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
-        databaseFactory.dbTransaction {
-            installationWithMuteQuery(installationId).firstOrNull()?.toAdminContext()
-        }
+        adminRepository.installationAdminContext(installationId)
 
     suspend fun listInstallationsForContext(
         chatId: Long?,
         topicId: Long?,
-    ): List<InstallationAdminContext> = databaseFactory.dbTransaction {
-        val query = installationWithMuteQuery()
-        if (chatId != null) {
-            query.andWhere { Installations.telegramChatId eq chatId }
-            if (topicId != null) {
-                query.andWhere { Installations.telegramTopicId eq topicId }
-            }
-        }
-        query.map { it.toAdminContext() }
-    }
+    ): List<InstallationAdminContext> = adminRepository.listInstallationsForContext(chatId, topicId)
 
     suspend fun recordInstallationAdmin(
         installationId: UUID,
         telegramUserId: Long,
         confirmedAt: Instant = Instant.now(),
     ) {
-        databaseFactory.dbTransaction {
-            InstallationAdmins.upsert(InstallationAdmins.installationId, InstallationAdmins.telegramUserId) {
-                it[InstallationAdmins.installationId] = installationId
-                it[InstallationAdmins.telegramUserId] = telegramUserId
-                it[InstallationAdmins.confirmedAt] = confirmedAt.databaseTime()
-            }
-        }
+        adminRepository.recordInstallationAdmin(installationId, telegramUserId, confirmedAt)
     }
 
     suspend fun installationsForAdmin(telegramUserId: Long): List<InstallationAdminContext> =
-        databaseFactory.dbTransaction {
-            Installations.join(
-                InstallationAdmins,
-                JoinType.INNER,
-                Installations.id,
-                InstallationAdmins.installationId,
-            ).join(
-                MuteStates,
-                JoinType.LEFT,
-                Installations.id,
-                MuteStates.installationId,
-            ).selectAll()
-                .where {
-                    (InstallationAdmins.telegramUserId eq telegramUserId) and
-                        (Installations.deletedAt.isNull())
-                }
-                .orderBy(InstallationAdmins.confirmedAt to SortOrder.DESC)
-                .map { it.toAdminContext() }
-        }
+        adminRepository.installationsForAdmin(telegramUserId)
 
     suspend fun findInstallationByQuery(
         rawQuery: String,
         chatId: Long? = null,
         topicId: Long? = null,
-    ): InstallationAdminContext? = databaseFactory.dbTransaction {
-        val queryStr = rawQuery.trim().lowercase()
-        if (queryStr.isBlank()) return@dbTransaction null
-        val uuid = runCatching { UUID.fromString(queryStr) }.getOrNull()
-        if (uuid != null) {
-            val query = installationWithMuteQuery(uuid)
-            if (chatId != null) {
-                query.andWhere { Installations.telegramChatId eq chatId }
-            }
-            if (topicId != null) {
-                query.andWhere { Installations.telegramTopicId eq topicId }
-            }
-            return@dbTransaction query.firstOrNull()?.toAdminContext()
-        }
-        val query = installationWithMuteQuery()
-        if (chatId != null) {
-            query.andWhere { Installations.telegramChatId eq chatId }
-        }
-        if (topicId != null) {
-            query.andWhere { Installations.telegramTopicId eq topicId }
-        }
-        query.map { it.toAdminContext() }
-            .firstOrNull { inst ->
-                inst.id.toString().lowercase().startsWith(queryStr) ||
-                    inst.gitlabProjectId?.toString() == queryStr ||
-                    inst.gitlabBaseUrl.lowercase().contains(queryStr) ||
-                    inst.repoName.lowercase().contains(queryStr) ||
-                    inst.chatName?.lowercase()?.contains(queryStr) == true
-            }
-    }
+    ): InstallationAdminContext? = adminRepository.findInstallationByQuery(rawQuery, chatId, topicId)
 
     suspend fun updateIdentity(
         installationId: UUID,
         repoName: String,
         chatName: String?,
-    ): Boolean {
-        val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
-        require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
-            "repoName must be non-blank and not use the legacy fallback value"
-        }
-        val normalizedChatName = chatName?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
-        return databaseFactory.dbTransaction {
-            Installations.update({ Installations.id eq installationId }) {
-                it[Installations.repoName] = normalizedRepoName
-                it[Installations.chatName] = normalizedChatName
-            } == 1
-        }
-    }
+    ): Boolean = lifecycleRepository.updateIdentity(installationId, repoName, chatName)
 
     suspend fun setMuted(installationId: UUID, muted: Boolean) {
-        databaseFactory.dbTransaction {
-            MuteStates.upsert(MuteStates.installationId) {
-                it[MuteStates.installationId] = installationId
-                it[MuteStates.muted] = muted
-                it[updatedAt] = Instant.now().databaseTime()
-            }
-        }
+        lifecycleRepository.setMuted(installationId, muted)
     }
 
-    // Delegated Auth & Session Operations
     suspend fun issueManagementLink(
         installationId: UUID,
         expiresAt: Instant,
@@ -397,44 +241,10 @@ class InstallationRepository(
         metadataPatch = metadataPatch,
     )
 
-    suspend fun softDeleteInstallation(id: UUID): Boolean = databaseFactory.dbTransaction {
-        val count = Installations.update({ (Installations.id eq id) and (Installations.deletedAt.isNull()) }) {
-            it[deletedAt] = Instant.now().databaseTime()
-        }
-        count > 0
-    }
+    suspend fun softDeleteInstallation(id: UUID): Boolean = lifecycleRepository.softDeleteInstallation(id)
 
     suspend fun cleanupStaleMrAndPushStates(now: Instant = Instant.now(), maxAgeDays: Long = 30): Int =
         webhookStateRepository.cleanupStaleMrAndPushStates(now, maxAgeDays)
-
-    private fun installationWithMuteQuery(
-        installationId: UUID? = null,
-        includeDeleted: Boolean = false,
-    ): Query {
-        val join = Installations.join(
-            MuteStates,
-            JoinType.LEFT,
-            Installations.id,
-            MuteStates.installationId,
-        )
-        val query = join.selectAll()
-        if (!includeDeleted) {
-            query.andWhere { Installations.deletedAt.isNull() }
-        }
-        if (installationId != null) query.andWhere { Installations.id eq installationId }
-        return query
-    }
-
-    private fun ResultRow.toAdminContext() = InstallationAdminContext(
-        id = this[Installations.id],
-        repoName = this[Installations.repoName],
-        chatName = this[Installations.chatName],
-        gitlabBaseUrl = this[Installations.gitlabBaseUrl],
-        gitlabProjectId = this[Installations.gitlabProjectId],
-        telegramChatId = this[Installations.telegramChatId],
-        telegramTopicId = this[Installations.telegramTopicId],
-        muted = getOrNull(MuteStates.muted) ?: false,
-    )
 
     suspend fun upsertMrParticipants(
         installationId: UUID,
@@ -515,5 +325,3 @@ class InstallationRepository(
         webhookStateRepository.clearProcessedWebhookEvents()
     }
 }
-
-private fun Instant.databaseTime(): OffsetDateTime = atOffset(ZoneOffset.UTC)
