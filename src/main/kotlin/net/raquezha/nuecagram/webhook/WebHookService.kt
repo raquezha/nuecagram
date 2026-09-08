@@ -39,6 +39,7 @@ class WebHookService(
 
     companion object {
         const val DEFAULT_STALE_ENTRY_TTL_MS = 2L * 60 * 60 * 1000
+        const val DEFAULT_MR_MESSAGE_TTL_MS = 24L * 60 * 60 * 1000
         private const val DEFAULT_MAX_PAYLOAD_SIZE = 1_048_576
         private const val DEFAULT_MAX_REQUESTS_PER_WINDOW = 60
         private const val DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000L
@@ -86,9 +87,16 @@ class WebHookService(
         val pipelineId: Long,
     )
 
+    private data class InstallationMrKey(
+        val installationId: UUID,
+        val projectId: Long,
+        val mrIid: Long,
+    )
+
     private val runningJobsIdMap = ConcurrentHashMap<InstallationJobKey, JobEntry>()
     private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, String>()
     private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
+    private val mrMessageIdMap = ConcurrentHashMap<InstallationMrKey, JobEntry>()
 
     suspend fun handleRequest(call: ApplicationCall): EventData {
         val clientId = call.clientId()
@@ -272,11 +280,35 @@ class WebHookService(
         logger.debug { "Cleared tracking for pipeline $pipelineId in installation $installationId" }
     }
 
+    fun getMrMessageId(
+        installationId: UUID,
+        projectId: Long,
+        mrIid: Long,
+    ): String? = mrMessageIdMap[InstallationMrKey(installationId, projectId, mrIid)]?.messageId
+
+    fun setMrMessageId(
+        installationId: UUID,
+        projectId: Long,
+        mrIid: Long,
+        messageId: String,
+    ) {
+        mrMessageIdMap[InstallationMrKey(installationId, projectId, mrIid)] = JobEntry(messageId)
+    }
+
+    fun clearMrMessageId(
+        installationId: UUID,
+        projectId: Long,
+        mrIid: Long,
+    ) {
+        mrMessageIdMap.remove(InstallationMrKey(installationId, projectId, mrIid))
+    }
+
     fun resetRuntimeState() {
         requestWindows.clear()
         runningJobsIdMap.clear()
         pipelineMessageIdMap.clear()
         trackedPipelines.clear()
+        mrMessageIdMap.clear()
     }
 
     fun cleanupStaleEntries(maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS) {
@@ -305,11 +337,22 @@ class WebHookService(
             }
         }
 
-        val totalCleaned = pipelinesRemoved + jobsRemoved
+        val mrCutoff = System.currentTimeMillis() - DEFAULT_MR_MESSAGE_TTL_MS
+        var mrsRemoved = 0
+        mrMessageIdMap.entries.removeIf { entry ->
+            if (entry.value.createdAt < mrCutoff) {
+                mrsRemoved++
+                true
+            } else {
+                false
+            }
+        }
+
+        val totalCleaned = pipelinesRemoved + jobsRemoved + mrsRemoved
         if (totalCleaned > 0) {
             logger.debug {
                 "Cleaned up $totalCleaned stale entries " +
-                    "($pipelinesRemoved pipelines, $jobsRemoved jobs)"
+                    "($pipelinesRemoved pipelines, $jobsRemoved jobs, $mrsRemoved MRs)"
             }
         }
     }

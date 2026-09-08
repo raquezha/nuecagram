@@ -70,7 +70,7 @@ class MockTelegramService : TelegramService {
 
     override suspend fun sendMessage(message: Message): String {
         sentMessages += message
-        return messageCounter.incrementAndGet().toString()
+        return message.messageId ?: messageCounter.incrementAndGet().toString()
     }
 
     override suspend fun chatMemberStatus(
