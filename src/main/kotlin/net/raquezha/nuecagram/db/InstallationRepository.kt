@@ -15,7 +15,6 @@ import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.insert
-import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.upsert
@@ -26,6 +25,8 @@ class InstallationRepository(
     private val webhookStateRepository: WebhookStateRepository = WebhookStateRepository(databaseFactory),
     private val authSessionRepository: AuthSessionRepository = AuthSessionRepository(databaseFactory),
     private val webhookSecretRepository: WebhookSecretRepository = WebhookSecretRepository(databaseFactory),
+    private val telegramDestinationRepository: TelegramDestinationRepository =
+        TelegramDestinationRepository(databaseFactory),
 ) {
     private companion object {
         const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
@@ -143,59 +144,26 @@ class InstallationRepository(
             ?: UNKNOWN_REPOSITORY_NAME
     }
 
-    private fun destinationId(chatId: Long, topicId: Long?): String = "$chatId:${topicId ?: 0}"
-
-    suspend fun recordTelegramUpdate(updateId: Long): Boolean = databaseFactory.dbTransaction {
-        TelegramUpdates.insertIgnore { it[TelegramUpdates.updateId] = updateId }.insertedCount == 1
-    }
+    suspend fun recordTelegramUpdate(updateId: Long): Boolean =
+        telegramDestinationRepository.recordTelegramUpdate(updateId)
 
     suspend fun upsertTelegramPrivateChat(userId: Long, chatId: Long) {
-        databaseFactory.dbTransaction {
-            TelegramPrivateChats.upsert(TelegramPrivateChats.telegramUserId) {
-                it[telegramUserId] = userId
-                it[telegramChatId] = chatId
-                it[startedAt] = Instant.now().databaseTime()
-            }
-        }
+        telegramDestinationRepository.upsertTelegramPrivateChat(userId, chatId)
     }
 
-    suspend fun telegramPrivateChatId(userId: Long): Long? = databaseFactory.dbTransaction {
-        TelegramPrivateChats.selectAll()
-            .where { TelegramPrivateChats.telegramUserId eq userId }
-            .firstOrNull()?.get(TelegramPrivateChats.telegramChatId)
-    }
+    suspend fun telegramPrivateChatId(userId: Long): Long? =
+        telegramDestinationRepository.telegramPrivateChatId(userId)
 
     suspend fun upsertKnownTelegramDestination(
         chatId: Long,
         topicId: Long?,
         chatTitle: String?,
     ) {
-        if (chatId >= 0) return
-        val destinationId = destinationId(chatId, topicId)
-        databaseFactory.dbTransaction {
-            KnownTelegramDestinations.upsert(KnownTelegramDestinations.id) {
-                it[KnownTelegramDestinations.id] = destinationId
-                it[KnownTelegramDestinations.telegramChatId] = chatId
-                it[KnownTelegramDestinations.telegramTopicId] = topicId
-                it[KnownTelegramDestinations.chatTitle] =
-                    chatTitle?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
-                it[KnownTelegramDestinations.lastSeenAt] = Instant.now().databaseTime()
-            }
-        }
+        telegramDestinationRepository.upsertKnownTelegramDestination(chatId, topicId, chatTitle)
     }
 
-    suspend fun knownTelegramDestinations(): List<KnownTelegramDestination> = databaseFactory.dbTransaction {
-        KnownTelegramDestinations.selectAll()
-            .orderBy(KnownTelegramDestinations.lastSeenAt to SortOrder.DESC)
-            .map {
-                KnownTelegramDestination(
-                    id = it[KnownTelegramDestinations.id],
-                    telegramChatId = it[KnownTelegramDestinations.telegramChatId],
-                    telegramTopicId = it[KnownTelegramDestinations.telegramTopicId],
-                    chatTitle = it[KnownTelegramDestinations.chatTitle],
-                )
-            }
-    }
+    suspend fun knownTelegramDestinations(): List<KnownTelegramDestination> =
+        telegramDestinationRepository.knownTelegramDestinations()
 
     suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
         databaseFactory.dbTransaction {
