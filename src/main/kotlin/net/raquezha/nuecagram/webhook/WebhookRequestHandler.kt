@@ -445,7 +445,12 @@ class WebhookRequestHandler(
             null
         }
 
-        if (state.action == "update" && existingMessageId == null && reviewerChange.isEmpty()) {
+        if (
+            state.action == "update" &&
+            existingMessageId == null &&
+            reviewerChange.isEmpty() &&
+            !eventFilter.hasStructuralChanges(event.changes)
+        ) {
             ctx.logger.debug { "Skipping non-actionable MR update for !${state.mrIid}" }
             throw SkipEventException()
         }
@@ -539,24 +544,36 @@ class WebhookRequestHandler(
     }
 
     private data class ReviewerChange(
-        val added: List<String>,
-        val removed: List<String>,
+        val added: List<ReviewerIdentity>,
+        val removed: List<ReviewerIdentity>,
     ) {
         fun isEmpty(): Boolean = added.isEmpty() && removed.isEmpty()
     }
 
+    private data class ReviewerIdentity(
+        val key: String,
+        val username: String?,
+        val name: String?,
+    ) {
+        val label: String = username?.let { "@$it" } ?: name ?: key
+    }
+
     private fun reviewerChange(event: MergeRequestEvent): ReviewerChange {
         val reviewers = event.changes?.reviewers ?: return ReviewerChange(emptyList(), emptyList())
-        val previous = reviewers.previous.orEmpty().mapNotNull { it.reviewerHandle() }.toSet()
-        val current = reviewers.current.orEmpty().mapNotNull { it.reviewerHandle() }.toSet()
+        val previous = reviewers.previous.orEmpty().mapNotNull { it.reviewerIdentity() }.associateBy { it.key }
+        val current = reviewers.current.orEmpty().mapNotNull { it.reviewerIdentity() }.associateBy { it.key }
         return ReviewerChange(
-            added = (current - previous).sorted(),
-            removed = (previous - current).sorted(),
+            added = (current.keys - previous.keys).sorted().mapNotNull(current::get),
+            removed = (previous.keys - current.keys).sorted().mapNotNull(previous::get),
         )
     }
 
-    private fun Reviewer.reviewerHandle(): String? =
-        username?.takeIf(String::isNotBlank) ?: name?.takeIf(String::isNotBlank)
+    private fun Reviewer.reviewerIdentity(): ReviewerIdentity? {
+        val username = username?.takeIf(String::isNotBlank)
+        val name = name?.takeIf(String::isNotBlank)
+        val key = username ?: name ?: return null
+        return ReviewerIdentity(key, username, name)
+    }
 
     private suspend fun sendReviewerChangeReplies(
         change: ReviewerChange,
@@ -566,9 +583,12 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val mr = "!${event.objectAttributes?.iid ?: "?"}"
-        val messages = change.added.map { "@$it you were added to review $mr." } +
-            change.removed.map { "$it was removed from review on $mr." }
-        messages.forEach { text ->
+        listOfNotNull(
+            change.added.takeIf(List<ReviewerIdentity>::isNotEmpty)
+                ?.let { "${it.labels()} were added to review $mr." },
+            change.removed.takeIf(List<ReviewerIdentity>::isNotEmpty)
+                ?.let { "${it.labels()} were removed from review on $mr." },
+        ).forEach { text ->
             ctx.telegramService.sendMessage(
                 Message(
                     chatId = chatDetails.chatId,
@@ -580,6 +600,8 @@ class WebhookRequestHandler(
             )
         }
     }
+
+    private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
     private fun formatPipelineCompletionReply(
         status: String,

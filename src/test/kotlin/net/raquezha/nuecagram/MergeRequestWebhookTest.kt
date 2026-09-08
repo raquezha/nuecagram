@@ -88,7 +88,7 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             val afterAdd = waitForMessages(3)
             assertThat(afterAdd[1].messageId).isEqualTo("1")
             assertThat(afterAdd[2].replyToMessageId).isEqualTo(1L)
-            assertThat(afterAdd[2].text).contains("@bob you were added to review !42")
+            assertThat(afterAdd[2].text).contains("@bob were added to review !42")
 
             postWebhook(
                 EVENT_MERGE,
@@ -109,7 +109,56 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             val afterRemove = waitForMessages(6)
             assertThat(afterRemove[4].messageId).isEqualTo("1")
             assertThat(afterRemove[5].replyToMessageId).isEqualTo(1L)
-            assertThat(afterRemove[5].text).contains("bob was removed from review on !42")
+            assertThat(afterRemove[5].text).contains("@bob were removed from review on !42")
+        }
+
+    @Test
+    fun testWebhookMergeRequestTitleUpdateWithoutTrackedCardSendsNewMessage() =
+        testApplication {
+            configureTestApplication()
+
+            postWebhook(
+                EVENT_MERGE,
+                mrPayload(action = "update", reviewers = emptyList(), titleChanged = true),
+            )
+
+            val messages = waitForMessages(1)
+            assertThat(messages).hasSize(1)
+            assertThat(messages.single().messageId).isNull()
+            assertThat(messages.single().text).contains("Merge Request")
+        }
+
+    @Test
+    fun testWebhookMergeRequestEmptyUpdateWithoutTrackedCardIsSkipped() =
+        testApplication {
+            configureTestApplication()
+
+            postWebhook(EVENT_MERGE, mrPayload(action = "update", reviewers = emptyList()))
+
+            val messages = waitForMessages(1)
+            assertThat(messages).isEmpty()
+        }
+
+    @Test
+    fun testWebhookMergeRequestReviewerBatchUsesOneReplyPerChangeType() =
+        testApplication {
+            configureTestApplication()
+
+            postWebhook(EVENT_MERGE, mrPayload(action = "open", reviewers = emptyList()))
+            waitForMessages(1)
+            postWebhook(
+                EVENT_MERGE,
+                mrPayload(
+                    action = "update",
+                    reviewers = listOf("bob", "charlie"),
+                    previousReviewers = emptyList(),
+                    currentReviewers = listOf("bob", "charlie"),
+                ),
+            )
+
+            val messages = waitForMessages(3)
+            assertThat(messages).hasSize(3)
+            assertThat(messages[2].text).contains("@bob @charlie were added to review !42")
         }
 
     private fun waitForMessages(count: Int) = kotlinx.coroutines.runBlocking {
