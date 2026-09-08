@@ -16,10 +16,14 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.*
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.AuditEventRepository
 import net.raquezha.nuecagram.db.AuthSessionRepository
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
+import net.raquezha.nuecagram.db.ManagementSessionRepository
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
+import net.raquezha.nuecagram.db.PlatformAdminSessionRepository
+import net.raquezha.nuecagram.db.WebAppSessionRepository
 import net.raquezha.nuecagram.db.WebhookSecretRepository
 import net.raquezha.nuecagram.db.WebhookStateRepository
 import net.raquezha.nuecagram.configWithSecrets
@@ -97,7 +101,11 @@ val provideDatabaseModule =
     module {
         single { DatabaseFactory }
         single { WebhookStateRepository(get()) }
-        single { AuthSessionRepository(get()) }
+        single { ManagementSessionRepository(get()) }
+        single { PlatformAdminSessionRepository(get()) }
+        single { WebAppSessionRepository(get()) }
+        single { AuditEventRepository(get()) }
+        single { AuthSessionRepository(get(), get(), get(), get(), get()) }
         single { WebhookSecretRepository(get()) }
         single { InstallationRepository(get(), get(), get(), get()) }
         single { PlatformAdminReadRepository(get()) }
