@@ -1,210 +1,21 @@
 package net.raquezha.nuecagram.db
 
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import net.raquezha.nuecagram.webhook.ChatDetails
-import org.jetbrains.exposed.v1.core.JoinType
-import org.jetbrains.exposed.v1.core.ResultRow
-import org.jetbrains.exposed.v1.core.SortOrder
-import org.jetbrains.exposed.v1.core.Transaction
-import org.jetbrains.exposed.v1.core.and
-import org.jetbrains.exposed.v1.core.eq
-import org.jetbrains.exposed.v1.core.greater
-import org.jetbrains.exposed.v1.core.isNotNull
-import org.jetbrains.exposed.v1.core.isNull
-import org.jetbrains.exposed.v1.core.lessEq
-import org.jetbrains.exposed.v1.core.neq
-import org.jetbrains.exposed.v1.core.or
-import org.jetbrains.exposed.v1.jdbc.Query
-import org.jetbrains.exposed.v1.jdbc.andWhere
-import org.jetbrains.exposed.v1.jdbc.deleteWhere
-import org.jetbrains.exposed.v1.jdbc.insert
-import org.jetbrains.exposed.v1.jdbc.insertIgnore
-import org.jetbrains.exposed.v1.jdbc.selectAll
-import org.jetbrains.exposed.v1.jdbc.update
-import org.jetbrains.exposed.v1.jdbc.upsert
-
-data class InstallationRecord(
-    val id: UUID,
-    val repoName: String,
-    val chatName: String?,
-    val gitlabBaseUrl: String,
-    val gitlabProjectId: Long?,
-    val telegramChatId: Long,
-    val telegramTopicId: Long?,
-)
-
-data class IssuedCredential(val id: UUID, val installationId: UUID, val raw: String)
-data class VerifiedSecret(val secretId: UUID, val installationId: UUID)
-data class ConsumedManagementLink(val linkId: UUID, val installationId: UUID)
-
-data class IssuedManagementSession(
-    val sessionId: UUID,
-    val installationId: UUID,
-    val raw: String,
-    val csrf: String,
-)
-
-data class ManagementSessionContext(
-    val sessionId: UUID,
-    val installationId: UUID,
-    val csrfDigest: ByteArray?,
-    val csrfHash: String?,
-)
-
-data class IssuedPlatformAdminSession(val id: UUID, val raw: String, val csrf: String)
-data class PlatformAdminSessionContext(val id: UUID, val csrfDigest: ByteArray, val csrfHash: String)
-
-data class IssuedWebAppSession(
-    val sessionId: UUID,
-    val telegramUserId: Long,
-    val telegramChatId: Long?,
-    val telegramTopicId: Long?,
-    val raw: String,
-    val csrf: String,
-)
-
-data class WebAppSessionContext(
-    val sessionId: UUID,
-    val telegramUserId: Long,
-    val telegramChatId: Long?,
-    val telegramTopicId: Long?,
-    val username: String?,
-    val firstName: String?,
-    val csrfDigest: ByteArray,
-    val csrfHash: String,
-)
-
-data class LaunchNonceContext(
-    val id: UUID,
-    val telegramChatId: Long,
-    val telegramTopicId: Long?,
-    val telegramUserId: Long,
-)
-
-data class KnownTelegramDestination(
-    val id: String,
-    val telegramChatId: Long,
-    val telegramTopicId: Long?,
-    val chatTitle: String?,
-)
-
-data class PlatformAdminAuditRecord(
-    val installationId: UUID?,
-    val action: String,
-    val createdAt: Instant,
-    val repository: String,
-    val actor: String,
-    val chatDetails: String,
-    val details: List<String> = emptyList(),
-)
-
-data class PlatformAdminInstallationsPage(
-    val items: List<InstallationAdminContext>,
-    val totalCount: Long,
-)
-
-data class PlatformAdminAuditPage(
-    val items: List<PlatformAdminAuditRecord>,
-    val totalCount: Long,
-)
-
-data class AuditIdentityDelta(
-    val oldRepoName: String? = null,
-    val newRepoName: String? = null,
-    val oldNickname: String? = null,
-    val newNickname: String? = null,
-)
-
-data class AuditMetadataPatch(
-    val actorUsername: String? = null,
-    val actorFirstName: String? = null,
-    val repoName: String? = null,
-    val nickname: String? = null,
-    val chatId: Long? = null,
-    val topicId: Long? = null,
-    val identityDelta: AuditIdentityDelta? = null,
-)
-
-data class MrParticipants(
-    val authorUsername: String?,
-    val reviewerUsernames: List<String>,
-)
-
-data class ActiveMergeRequest(
-    val mrIid: Long,
-    val sourceBranch: String,
-    val targetProjectId: Long?,
-    val lastCommitSha: String?,
-)
-
-data class RecentBranchPush(
-    val branch: String,
-    val latestPushSha: String,
-)
-
-data class InstallationContext(
-    val secretId: UUID,
-    val installationId: UUID,
-    val chatDetails: ChatDetails,
-    val muted: Boolean,
-)
-
-sealed interface WebhookInstallationResult {
-    data class Active(val context: InstallationContext) : WebhookInstallationResult
-    data object SoftDeleted : WebhookInstallationResult
-    data object NotFound : WebhookInstallationResult
-}
-
-data class InstallationAdminContext(
-    val id: UUID,
-    val repoName: String,
-    val chatName: String?,
-    val gitlabBaseUrl: String,
-    val gitlabProjectId: Long?,
-    val telegramChatId: Long,
-    val telegramTopicId: Long?,
-    val muted: Boolean,
-) {
-    fun destinationDisplayName(topicName: String? = null): String =
-        when {
-            chatName.isNullOrBlank() -> repoName
-            topicName.isNullOrBlank() -> chatName
-            else -> "$chatName ($topicName)"
-        }
-
-    val displayName: String
-        get() = destinationDisplayName()
-
-    fun repositoryButtonLabel(): String {
-        val name = repoName.takeIf { it.isNotBlank() }
-            ?: gitlabProjectId?.let { "Project #$it" }
-            ?: gitlabBaseUrl.removePrefix("https://").removePrefix("http://")
-        return if (!chatName.isNullOrBlank()) {
-            "$name | $chatName"
-        } else {
-            name
-        }
-    }
-}
-
-private data class StoredCandidate(
-    val id: UUID,
-    val installationId: UUID,
-    val digest: ByteArray,
-    val hash: String,
-)
+import net.raquezha.nuecagram.db.models.*
 
 @Suppress("TooManyFunctions")
 class InstallationRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
+    private val webhookStateRepository: WebhookStateRepository = WebhookStateRepository(databaseFactory),
+    private val authSessionRepository: AuthSessionRepository = AuthSessionRepository(databaseFactory),
+    private val webhookSecretRepository: WebhookSecretRepository = WebhookSecretRepository(databaseFactory),
+    private val telegramDestinationRepository: TelegramDestinationRepository =
+        TelegramDestinationRepository(databaseFactory),
+    private val lifecycleRepository: InstallationLifecycleRepository =
+        InstallationLifecycleRepository(databaseFactory, webhookSecretRepository),
+    private val adminRepository: InstallationAdminRepository =
+        InstallationAdminRepository(databaseFactory, lifecycleRepository),
 ) {
     suspend fun createInstallation(
         repoName: String,
@@ -213,482 +24,165 @@ class InstallationRepository(
         gitlabProjectId: Long?,
         telegramChatId: Long,
         telegramTopicId: Long?,
-    ): InstallationRecord {
-        val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
-        require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
-            "repoName must be non-blank and not use the legacy fallback value"
-        }
-        val normalizedChatName = chatName?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
-        val normalizedGitlabUrl = gitlabBaseUrl.trim().trimEnd('/').take(MAX_COLUMN_LENGTH)
-        val installation = InstallationRecord(
-            id = UUID.randomUUID(),
-            repoName = normalizedRepoName,
-            chatName = normalizedChatName,
-            gitlabBaseUrl = normalizedGitlabUrl,
-            gitlabProjectId = gitlabProjectId,
-            telegramChatId = telegramChatId,
-            telegramTopicId = telegramTopicId,
-        )
-        databaseFactory.dbTransaction {
-            Installations.insert {
-                it[id] = installation.id
-                it[Installations.repoName] = installation.repoName
-                it[Installations.chatName] = installation.chatName
-                it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
-                it[Installations.gitlabProjectId] = installation.gitlabProjectId
-                it[Installations.telegramChatId] = installation.telegramChatId
-                it[Installations.telegramTopicId] = installation.telegramTopicId
-            }
-        }
-        return installation
-    }
+    ): InstallationRecord = lifecycleRepository.createInstallation(
+        repoName = repoName,
+        chatName = chatName,
+        gitlabBaseUrl = gitlabBaseUrl,
+        gitlabProjectId = gitlabProjectId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
 
     suspend fun createInstallation(
         gitlabBaseUrl: String,
         gitlabProjectId: Long?,
         telegramChatId: Long,
         telegramTopicId: Long?,
-    ): InstallationRecord =
-        createInstallation(
-            repoName = deriveRepositoryName(gitlabBaseUrl, gitlabProjectId),
-            gitlabBaseUrl = gitlabBaseUrl,
-            gitlabProjectId = gitlabProjectId,
-            telegramChatId = telegramChatId,
-            telegramTopicId = telegramTopicId,
-        )
+    ): InstallationRecord = lifecycleRepository.createInstallation(
+        gitlabBaseUrl = gitlabBaseUrl,
+        gitlabProjectId = gitlabProjectId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
 
     suspend fun issueWebhookSecret(
         installationId: UUID,
         expiresAt: Instant? = null,
-    ): IssuedCredential = databaseFactory.dbTransaction {
-        issueWebhookSecret(installationId, expiresAt)
-    }
+    ): IssuedCredential = webhookSecretRepository.issueWebhookSecret(installationId, expiresAt)
 
     suspend fun rotateWebhookSecret(
         installationId: UUID,
         graceUntil: Instant,
         expiresAt: Instant? = null,
-    ): IssuedCredential = databaseFactory.dbTransaction {
-        val issued = issueWebhookSecret(installationId, expiresAt)
-        WebhookSecrets.update({
-            (WebhookSecrets.installationId eq installationId) and
-                (WebhookSecrets.id neq issued.id) and WebhookSecrets.revokedAt.isNull()
-        }) {
-            it[revokedAt] = graceUntil.databaseTime()
-        }
-        issued
-    }
+    ): IssuedCredential = webhookSecretRepository.rotateWebhookSecret(installationId, graceUntil, expiresAt)
 
     suspend fun confirmWebhookSecret(
         secretId: UUID,
         confirmedAt: Instant = Instant.now(),
-    ): Boolean = databaseFactory.dbTransaction {
-        WebhookSecrets.update({
-            (WebhookSecrets.id eq secretId) and WebhookSecrets.confirmedAt.isNull()
-        }) {
-            it[WebhookSecrets.confirmedAt] = confirmedAt.databaseTime()
-        } == 1
-    }
+    ): Boolean = webhookSecretRepository.confirmWebhookSecret(secretId, confirmedAt)
 
     suspend fun verifyWebhookSecret(
         raw: String,
         now: Instant = Instant.now(),
-    ): VerifiedSecret? = databaseFactory.dbTransaction {
-        val databaseNow = now.databaseTime()
-        WebhookSecrets.selectAll().where {
-            (WebhookSecrets.secretDigest eq CredentialCodec.digest(raw)) and
-                (WebhookSecrets.revokedAt.isNull() or (WebhookSecrets.revokedAt greater databaseNow)) and
-                (WebhookSecrets.expiresAt.isNull() or (WebhookSecrets.expiresAt greater databaseNow))
-        }.mapNotNull { row ->
-            val hash = row[WebhookSecrets.secretHash] ?: return@mapNotNull null
-            StoredCandidate(
-                row[WebhookSecrets.id],
-                row[WebhookSecrets.installationId],
-                row[WebhookSecrets.secretDigest],
-                hash,
-            )
-        }.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
-            ?.let { VerifiedSecret(it.id, it.installationId) }
-    }
+    ): VerifiedSecret? = webhookSecretRepository.verifyWebhookSecret(raw, now)
 
     suspend fun resolveWebhookInstallation(
         raw: String,
         now: Instant = Instant.now(),
-    ): WebhookInstallationResult {
-        val verified = verifyWebhookSecret(raw, now) ?: return WebhookInstallationResult.NotFound
-        return databaseFactory.dbTransaction {
-            val row = installationWithMuteQuery(verified.installationId, includeDeleted = true).firstOrNull()
-                ?: return@dbTransaction WebhookInstallationResult.NotFound
+    ): WebhookInstallationResult = lifecycleRepository.resolveWebhookInstallation(raw, now)
 
-            if (row[Installations.deletedAt] != null) {
-                return@dbTransaction WebhookInstallationResult.SoftDeleted
-            }
-
-            WebhookInstallationResult.Active(
-                InstallationContext(
-                    verified.secretId,
-                    verified.installationId,
-                    ChatDetails(
-                        row[Installations.telegramChatId].toString(),
-                        row[Installations.telegramTopicId]?.toString(),
-                    ),
-                    row.getOrNull(MuteStates.muted) ?: false,
-                ),
-            )
-        }
-    }
-
-    suspend fun recordTelegramUpdate(updateId: Long): Boolean = databaseFactory.dbTransaction {
-        TelegramUpdates.insertIgnore { it[TelegramUpdates.updateId] = updateId }.insertedCount == 1
-    }
+    suspend fun recordTelegramUpdate(updateId: Long): Boolean =
+        telegramDestinationRepository.recordTelegramUpdate(updateId)
 
     suspend fun upsertTelegramPrivateChat(userId: Long, chatId: Long) {
-        databaseFactory.dbTransaction {
-            TelegramPrivateChats.upsert(TelegramPrivateChats.telegramUserId) {
-                it[telegramUserId] = userId
-                it[telegramChatId] = chatId
-                it[startedAt] = Instant.now().databaseTime()
-            }
-        }
+        telegramDestinationRepository.upsertTelegramPrivateChat(userId, chatId)
     }
 
-    suspend fun telegramPrivateChatId(userId: Long): Long? = databaseFactory.dbTransaction {
-        TelegramPrivateChats.selectAll()
-            .where { TelegramPrivateChats.telegramUserId eq userId }
-            .firstOrNull()?.get(TelegramPrivateChats.telegramChatId)
-    }
+    suspend fun telegramPrivateChatId(userId: Long): Long? =
+        telegramDestinationRepository.telegramPrivateChatId(userId)
 
     suspend fun upsertKnownTelegramDestination(
         chatId: Long,
         topicId: Long?,
         chatTitle: String?,
     ) {
-        if (chatId >= 0) return
-        val destinationId = destinationId(chatId, topicId)
-        databaseFactory.dbTransaction {
-            KnownTelegramDestinations.upsert(KnownTelegramDestinations.id) {
-                it[KnownTelegramDestinations.id] = destinationId
-                it[KnownTelegramDestinations.telegramChatId] = chatId
-                it[KnownTelegramDestinations.telegramTopicId] = topicId
-                it[KnownTelegramDestinations.chatTitle] =
-                    chatTitle?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
-                it[KnownTelegramDestinations.lastSeenAt] = Instant.now().databaseTime()
-            }
-        }
+        telegramDestinationRepository.upsertKnownTelegramDestination(chatId, topicId, chatTitle)
     }
 
-    suspend fun knownTelegramDestinations(): List<KnownTelegramDestination> = databaseFactory.dbTransaction {
-        KnownTelegramDestinations.selectAll()
-            .orderBy(KnownTelegramDestinations.lastSeenAt to SortOrder.DESC)
-            .map {
-                KnownTelegramDestination(
-                    id = it[KnownTelegramDestinations.id],
-                    telegramChatId = it[KnownTelegramDestinations.telegramChatId],
-                    telegramTopicId = it[KnownTelegramDestinations.telegramTopicId],
-                    chatTitle = it[KnownTelegramDestinations.chatTitle],
-                )
-            }
-    }
+    suspend fun knownTelegramDestinations(): List<KnownTelegramDestination> =
+        telegramDestinationRepository.knownTelegramDestinations()
 
     suspend fun installationAdminContext(installationId: UUID): InstallationAdminContext? =
-        databaseFactory.dbTransaction {
-            installationWithMuteQuery(installationId).firstOrNull()?.toAdminContext()
-        }
+        adminRepository.installationAdminContext(installationId)
 
     suspend fun listInstallationsForContext(
         chatId: Long?,
         topicId: Long?,
-    ): List<InstallationAdminContext> = databaseFactory.dbTransaction {
-        val query = installationWithMuteQuery()
-        if (chatId != null) {
-            query.andWhere { Installations.telegramChatId eq chatId }
-            if (topicId != null) {
-                query.andWhere { Installations.telegramTopicId eq topicId }
-            }
-        }
-        query.map { it.toAdminContext() }
-    }
+    ): List<InstallationAdminContext> = adminRepository.listInstallationsForContext(chatId, topicId)
 
     suspend fun recordInstallationAdmin(
         installationId: UUID,
         telegramUserId: Long,
         confirmedAt: Instant = Instant.now(),
     ) {
-        databaseFactory.dbTransaction {
-            InstallationAdmins.upsert(InstallationAdmins.installationId, InstallationAdmins.telegramUserId) {
-                it[InstallationAdmins.installationId] = installationId
-                it[InstallationAdmins.telegramUserId] = telegramUserId
-                it[InstallationAdmins.confirmedAt] = confirmedAt.databaseTime()
-            }
-        }
+        adminRepository.recordInstallationAdmin(installationId, telegramUserId, confirmedAt)
     }
 
     suspend fun installationsForAdmin(telegramUserId: Long): List<InstallationAdminContext> =
-        databaseFactory.dbTransaction {
-            Installations.join(
-                InstallationAdmins,
-                JoinType.INNER,
-                Installations.id,
-                InstallationAdmins.installationId,
-            ).join(
-                MuteStates,
-                JoinType.LEFT,
-                Installations.id,
-                MuteStates.installationId,
-            ).selectAll()
-                .where {
-                    (InstallationAdmins.telegramUserId eq telegramUserId) and
-                        (Installations.deletedAt.isNull())
-                }
-                .orderBy(InstallationAdmins.confirmedAt to SortOrder.DESC)
-                .map { it.toAdminContext() }
-        }
+        adminRepository.installationsForAdmin(telegramUserId)
 
     suspend fun findInstallationByQuery(
         rawQuery: String,
         chatId: Long? = null,
         topicId: Long? = null,
-    ): InstallationAdminContext? = databaseFactory.dbTransaction {
-        val queryStr = rawQuery.trim().lowercase()
-        if (queryStr.isBlank()) return@dbTransaction null
-        val uuid = runCatching { UUID.fromString(queryStr) }.getOrNull()
-        if (uuid != null) {
-            val query = installationWithMuteQuery(uuid)
-            if (chatId != null) {
-                query.andWhere { Installations.telegramChatId eq chatId }
-            }
-            if (topicId != null) {
-                query.andWhere { Installations.telegramTopicId eq topicId }
-            }
-            return@dbTransaction query.firstOrNull()?.toAdminContext()
-        }
-        val query = installationWithMuteQuery()
-        if (chatId != null) {
-            query.andWhere { Installations.telegramChatId eq chatId }
-        }
-        if (topicId != null) {
-            query.andWhere { Installations.telegramTopicId eq topicId }
-        }
-        query.map { it.toAdminContext() }
-            .firstOrNull { inst ->
-                inst.id.toString().lowercase().startsWith(queryStr) ||
-                    inst.gitlabProjectId?.toString() == queryStr ||
-                    inst.gitlabBaseUrl.lowercase().contains(queryStr) ||
-                    inst.repoName.lowercase().contains(queryStr) ||
-                    inst.chatName?.lowercase()?.contains(queryStr) == true
-            }
-    }
+    ): InstallationAdminContext? = adminRepository.findInstallationByQuery(rawQuery, chatId, topicId)
 
     suspend fun updateIdentity(
         installationId: UUID,
         repoName: String,
         chatName: String?,
-    ): Boolean {
-        val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
-        require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
-            "repoName must be non-blank and not use the legacy fallback value"
-        }
-        val normalizedChatName = chatName?.trim()?.takeIf(String::isNotBlank)?.take(MAX_COLUMN_LENGTH)
-        return databaseFactory.dbTransaction {
-            Installations.update({ Installations.id eq installationId }) {
-                it[Installations.repoName] = normalizedRepoName
-                it[Installations.chatName] = normalizedChatName
-            } == 1
-        }
-    }
+    ): Boolean = lifecycleRepository.updateIdentity(installationId, repoName, chatName)
 
     suspend fun setMuted(installationId: UUID, muted: Boolean) {
-        databaseFactory.dbTransaction {
-            MuteStates.upsert(MuteStates.installationId) {
-                it[MuteStates.installationId] = installationId
-                it[MuteStates.muted] = muted
-                it[updatedAt] = Instant.now().databaseTime()
-            }
-        }
+        lifecycleRepository.setMuted(installationId, muted)
     }
 
     suspend fun issueManagementLink(
         installationId: UUID,
         expiresAt: Instant,
-    ): IssuedCredential = databaseFactory.dbTransaction {
-        val id = UUID.randomUUID()
-        val (raw, stored) = CredentialCodec.issueCredential()
-        ManagementLinks.insert {
-            it[ManagementLinks.id] = id
-            it[ManagementLinks.installationId] = installationId
-            it[tokenDigest] = stored.digest
-            it[tokenHash] = stored.hash
-            it[ManagementLinks.expiresAt] = expiresAt.databaseTime()
-        }
-        IssuedCredential(id, installationId, raw)
-    }
+    ): IssuedCredential = authSessionRepository.issueManagementLink(installationId, expiresAt)
 
     suspend fun consumeManagementLink(
         raw: String,
         now: Instant = Instant.now(),
-    ): ConsumedManagementLink? = databaseFactory.dbTransaction {
-        val match = managementLinkCandidate(raw, now) ?: return@dbTransaction null
-        val databaseNow = now.databaseTime()
-        val consumed = ManagementLinks.update({
-            (ManagementLinks.id eq match.id) and ManagementLinks.consumedAt.isNull() and
-                (ManagementLinks.expiresAt greater databaseNow)
-        }) {
-            it[consumedAt] = databaseNow
-        } == 1
-        match.takeIf { consumed }?.let { ConsumedManagementLink(it.id, it.installationId) }
-    }
+    ): ConsumedManagementLink? = authSessionRepository.consumeManagementLink(raw, now)
 
     suspend fun exchangeManagementLinkForSession(
         raw: String,
         sessionExpiresAt: Instant,
         now: Instant = Instant.now(),
-    ): IssuedManagementSession? = databaseFactory.dbTransaction {
-        val match = managementLinkCandidate(raw, now) ?: return@dbTransaction null
-        val databaseNow = now.databaseTime()
-        val consumed = ManagementLinks.update({
-            (ManagementLinks.id eq match.id) and ManagementLinks.consumedAt.isNull() and
-                (ManagementLinks.expiresAt greater databaseNow)
-        }) {
-            it[consumedAt] = databaseNow
-        } == 1
-        if (!consumed) return@dbTransaction null
-
-        val sessionId = UUID.randomUUID()
-        val (sessionRaw, stored) = CredentialCodec.issueCredential()
-        val (csrf, storedCsrf) = CredentialCodec.issueCredential()
-        ManagementSessions.insert {
-            it[id] = sessionId
-            it[installationId] = match.installationId
-            it[tokenDigest] = stored.digest
-            it[tokenHash] = stored.hash
-            it[expiresAt] = sessionExpiresAt.databaseTime()
-            it[csrfDigest] = storedCsrf.digest
-            it[csrfHash] = storedCsrf.hash
-        }
-        IssuedManagementSession(sessionId, match.installationId, sessionRaw, csrf)
-    }
+    ): IssuedManagementSession? = authSessionRepository.exchangeManagementLinkForSession(raw, sessionExpiresAt, now)
 
     suspend fun verifyManagementSession(
         raw: String,
         now: Instant = Instant.now(),
-    ): ManagementSessionContext? = databaseFactory.dbTransaction {
-        ManagementSessions.selectAll().where {
-            (ManagementSessions.expiresAt greater now.databaseTime()) and
-                (ManagementSessions.tokenDigest eq CredentialCodec.digest(raw))
-        }.firstOrNull { row ->
-            CredentialCodec.matches(raw, row[ManagementSessions.tokenDigest], row[ManagementSessions.tokenHash])
-        }?.let { row ->
-            ManagementSessionContext(
-                row[ManagementSessions.id],
-                row[ManagementSessions.installationId],
-                row[ManagementSessions.csrfDigest],
-                row[ManagementSessions.csrfHash],
-            )
-        }
-    }
+    ): ManagementSessionContext? = authSessionRepository.verifyManagementSession(raw, now)
 
     fun verifyManagementCsrf(session: ManagementSessionContext, raw: String): Boolean =
-        session.csrfDigest?.let { digest ->
-            session.csrfHash?.let { hash -> CredentialCodec.matches(raw, digest, hash) }
-        } ?: false
+        authSessionRepository.verifyManagementCsrf(session, raw)
 
-    suspend fun deleteManagementSession(id: UUID): Boolean = databaseFactory.dbTransaction {
-        ManagementSessions.deleteWhere { ManagementSessions.id eq id } == 1
-    }
+    suspend fun deleteManagementSession(id: UUID): Boolean = authSessionRepository.deleteManagementSession(id)
 
-    suspend fun issuePlatformAdminSession(expiresAt: Instant): IssuedPlatformAdminSession {
-        val id = UUID.randomUUID()
-        val (raw, stored) = CredentialCodec.issueCredential()
-        val (csrf, storedCsrf) = CredentialCodec.issueCredential()
-        databaseFactory.dbTransaction {
-            PlatformAdminSessions.insert {
-                it[PlatformAdminSessions.id] = id
-                it[tokenDigest] = stored.digest
-                it[tokenHash] = stored.hash
-                it[csrfDigest] = storedCsrf.digest
-                it[csrfHash] = storedCsrf.hash
-                it[PlatformAdminSessions.expiresAt] = expiresAt.databaseTime()
-            }
-        }
-        return IssuedPlatformAdminSession(id, raw, csrf)
-    }
+    suspend fun issuePlatformAdminSession(expiresAt: Instant): IssuedPlatformAdminSession =
+        authSessionRepository.issuePlatformAdminSession(expiresAt)
 
     suspend fun verifyPlatformAdminSession(
         raw: String,
         now: Instant = Instant.now(),
-    ): PlatformAdminSessionContext? = databaseFactory.dbTransaction {
-        PlatformAdminSessions.selectAll().where {
-            (PlatformAdminSessions.expiresAt greater now.databaseTime()) and
-                (PlatformAdminSessions.tokenDigest eq CredentialCodec.digest(raw))
-        }.firstOrNull { row ->
-            CredentialCodec.matches(
-                raw,
-                row[PlatformAdminSessions.tokenDigest],
-                row[PlatformAdminSessions.tokenHash],
-            )
-        }?.let { row ->
-            PlatformAdminSessionContext(
-                row[PlatformAdminSessions.id],
-                row[PlatformAdminSessions.csrfDigest],
-                row[PlatformAdminSessions.csrfHash],
-            )
-        }
-    }
+    ): PlatformAdminSessionContext? = authSessionRepository.verifyPlatformAdminSession(raw, now)
 
     fun verifyPlatformAdminCsrf(session: PlatformAdminSessionContext, raw: String): Boolean =
-        CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
+        authSessionRepository.verifyPlatformAdminCsrf(session, raw)
 
-    suspend fun deletePlatformAdminSession(id: UUID): Boolean = databaseFactory.dbTransaction {
-        PlatformAdminSessions.deleteWhere { PlatformAdminSessions.id eq id } == 1
-    }
+    suspend fun deletePlatformAdminSession(id: UUID): Boolean = authSessionRepository.deletePlatformAdminSession(id)
 
     suspend fun issueLaunchNonce(
         telegramChatId: Long,
         telegramTopicId: Long?,
         telegramUserId: Long,
         expiresAt: Instant,
-    ): IssuedCredential = databaseFactory.dbTransaction {
-        val id = UUID.randomUUID()
-        val (raw, stored) = CredentialCodec.issueCredential()
-        TelegramLaunchNonces.insert {
-            it[TelegramLaunchNonces.id] = id
-            it[TelegramLaunchNonces.nonceDigest] = stored.digest
-            it[TelegramLaunchNonces.telegramChatId] = telegramChatId
-            it[TelegramLaunchNonces.telegramTopicId] = telegramTopicId
-            it[TelegramLaunchNonces.telegramUserId] = telegramUserId
-            it[TelegramLaunchNonces.expiresAt] = expiresAt.databaseTime()
-        }
-        IssuedCredential(id, id, raw)
-    }
+    ): IssuedCredential = authSessionRepository.issueLaunchNonce(
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+        telegramUserId = telegramUserId,
+        expiresAt = expiresAt,
+    )
 
     suspend fun consumeLaunchNonce(
         raw: String,
         telegramUserId: Long,
         now: Instant = Instant.now(),
-    ): LaunchNonceContext? = databaseFactory.dbTransaction {
-        val databaseNow = now.databaseTime()
-        val row = TelegramLaunchNonces.selectAll().where {
-            TelegramLaunchNonces.consumedAt.isNull() and
-                (TelegramLaunchNonces.expiresAt greater databaseNow) and
-                (TelegramLaunchNonces.telegramUserId eq telegramUserId) and
-                (TelegramLaunchNonces.nonceDigest eq CredentialCodec.digest(raw))
-        }.firstOrNull() ?: return@dbTransaction null
-
-        val consumed = TelegramLaunchNonces.update({
-            (TelegramLaunchNonces.id eq row[TelegramLaunchNonces.id]) and TelegramLaunchNonces.consumedAt.isNull()
-        }) {
-            it[consumedAt] = databaseNow
-        } == 1
-
-        if (consumed) {
-            LaunchNonceContext(
-                id = row[TelegramLaunchNonces.id],
-                telegramChatId = row[TelegramLaunchNonces.telegramChatId],
-                telegramTopicId = row[TelegramLaunchNonces.telegramTopicId],
-                telegramUserId = row[TelegramLaunchNonces.telegramUserId],
-            )
-        } else null
-    }
+    ): LaunchNonceContext? = authSessionRepository.consumeLaunchNonce(raw, telegramUserId, now)
 
     suspend fun issueWebAppSession(
         telegramUserId: Long,
@@ -697,90 +191,39 @@ class InstallationRepository(
         username: String?,
         firstName: String?,
         expiresAt: Instant,
-    ): IssuedWebAppSession = databaseFactory.dbTransaction {
-        val id = UUID.randomUUID()
-        val (raw, stored) = CredentialCodec.issueCredential()
-        val (csrf, storedCsrf) = CredentialCodec.issueCredential()
-        WebAppSessions.insert {
-            it[WebAppSessions.id] = id
-            it[WebAppSessions.telegramUserId] = telegramUserId
-            it[WebAppSessions.telegramChatId] = telegramChatId
-            it[WebAppSessions.telegramTopicId] = telegramTopicId
-            it[WebAppSessions.username] = username
-            it[WebAppSessions.firstName] = firstName
-            it[tokenDigest] = stored.digest
-            it[tokenHash] = stored.hash
-            it[csrfDigest] = storedCsrf.digest
-            it[csrfHash] = storedCsrf.hash
-            it[WebAppSessions.expiresAt] = expiresAt.databaseTime()
-        }
-        IssuedWebAppSession(id, telegramUserId, telegramChatId, telegramTopicId, raw, csrf)
-    }
+    ): IssuedWebAppSession = authSessionRepository.issueWebAppSession(
+        telegramUserId,
+        telegramChatId,
+        telegramTopicId,
+        username,
+        firstName,
+        expiresAt,
+    )
 
     suspend fun verifyWebAppSession(
         raw: String,
         now: Instant = Instant.now(),
-    ): WebAppSessionContext? = databaseFactory.dbTransaction {
-        WebAppSessions.selectAll().where {
-            (WebAppSessions.expiresAt greater now.databaseTime()) and
-                (WebAppSessions.tokenDigest eq CredentialCodec.digest(raw))
-        }.firstOrNull { row ->
-            CredentialCodec.matches(raw, row[WebAppSessions.tokenDigest], row[WebAppSessions.tokenHash])
-        }?.let { row ->
-            WebAppSessionContext(
-                sessionId = row[WebAppSessions.id],
-                telegramUserId = row[WebAppSessions.telegramUserId],
-                telegramChatId = row[WebAppSessions.telegramChatId],
-                telegramTopicId = row[WebAppSessions.telegramTopicId],
-                username = row[WebAppSessions.username],
-                firstName = row[WebAppSessions.firstName],
-                csrfDigest = row[WebAppSessions.csrfDigest],
-                csrfHash = row[WebAppSessions.csrfHash],
-            )
-        }
-    }
+    ): WebAppSessionContext? = authSessionRepository.verifyWebAppSession(raw, now)
 
     fun verifyWebAppCsrf(session: WebAppSessionContext, raw: String): Boolean =
-        CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
+        authSessionRepository.verifyWebAppCsrf(session, raw)
 
-    suspend fun deleteWebAppSession(id: UUID): Boolean = databaseFactory.dbTransaction {
-        WebAppSessions.deleteWhere { WebAppSessions.id eq id } == 1
-    }
+    suspend fun deleteWebAppSession(id: UUID): Boolean = authSessionRepository.deleteWebAppSession(id)
 
-    suspend fun cleanupExpiredWebAppSessions(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
-        WebAppSessions.deleteWhere { WebAppSessions.expiresAt lessEq now.databaseTime() }
-    }
+    suspend fun cleanupExpiredWebAppSessions(now: Instant = Instant.now()): Int =
+        authSessionRepository.cleanupExpiredWebAppSessions(now)
 
-    suspend fun cleanupStaleMrAndPushStates(now: Instant = Instant.now(), maxAgeDays: Long = 30): Int =
-        databaseFactory.dbTransaction {
-            val cutoff = now.minus(maxAgeDays, java.time.temporal.ChronoUnit.DAYS).databaseTime()
-            val deletedMrs = ActiveMergeRequests.deleteWhere { ActiveMergeRequests.updatedAt lessEq cutoff }
-            val deletedPushes = RecentBranchPushes.deleteWhere { RecentBranchPushes.updatedAt lessEq cutoff }
-            val deletedEvents = ProcessedWebhookEvents.deleteWhere { ProcessedWebhookEvents.processedAt lessEq cutoff }
-            deletedMrs + deletedPushes + deletedEvents
-        }
+    suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int =
+        authSessionRepository.cleanupExpiredManagementLinks(now)
 
-
-    suspend fun cleanupExpiredManagementLinks(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
-        ManagementLinks.deleteWhere { ManagementLinks.expiresAt lessEq now.databaseTime() }
-    }
-
-    suspend fun cleanupExpiredManagementSessions(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
-        ManagementSessions.deleteWhere { ManagementSessions.expiresAt lessEq now.databaseTime() }
-    }
+    suspend fun cleanupExpiredManagementSessions(now: Instant = Instant.now()): Int =
+        authSessionRepository.cleanupExpiredManagementSessions(now)
 
     suspend fun cleanupExpiredPlatformAdminSessions(now: Instant = Instant.now()): Int =
-        databaseFactory.dbTransaction {
-            PlatformAdminSessions.deleteWhere { PlatformAdminSessions.expiresAt lessEq now.databaseTime() }
-        }
+        authSessionRepository.cleanupExpiredPlatformAdminSessions(now)
 
-    suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int = databaseFactory.dbTransaction {
-        val databaseNow = now.databaseTime()
-        WebhookSecrets.deleteWhere {
-            (WebhookSecrets.revokedAt.isNotNull() and (WebhookSecrets.revokedAt lessEq databaseNow)) or
-                (WebhookSecrets.expiresAt.isNotNull() and (WebhookSecrets.expiresAt lessEq databaseNow))
-        }
-    }
+    suspend fun cleanupExpiredWebhookSecrets(now: Instant = Instant.now()): Int =
+        webhookSecretRepository.cleanupExpiredWebhookSecrets(now)
 
     suspend fun writeAuditEvent(
         installationId: UUID?,
@@ -789,153 +232,19 @@ class InstallationRepository(
         action: String,
         metadataJson: String = "{}",
         metadataPatch: AuditMetadataPatch = AuditMetadataPatch(),
-    ): Boolean {
-        if (actorType in ACTOR_ID_REQUIRED_TYPES && actorId.isNullOrBlank()) return false
-
-        databaseFactory.dbTransaction {
-            val installationSnapshot =
-                installationId?.let { installationWithMuteQuery(it).firstOrNull()?.toAdminContext() }
-            AuditEvents.insert {
-                it[id] = UUID.randomUUID()
-                it[AuditEvents.installationId] = installationId
-                it[AuditEvents.actorType] = actorType
-                it[AuditEvents.actorId] = actorId
-                it[AuditEvents.action] = action
-                it[metadata] = buildAuditMetadataJson(
-                    existingMetadataJson = metadataJson,
-                    installationId = installationId,
-                    installation = installationSnapshot,
-                    actorId = actorId,
-                    metadataPatch = metadataPatch,
-                )
-            }
-        }
-        return true
-    }
-
-    private fun buildAuditMetadataJson(
-        existingMetadataJson: String,
-        installationId: UUID?,
-        installation: InstallationAdminContext?,
-        actorId: String?,
-        metadataPatch: AuditMetadataPatch,
-    ): String {
-        val existing =
-            runCatching { auditJson.parseToJsonElement(existingMetadataJson).jsonObject }
-                .getOrDefault(JsonObject(emptyMap()))
-        val fields = existing.toMutableMap()
-        fields.putString("installation_id", installationId?.toString())
-        fields.putString("actor_id", actorId)
-        fields.putString("username", metadataPatch.actorUsername)
-        fields.putString("first_name", metadataPatch.actorFirstName)
-        fields.putString("repo_name", metadataPatch.repoName ?: installation?.repoName)
-        fields.putString("nickname", metadataPatch.nickname ?: installation?.chatName)
-        fields.putLong("chat_id", metadataPatch.chatId ?: installation?.telegramChatId)
-        fields.putLong("topic_id", metadataPatch.topicId ?: installation?.telegramTopicId)
-        fields.putString("old_repo_name", metadataPatch.identityDelta?.oldRepoName)
-        fields.putString("new_repo_name", metadataPatch.identityDelta?.newRepoName)
-        fields.putString("old_nickname", metadataPatch.identityDelta?.oldNickname)
-        fields.putString("new_nickname", metadataPatch.identityDelta?.newNickname)
-        return auditJson.encodeToString(JsonObject.serializer(), JsonObject(fields))
-    }
-
-    private fun Transaction.issueWebhookSecret(
-        installationId: UUID,
-        expiresAt: Instant?,
-    ): IssuedCredential {
-        val id = UUID.randomUUID()
-        val (raw, stored) = CredentialCodec.issueCredential()
-        WebhookSecrets.insert {
-            it[WebhookSecrets.id] = id
-            it[WebhookSecrets.installationId] = installationId
-            it[secretDigest] = stored.digest
-            it[secretHash] = stored.hash
-            it[WebhookSecrets.expiresAt] = expiresAt?.databaseTime()
-        }
-        return IssuedCredential(id, installationId, raw)
-    }
-
-    private fun managementLinkCandidate(raw: String, now: Instant): StoredCandidate? =
-        ManagementLinks.selectAll().where {
-            ManagementLinks.consumedAt.isNull() and
-                (ManagementLinks.expiresAt greater now.databaseTime()) and
-                (ManagementLinks.tokenDigest eq CredentialCodec.digest(raw))
-        }.mapNotNull { row ->
-            val hash = row[ManagementLinks.tokenHash] ?: return@mapNotNull null
-            StoredCandidate(
-                row[ManagementLinks.id],
-                row[ManagementLinks.installationId],
-                row[ManagementLinks.tokenDigest],
-                hash,
-            )
-        }.firstOrNull { CredentialCodec.matches(raw, it.digest, it.hash) }
-
-    suspend fun softDeleteInstallation(id: UUID): Boolean = databaseFactory.dbTransaction {
-        val count = Installations.update({ (Installations.id eq id) and (Installations.deletedAt.isNull()) }) {
-            it[deletedAt] = Instant.now().databaseTime()
-        }
-        count > 0
-    }
-
-    private fun installationWithMuteQuery(
-        installationId: UUID? = null,
-        includeDeleted: Boolean = false,
-    ): Query {
-        val join = Installations.join(
-            MuteStates,
-            JoinType.LEFT,
-            Installations.id,
-            MuteStates.installationId,
-        )
-        val query = join.selectAll()
-        if (!includeDeleted) {
-            query.andWhere { Installations.deletedAt.isNull() }
-        }
-        if (installationId != null) query.andWhere { Installations.id eq installationId }
-        return query
-    }
-
-    private fun ResultRow.toAdminContext() = InstallationAdminContext(
-        id = this[Installations.id],
-        repoName = this[Installations.repoName],
-        chatName = this[Installations.chatName],
-        gitlabBaseUrl = this[Installations.gitlabBaseUrl],
-        gitlabProjectId = this[Installations.gitlabProjectId],
-        telegramChatId = this[Installations.telegramChatId],
-        telegramTopicId = this[Installations.telegramTopicId],
-        muted = getOrNull(MuteStates.muted) ?: false,
+    ): Boolean = authSessionRepository.writeAuditEvent(
+        installationId = installationId,
+        actorType = actorType,
+        actorId = actorId,
+        action = action,
+        metadataJson = metadataJson,
+        metadataPatch = metadataPatch,
     )
 
-    private fun deriveRepositoryName(gitlabBaseUrl: String, gitlabProjectId: Long?): String {
-        if (gitlabProjectId != null) return "Project #$gitlabProjectId"
-        val cleanUrl = gitlabBaseUrl.redactedUrl()
-        return cleanUrl.trim()
-            .substringAfter("://", cleanUrl.trim())
-            .substringAfter('/', "")
-            .trim('/')
-            .takeIf(String::isNotBlank)
-            ?: cleanUrl.trim().trim('/').takeIf(String::isNotBlank)
-            ?: UNKNOWN_REPOSITORY_NAME
-    }
+    suspend fun softDeleteInstallation(id: UUID): Boolean = lifecycleRepository.softDeleteInstallation(id)
 
-    private fun MutableMap<String, JsonElement>.putString(key: String, value: String?) {
-        value?.takeIf(String::isNotBlank)?.let { put(key, JsonPrimitive(it)) }
-    }
-
-    private fun MutableMap<String, JsonElement>.putLong(key: String, value: Long?) {
-        value?.let { put(key, JsonPrimitive(it)) }
-    }
-
-    private fun destinationId(chatId: Long, topicId: Long?): String = "$chatId:${topicId ?: 0}"
-
-    private companion object {
-        val ACTOR_ID_REQUIRED_TYPES = setOf("telegram", "webapp_session")
-        val auditJson = Json
-        const val UNKNOWN_REPOSITORY_NAME = "Unknown Repository"
-        const val MAX_COLUMN_LENGTH = 255
-        const val MAX_BRANCH_LENGTH = 512
-        const val MAX_EVENT_TYPE_LENGTH = 100
-    }
+    suspend fun cleanupStaleMrAndPushStates(now: Instant = Instant.now(), maxAgeDays: Long = 30): Int =
+        webhookStateRepository.cleanupStaleMrAndPushStates(now, maxAgeDays)
 
     suspend fun upsertMrParticipants(
         installationId: UUID,
@@ -944,40 +253,20 @@ class InstallationRepository(
         authorUsername: String?,
         reviewerUsernames: List<String>,
     ) {
-        val serializedReviewers = reviewerUsernames.joinToString(",")
-        databaseFactory.dbTransaction {
-            MrParticipantCaches.upsert {
-                it[MrParticipantCaches.installationId] = installationId
-                it[MrParticipantCaches.projectId] = projectId
-                it[MrParticipantCaches.mrIid] = mrIid
-                it[MrParticipantCaches.authorUsername] = authorUsername
-                it[MrParticipantCaches.reviewerUsernames] = serializedReviewers
-                it[MrParticipantCaches.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
-            }
-        }
+        webhookStateRepository.upsertMrParticipants(
+            installationId = installationId,
+            projectId = projectId,
+            mrIid = mrIid,
+            authorUsername = authorUsername,
+            reviewerUsernames = reviewerUsernames,
+        )
     }
 
     suspend fun getMrParticipants(
         installationId: UUID,
         projectId: Long,
         mrIid: Long,
-    ): MrParticipants? {
-        return databaseFactory.dbTransaction {
-            MrParticipantCaches.selectAll()
-                .where {
-                    (MrParticipantCaches.installationId eq installationId) and
-                        (MrParticipantCaches.projectId eq projectId) and
-                        (MrParticipantCaches.mrIid eq mrIid)
-                }
-                .singleOrNull()
-                ?.let { row ->
-                    val author = row[MrParticipantCaches.authorUsername]
-                    val rawReviewers = row[MrParticipantCaches.reviewerUsernames]
-                    val reviewers = if (rawReviewers.isBlank()) emptyList() else rawReviewers.split(",")
-                    MrParticipants(authorUsername = author, reviewerUsernames = reviewers)
-                }
-        }
-    }
+    ): MrParticipants? = webhookStateRepository.getMrParticipants(installationId, projectId, mrIid)
 
     suspend fun upsertActiveMr(
         installationId: UUID,
@@ -987,58 +276,28 @@ class InstallationRepository(
         lastCommitSha: String? = null,
         targetProjectId: Long? = null,
     ) {
-        val safeBranch = sourceBranch.take(MAX_BRANCH_LENGTH)
-        databaseFactory.dbTransaction {
-            ActiveMergeRequests.upsert {
-                it[ActiveMergeRequests.installationId] = installationId
-                it[ActiveMergeRequests.projectId] = projectId
-                it[ActiveMergeRequests.sourceBranch] = safeBranch
-                it[ActiveMergeRequests.mrIid] = mrIid
-                it[ActiveMergeRequests.targetProjectId] = targetProjectId
-                it[ActiveMergeRequests.lastCommitSha] = lastCommitSha
-                it[ActiveMergeRequests.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
-            }
-        }
+        webhookStateRepository.upsertActiveMr(
+            installationId = installationId,
+            projectId = projectId,
+            sourceBranch = sourceBranch,
+            mrIid = mrIid,
+            lastCommitSha = lastCommitSha,
+            targetProjectId = targetProjectId,
+        )
     }
 
     suspend fun getActiveMrForBranch(
         installationId: UUID,
         projectId: Long,
         sourceBranch: String,
-    ): ActiveMergeRequest? {
-        val safeBranch = sourceBranch.take(MAX_BRANCH_LENGTH)
-        return databaseFactory.dbTransaction {
-            ActiveMergeRequests.selectAll()
-                .where {
-                    (ActiveMergeRequests.installationId eq installationId) and
-                        (ActiveMergeRequests.projectId eq projectId) and
-                        (ActiveMergeRequests.sourceBranch eq safeBranch)
-                }
-                .firstOrNull()
-                ?.let { row ->
-                    ActiveMergeRequest(
-                        mrIid = row[ActiveMergeRequests.mrIid],
-                        sourceBranch = row[ActiveMergeRequests.sourceBranch],
-                        targetProjectId = row[ActiveMergeRequests.targetProjectId],
-                        lastCommitSha = row[ActiveMergeRequests.lastCommitSha],
-                    )
-                }
-        }
-    }
+    ): ActiveMergeRequest? = webhookStateRepository.getActiveMrForBranch(installationId, projectId, sourceBranch)
 
     suspend fun clearActiveMr(
         installationId: UUID,
         projectId: Long,
         sourceBranch: String,
     ) {
-        val safeBranch = sourceBranch.take(MAX_BRANCH_LENGTH)
-        databaseFactory.dbTransaction {
-            ActiveMergeRequests.deleteWhere {
-                (ActiveMergeRequests.installationId eq installationId) and
-                    (ActiveMergeRequests.projectId eq projectId) and
-                    (ActiveMergeRequests.sourceBranch eq safeBranch)
-            }
-        }
+        webhookStateRepository.clearActiveMr(installationId, projectId, sourceBranch)
     }
 
     suspend fun upsertLatestPushSha(
@@ -1047,71 +306,22 @@ class InstallationRepository(
         branch: String,
         latestPushSha: String,
     ) {
-        val safeBranch = branch.take(MAX_BRANCH_LENGTH)
-        databaseFactory.dbTransaction {
-            RecentBranchPushes.upsert {
-                it[RecentBranchPushes.installationId] = installationId
-                it[RecentBranchPushes.projectId] = projectId
-                it[RecentBranchPushes.branch] = safeBranch
-                it[RecentBranchPushes.latestPushSha] = latestPushSha
-                it[RecentBranchPushes.updatedAt] = OffsetDateTime.now(ZoneOffset.UTC)
-            }
-        }
+        webhookStateRepository.upsertLatestPushSha(installationId, projectId, branch, latestPushSha)
     }
 
     suspend fun getLatestPushSha(
         installationId: UUID,
         projectId: Long,
         branch: String,
-    ): String? {
-        val safeBranch = branch.take(MAX_BRANCH_LENGTH)
-        return databaseFactory.dbTransaction {
-            RecentBranchPushes.selectAll()
-                .where {
-                    (RecentBranchPushes.installationId eq installationId) and
-                        (RecentBranchPushes.projectId eq projectId) and
-                        (RecentBranchPushes.branch eq safeBranch)
-                }
-                .firstOrNull()
-                ?.get(RecentBranchPushes.latestPushSha)
-        }
-    }
+    ): String? = webhookStateRepository.getLatestPushSha(installationId, projectId, branch)
 
     suspend fun tryRecordProcessedEvent(
         eventUuid: String?,
         installationId: UUID?,
         eventType: String,
-    ): Boolean {
-        val trimmedUuid = eventUuid?.trim() ?: return true
-        if (trimmedUuid.isBlank()) return true
-        val safeUuid = trimmedUuid.take(MAX_COLUMN_LENGTH)
-        val safeType = eventType.take(MAX_EVENT_TYPE_LENGTH)
-        return databaseFactory.dbTransaction {
-            val exists = ProcessedWebhookEvents.selectAll()
-                .where {
-                    (ProcessedWebhookEvents.eventUuid eq safeUuid) and
-                        (ProcessedWebhookEvents.eventType eq safeType)
-                }
-                .count() > 0
-            if (exists) {
-                false
-            } else {
-                ProcessedWebhookEvents.insertIgnore {
-                    it[ProcessedWebhookEvents.eventUuid] = safeUuid
-                    it[ProcessedWebhookEvents.installationId] = installationId
-                    it[ProcessedWebhookEvents.eventType] = safeType
-                    it[ProcessedWebhookEvents.processedAt] = OffsetDateTime.now(ZoneOffset.UTC)
-                }
-                true
-            }
-        }
-    }
+    ): Boolean = webhookStateRepository.tryRecordProcessedEvent(eventUuid, installationId, eventType)
 
     suspend fun clearProcessedWebhookEvents() {
-        databaseFactory.dbTransaction {
-            ProcessedWebhookEvents.deleteWhere { ProcessedWebhookEvents.eventUuid.isNotNull() }
-        }
+        webhookStateRepository.clearProcessedWebhookEvents()
     }
 }
-
-private fun Instant.databaseTime(): OffsetDateTime = atOffset(ZoneOffset.UTC)

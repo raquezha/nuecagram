@@ -58,7 +58,7 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
                     actorId = "sensitive-actor-id",
                     action = "setup",
                     metadataJson = "{\"credential\":\"must-not-appear\"}",
-                    metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                    metadataPatch = net.raquezha.nuecagram.db.models.AuditMetadataPatch(
                         actorUsername = "alice",
                     ),
                 )
@@ -302,7 +302,7 @@ class PlatformAdminUiTest : BaseEventTestHelper() {
                     actorId = "sensitive-actor-$index",
                     action = if (index == 20) "telegram_rotate" else "telegram_setup",
                     metadataJson = "{\"secret\":\"do-not-leak-$index\"}",
-                    metadataPatch = net.raquezha.nuecagram.db.AuditMetadataPatch(
+                    metadataPatch = net.raquezha.nuecagram.db.models.AuditMetadataPatch(
                         actorUsername = "user$index",
                     ),
                 )

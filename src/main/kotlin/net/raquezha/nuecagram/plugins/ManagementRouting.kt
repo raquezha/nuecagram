@@ -38,7 +38,8 @@ import kotlinx.html.th
 import kotlinx.html.thead
 import kotlinx.html.tr
 import kotlinx.html.unsafe
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.ActorType
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.redactedUrl
 import org.koin.ktor.ext.inject
@@ -188,7 +189,7 @@ fun Route.managementRouting(basePath: String) {
             )
         installationRepository.writeAuditEvent(
             installationId = installation.id,
-            actorType = "management_session",
+            actorType = ActorType.MANAGEMENT_SESSION,
             actorId = session.sessionId.toString(),
             action = "management_rotate",
         )
@@ -233,7 +234,7 @@ fun Route.managementRouting(basePath: String) {
         installationRepository.setMuted(installation.id, muted)
         installationRepository.writeAuditEvent(
             installationId = installation.id,
-            actorType = "management_session",
+            actorType = ActorType.MANAGEMENT_SESSION,
             actorId = session.sessionId.toString(),
             action = if (muted) "management_mute" else "management_unmute",
         )

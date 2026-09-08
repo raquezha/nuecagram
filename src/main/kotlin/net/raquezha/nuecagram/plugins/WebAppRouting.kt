@@ -23,11 +23,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
-import net.raquezha.nuecagram.db.AuditIdentityDelta
-import net.raquezha.nuecagram.db.AuditMetadataPatch
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.ActorType
+import net.raquezha.nuecagram.db.models.AuditIdentityDelta
+import net.raquezha.nuecagram.db.models.AuditMetadataPatch
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.db.WebAppSessionContext
+import net.raquezha.nuecagram.db.models.WebAppSessionContext
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramWebAppAuth
@@ -459,7 +460,7 @@ private suspend fun ApplicationCall.handleMuteInstallation(
     installationRepository.setMuted(item.id, targetMuted)
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = if (targetMuted) "webapp_mute" else "webapp_unmute",
         metadataPatch = AuditMetadataPatch(
@@ -507,7 +508,7 @@ private suspend fun ApplicationCall.handleUpdateIdentity(
     installationRepository.updateIdentity(item.id, normalizedRepoName, normalizedChatName)
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = "webapp_identity_update",
         metadataPatch = AuditMetadataPatch(
@@ -573,7 +574,7 @@ private suspend fun ApplicationCall.handleTestInstallation(
 
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = "webapp_test",
         metadataPatch = AuditMetadataPatch(
@@ -718,7 +719,7 @@ private suspend fun createAndRespond(
     val tok = installationRepository.issueWebhookSecret(installation.id)
     installationRepository.writeAuditEvent(
         installationId = installation.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = telegramUserId.toString(),
         action = "webapp_setup",
         metadataPatch = actorMetadata,
@@ -730,8 +731,8 @@ private suspend fun createAndRespond(
 }
 
 private fun toCreateResponse(
-    r: net.raquezha.nuecagram.db.InstallationRecord,
-    t: net.raquezha.nuecagram.db.IssuedCredential,
+    r: net.raquezha.nuecagram.db.models.InstallationRecord,
+    t: net.raquezha.nuecagram.db.models.IssuedCredential,
     url: String,
 ): CreateInstallationResponsePayload =
     CreateInstallationResponsePayload(
@@ -787,7 +788,7 @@ private suspend fun ApplicationCall.handleDeleteInstallation(
 
     installationRepository.writeAuditEvent(
         installationId = item.id,
-        actorType = "webapp_session",
+        actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
         action = "webapp_delete",
         metadataPatch = AuditMetadataPatch(
@@ -834,7 +835,7 @@ private suspend fun ApplicationCall.processRotateInstallation(
             )
             installationRepository.writeAuditEvent(
                 installationId = item.id,
-                actorType = "webapp_session",
+                actorType = ActorType.WEBAPP_SESSION,
                 actorId = session.telegramUserId.toString(),
                 action = "webapp_rotate",
                 metadataPatch = AuditMetadataPatch(
@@ -923,7 +924,7 @@ private fun InstallationAdminContext.toResponsePayload() = InstallationResponseP
     muted = muted,
 )
 
-private fun net.raquezha.nuecagram.db.InstallationRecord.toAdminContext(muted: Boolean) =
+private fun net.raquezha.nuecagram.db.models.InstallationRecord.toAdminContext(muted: Boolean) =
     InstallationAdminContext(
         id = id,
         repoName = repoName,

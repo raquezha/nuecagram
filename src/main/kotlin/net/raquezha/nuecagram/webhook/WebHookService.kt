@@ -9,7 +9,7 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.request.uri
 import java.util.UUID
 import net.raquezha.nuecagram.db.InstallationRepository
-import net.raquezha.nuecagram.db.WebhookInstallationResult
+import net.raquezha.nuecagram.db.models.WebhookInstallationResult
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_EVENT
 import net.raquezha.nuecagram.webhook.NuecagramHeaders.GITLAB_TOKEN
 import org.gitlab4j.api.utils.JacksonJson

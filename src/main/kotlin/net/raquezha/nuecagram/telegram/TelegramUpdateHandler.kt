@@ -3,8 +3,9 @@
 package net.raquezha.nuecagram.telegram
 
 import net.raquezha.nuecagram.ConfigWithSecrets
-import net.raquezha.nuecagram.db.AuditMetadataPatch
-import net.raquezha.nuecagram.db.InstallationAdminContext
+import net.raquezha.nuecagram.db.models.ActorType
+import net.raquezha.nuecagram.db.models.AuditMetadataPatch
+import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
@@ -181,7 +182,7 @@ class TelegramUpdateHandler(
         installationRepository.setMuted(installation.id, muted)
         installationRepository.writeAuditEvent(
             installationId = installation.id,
-            actorType = "telegram",
+            actorType = ActorType.TELEGRAM,
             actorId = userId.toString(),
             action = auditAction,
             metadataPatch = AuditMetadataPatch(
@@ -207,7 +208,7 @@ class TelegramUpdateHandler(
         )
         installationRepository.writeAuditEvent(
             installationId = installation.id,
-            actorType = "telegram",
+            actorType = ActorType.TELEGRAM,
             actorId = userId.toString(),
             action = "telegram_delivery_test",
             metadataPatch = AuditMetadataPatch(

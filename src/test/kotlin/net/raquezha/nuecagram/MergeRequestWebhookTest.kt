@@ -2,7 +2,7 @@ package net.raquezha.nuecagram
 
 import com.google.common.truth.Truth.assertThat
 import io.ktor.server.testing.testApplication
-import net.raquezha.nuecagram.db.MrParticipants
+import net.raquezha.nuecagram.db.models.MrParticipants
 import org.junit.Test
 
 class MergeRequestWebhookTest : BaseEventTestHelper() {

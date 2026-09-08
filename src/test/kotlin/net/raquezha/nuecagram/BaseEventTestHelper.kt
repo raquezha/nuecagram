@@ -13,7 +13,7 @@ import io.ktor.http.headers
 import io.ktor.server.testing.ApplicationTestBuilder
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.runBlocking
-import net.raquezha.nuecagram.db.InstallationRecord
+import net.raquezha.nuecagram.db.models.InstallationRecord
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.di.testAppModule
 import net.raquezha.nuecagram.plugins.configureRouting
