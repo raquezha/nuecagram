@@ -726,7 +726,7 @@ private suspend fun createAndRespond(
     )
     return WebAppResponseSpec(
         HttpStatusCode.Created,
-        toCreateResponse(installation, tok, config.webhookEndpointUrl(basePath)),
+        toCreateResponse(installation, tok, config.webhookEndpointUrl()),
     )
 }
 
@@ -938,7 +938,7 @@ private fun net.raquezha.nuecagram.db.models.InstallationRecord.toAdminContext(m
 
 private fun ConfigWithSecrets.publicBaseUrl(): String = configuredPublicUrl()
 
-private fun ConfigWithSecrets.webhookEndpointUrl(basePath: String): String = "${publicBaseUrl()}$basePath/webhook"
+private fun ConfigWithSecrets.webhookEndpointUrl(): String = "${publicBaseUrl()}/webhook"
 
 private suspend fun ApplicationCall.handleWebAppAvatar() {
     val file = parameters["file"].orEmpty()
