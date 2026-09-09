@@ -222,7 +222,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     @Test
     fun createInstallationEndpointDoesNotDuplicatePublicUrlPathInWebhookUrl() {
         val previous = System.getProperty("nuecagram.publicUrl")
-        System.setProperty("nuecagram.publicUrl", "https://android.nweca.com/nuecagram")
+        System.setProperty("nuecagram.publicUrl", "https://example.invalid/nuecagram")
         try {
             testApplication {
                 configureTestApplication()
@@ -238,7 +238,7 @@ class WebSetupWizardTest : BaseEventTestHelper() {
                 }
 
                 val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
-                assertThat(body.webhookUrl).isEqualTo("https://android.nweca.com/nuecagram/webhook")
+                assertThat(body.webhookUrl).isEqualTo("https://example.invalid/nuecagram/webhook")
             }
         } finally {
             if (previous == null) {
