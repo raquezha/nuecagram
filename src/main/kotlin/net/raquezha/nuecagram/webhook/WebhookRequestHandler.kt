@@ -6,7 +6,8 @@ import kotlinx.coroutines.channels.Channel
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.db.InstallationRepository
-import org.gitlab4j.api.models.Reviewer
+import org.gitlab4j.api.models.Build
+import org.gitlab4j.api.models.BuildStatus
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.MergeRequestEvent
 import org.gitlab4j.api.webhook.PipelineEvent
@@ -53,6 +54,7 @@ class WebhookRequestHandler(
 
         private val PIPELINE_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
         private val JOB_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
+        private val ACCEPTABLE_COMPLETED_BUILD_STATUSES = setOf(BuildStatus.SUCCESS, BuildStatus.SKIPPED)
     }
 
     suspend fun enqueue(eventData: EventData) {
@@ -197,6 +199,18 @@ class WebhookRequestHandler(
                 ctx.webhookService.clearTrackedPipeline(installationId, pipelineId)
                 ctx.logger.debug { "Pipeline #$pipelineId finished ($status), cleared all tracking" }
             }
+            "manual" -> {
+                handleManualWaitingPipelineReply(
+                    installationId = installationId,
+                    pipelineId = pipelineId,
+                    event = event,
+                    chatDetails = chatDetails,
+                    messageId = messageId,
+                    ctx = ctx,
+                )
+                ctx.webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
+                ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
+            }
             else -> {
                 ctx.webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
                 ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
@@ -213,6 +227,47 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
+        val targetUsernames = resolvePipelineTargetUsernames(installationId, status, event, ctx)
+        if (targetUsernames.isNotEmpty()) {
+            sendPipelineReply(
+                text = formatPipelineCompletionReply(status, targetUsernames),
+                chatDetails = chatDetails,
+                messageId = messageId,
+                ctx = ctx,
+            )
+            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging $targetUsernames" }
+        }
+    }
+
+    private suspend fun handleManualWaitingPipelineReply(
+        installationId: java.util.UUID,
+        pipelineId: Long,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ) {
+        if (!event.isWaitingForBlockingManualAction()) return
+        if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")) return
+
+        val targetUsernames = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
+        if (targetUsernames.isNotEmpty()) {
+            sendPipelineReply(
+                text = "${targetUsernames.handles()} pipeline passed; waiting for manual action.",
+                chatDetails = chatDetails,
+                messageId = messageId,
+                ctx = ctx,
+            )
+            ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging $targetUsernames" }
+        }
+    }
+
+    private suspend fun resolvePipelineTargetUsernames(
+        installationId: java.util.UUID,
+        status: String,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): List<String> {
         val projectId = event.project?.id
         val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.trim()
         val activeMr = if (projectId != null && !branch.isNullOrBlank()) {
@@ -227,7 +282,7 @@ class WebhookRequestHandler(
             null
         }
 
-        val targetUsernames = when {
+        return when {
             status == "success" && cachedParticipants?.reviewerUsernames?.isNotEmpty() == true -> {
                 cachedParticipants.reviewerUsernames
             }
@@ -241,21 +296,38 @@ class WebhookRequestHandler(
                 emptyList()
             }
         }
-
-        if (targetUsernames.isNotEmpty()) {
-            val replyText = formatPipelineCompletionReply(status, targetUsernames)
-            ctx.telegramService.sendMessage(
-                Message(
-                    chatId = chatDetails.chatId,
-                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
-                    text = replyText,
-                    parseMode = PARSE_MODE,
-                    replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
-                ),
-            )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging $targetUsernames" }
-        }
     }
+
+    private suspend fun sendPipelineReply(
+        text: String,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ) {
+        ctx.telegramService.sendMessage(
+            Message(
+                chatId = chatDetails.chatId,
+                threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                text = text,
+                parseMode = PARSE_MODE,
+                replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+            ),
+        )
+    }
+
+    private fun PipelineEvent.isWaitingForBlockingManualAction(): Boolean {
+        val builds = builds.orEmpty()
+        return builds.any { it.isBlockingManual() } &&
+            builds.filterNot { it.isManual() }.all { it.isCompletedRequired() }
+    }
+
+    private fun Build.isManual(): Boolean =
+        manual == true || `when` == "manual" || status == BuildStatus.MANUAL
+
+    private fun Build.isBlockingManual(): Boolean = isManual() && allowFailure != true
+
+    private fun Build.isCompletedRequired(): Boolean =
+        allowFailure == true || status in ACCEPTABLE_COMPLETED_BUILD_STATUSES
 
     private suspend fun handleBuildEvent(
         installationId: java.util.UUID,
@@ -432,7 +504,7 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val state = event.toMergeRequestState()
-        val reviewerChange = reviewerChange(event)
+        val reviewerChange = ReviewerChangeExtractor.extract(event.changes)
 
         if (state.projectId != null && state.mrIid != null) {
             cacheMergeRequestState(installationId, state, event, ctx)
@@ -543,38 +615,6 @@ class WebhookRequestHandler(
         }
     }
 
-    private data class ReviewerChange(
-        val added: List<ReviewerIdentity>,
-        val removed: List<ReviewerIdentity>,
-    ) {
-        fun isEmpty(): Boolean = added.isEmpty() && removed.isEmpty()
-    }
-
-    private data class ReviewerIdentity(
-        val key: String,
-        val username: String?,
-        val name: String?,
-    ) {
-        val label: String = username?.let { "@$it" } ?: name ?: key
-    }
-
-    private fun reviewerChange(event: MergeRequestEvent): ReviewerChange {
-        val reviewers = event.changes?.reviewers ?: return ReviewerChange(emptyList(), emptyList())
-        val previous = reviewers.previous.orEmpty().mapNotNull { it.reviewerIdentity() }.associateBy { it.key }
-        val current = reviewers.current.orEmpty().mapNotNull { it.reviewerIdentity() }.associateBy { it.key }
-        return ReviewerChange(
-            added = (current.keys - previous.keys).sorted().mapNotNull(current::get),
-            removed = (previous.keys - current.keys).sorted().mapNotNull(previous::get),
-        )
-    }
-
-    private fun Reviewer.reviewerIdentity(): ReviewerIdentity? {
-        val username = username?.takeIf(String::isNotBlank)
-        val name = name?.takeIf(String::isNotBlank)
-        val key = username ?: name ?: return null
-        return ReviewerIdentity(key, username, name)
-    }
-
     private suspend fun sendReviewerChangeReplies(
         change: ReviewerChange,
         chatDetails: ChatDetails,
@@ -603,12 +643,13 @@ class WebhookRequestHandler(
 
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
+    private fun List<String>.handles(): String = joinToString(" ") { "@$it" }
+
     private fun formatPipelineCompletionReply(
         status: String,
         usernames: List<String>,
     ): String {
-        val handles = usernames.joinToString(" ") { "@$it" }
         val message = randomMessageProvider.getMessageForStatus(status)
-        return "$handles $message".trim()
+        return "${usernames.handles()} $message".trim()
     }
 }

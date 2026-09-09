@@ -2,6 +2,7 @@ package net.raquezha
 
 import com.google.common.truth.Truth.assertThat
 import net.raquezha.nuecagram.webhook.FilterDecision
+import net.raquezha.nuecagram.webhook.ReviewerChangeExtractor
 import net.raquezha.nuecagram.webhook.WebhookEventFilter
 import org.gitlab4j.api.models.Assignee
 import org.gitlab4j.api.models.Reviewer
@@ -12,6 +13,7 @@ import org.gitlab4j.api.webhook.MergeRequestEvent
 import org.gitlab4j.api.webhook.PushEvent
 import org.junit.Test
 
+@Suppress("TooManyFunctions")
 class WebhookEventFilterTest {
 
     private val filter = WebhookEventFilter()
@@ -89,6 +91,20 @@ class WebhookEventFilterTest {
     }
 
     @Test
+    fun `extracts raw reviewer changes and processes them`() {
+        val removal = ReviewerChangeExtractor.extract(rawReviewerChanges(listOf("bob"), emptyList()))
+        assertThat(removal.added).isEmpty()
+        assertThat(removal.removed.map { it.label }).containsExactly("@bob")
+
+        val replacement = ReviewerChangeExtractor.extract(rawReviewerChanges(listOf("bob"), listOf("charlie")))
+        assertThat(replacement.added.map { it.label }).containsExactly("@charlie")
+        assertThat(replacement.removed.map { it.label }).containsExactly("@bob")
+
+        val event = createMrUpdateEvent("sha123", rawReviewerChanges(emptyList(), listOf("bob")))
+        assertThat(filter.evaluate(event, "sha123")).isEqualTo(FilterDecision.PROCESS)
+    }
+
+    @Test
     fun `evaluates MR update with extra structural changes as PROCESS`() {
         val event = createMrUpdateEvent("sha123", MergeRequestChanges().apply {
             set("target_branch", ChangeContainer<Any>().apply {
@@ -143,6 +159,19 @@ class WebhookEventFilterTest {
         val decision = filter.evaluate(event, null)
         assertThat(decision).isEqualTo(FilterDecision.PROCESS)
     }
+
+    private fun rawReviewerChanges(
+        previous: List<String>,
+        current: List<String>,
+    ): MergeRequestChanges = MergeRequestChanges().apply {
+        set("reviewers", ChangeContainer<Any>().apply {
+            this.previous = previous.mapIndexed { index, username -> rawReviewer(index, username) }
+            this.current = current.mapIndexed { index, username -> rawReviewer(index, username) }
+        })
+    }
+
+    private fun rawReviewer(index: Int, username: String): Map<String, Any> =
+        mapOf("id" to index, "username" to username)
 
     private fun createMrUpdateEvent(commitSha: String, mrChanges: MergeRequestChanges): MergeRequestEvent =
         MergeRequestEvent().apply {

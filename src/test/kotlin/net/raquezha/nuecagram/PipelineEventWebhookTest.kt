@@ -96,6 +96,50 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply?.text).doesNotContain("@bob")
         }
 
+    @Test
+    fun testMrPipelineManualWaitingPingsReviewersOnceAndStillPingsFinalStatus() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2925L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob", "charlie"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_MANUAL_WAITING)
+            val afterManual = waitForMessages(mockTelegramService, 2)
+            assertThat(afterManual.last().text).contains("@bob @charlie pipeline passed; waiting for manual action.")
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_MANUAL_WAITING)
+            val afterRepeatedManual = waitForMessages(mockTelegramService, 3)
+            assertThat(
+                afterRepeatedManual.count { it.text.contains("pipeline passed; waiting for manual action") },
+            ).isEqualTo(1)
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_MANUAL_SUCCESS)
+            val afterSuccess = waitForMessages(mockTelegramService, 5)
+            assertThat(afterSuccess.count { it.text.contains("@bob @charlie") }).isEqualTo(2)
+        }
+
+    private fun waitForMessages(
+        mockTelegramService: net.raquezha.nuecagram.telegram.MockTelegramService,
+        count: Int,
+    ) = kotlinx.coroutines.runBlocking {
+        repeat(100) {
+            val messages = mockTelegramService.sentMessages()
+            if (messages.size >= count) return@runBlocking messages
+            kotlinx.coroutines.delay(50)
+        }
+        mockTelegramService.sentMessages()
+    }
+
     companion object {
         val SAMPLE_PAYLOAD_MR_SUCCESS =
             """
@@ -172,6 +216,70 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
   }
 }
 """.trimIndent()
+
+        val SAMPLE_PAYLOAD_MR_MANUAL_WAITING =
+            """
+{
+  "object_kind": "pipeline",
+  "object_attributes": {
+    "id": 8890,
+    "iid": 2925,
+    "source": "merge_request_event",
+    "status": "manual",
+    "detailed_status": "waiting for manual action",
+    "ref": "feature-branch",
+    "stages": ["test", "deploy"],
+    "created_at": "2024-06-19 02:20:18 UTC",
+    "finished_at": null,
+    "duration": null,
+    "url": "https://gitlab.com/android-team/customer-app/-/pipelines/8890"
+  },
+  "merge_request": {
+    "id": 1001,
+    "iid": 2925,
+    "title": "Add feature",
+    "source_branch": "feature-branch",
+    "target_branch": "main",
+    "state": "opened",
+    "url": "https://gitlab.com/android-team/customer-app/-/merge_requests/2925"
+  },
+  "user": {
+    "id": 38,
+    "name": "Alice Author",
+    "username": "alice"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app",
+    "web_url": "https://gitlab.com/android-team/customer-app"
+  },
+  "builds": [
+    {
+      "id": 1,
+      "stage": "test",
+      "name": "test",
+      "status": "success",
+      "when": "on_success",
+      "manual": false,
+      "allow_failure": false
+    },
+    {
+      "id": 2,
+      "stage": "deploy",
+      "name": "deploy:review",
+      "status": "manual",
+      "when": "manual",
+      "manual": true,
+      "allow_failure": false
+    }
+  ]
+}
+""".trimIndent()
+
+        val SAMPLE_PAYLOAD_MR_MANUAL_SUCCESS = SAMPLE_PAYLOAD_MR_MANUAL_WAITING.replace(
+            "\"status\": \"manual\",\n    \"detailed_status\": \"waiting for manual action\"",
+            "\"status\": \"success\",\n    \"detailed_status\": \"passed\"",
+        )
         @BeforeClass
         @JvmStatic
         fun setUpClass() {
