@@ -87,6 +87,12 @@ class WebHookService(
         val pipelineId: Long,
     )
 
+    private data class InstallationPipelineNotificationKey(
+        val installationId: UUID,
+        val pipelineId: Long,
+        val kind: String,
+    )
+
     private data class InstallationMrKey(
         val installationId: UUID,
         val projectId: Long,
@@ -96,6 +102,7 @@ class WebHookService(
     private val runningJobsIdMap = ConcurrentHashMap<InstallationJobKey, JobEntry>()
     private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, String>()
     private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
+    private val pipelineNotificationMap = ConcurrentHashMap<InstallationPipelineNotificationKey, Long>()
     private val mrMessageIdMap = ConcurrentHashMap<InstallationMrKey, JobEntry>()
 
     suspend fun handleRequest(call: ApplicationCall): EventData {
@@ -270,6 +277,15 @@ class WebHookService(
         pipelineMessageIdMap[key] = messageId
     }
 
+    fun tryMarkPipelineNotification(
+        installationId: UUID,
+        pipelineId: Long,
+        kind: String,
+    ): Boolean = pipelineNotificationMap.putIfAbsent(
+        InstallationPipelineNotificationKey(installationId, pipelineId, kind),
+        System.currentTimeMillis(),
+    ) == null
+
     fun clearTrackedPipeline(
         installationId: UUID,
         pipelineId: Long,
@@ -277,6 +293,7 @@ class WebHookService(
         val key = InstallationPipelineKey(installationId, pipelineId)
         trackedPipelines.remove(key)
         pipelineMessageIdMap.remove(key)
+        pipelineNotificationMap.keys.removeIf { it.installationId == installationId && it.pipelineId == pipelineId }
         logger.debug { "Cleared tracking for pipeline $pipelineId in installation $installationId" }
     }
 
@@ -308,6 +325,7 @@ class WebHookService(
         runningJobsIdMap.clear()
         pipelineMessageIdMap.clear()
         trackedPipelines.clear()
+        pipelineNotificationMap.clear()
         mrMessageIdMap.clear()
     }
 
@@ -320,6 +338,16 @@ class WebHookService(
             if (entry.value.createdAt < cutoff) {
                 pipelineMessageIdMap.remove(entry.key)
                 pipelinesRemoved++
+                true
+            } else {
+                false
+            }
+        }
+
+        var notificationsRemoved = 0
+        pipelineNotificationMap.entries.removeIf { entry ->
+            if (entry.value < cutoff) {
+                notificationsRemoved++
                 true
             } else {
                 false
@@ -348,11 +376,12 @@ class WebHookService(
             }
         }
 
-        val totalCleaned = pipelinesRemoved + jobsRemoved + mrsRemoved
+        val totalCleaned = pipelinesRemoved + notificationsRemoved + jobsRemoved + mrsRemoved
         if (totalCleaned > 0) {
             logger.debug {
                 "Cleaned up $totalCleaned stale entries " +
-                    "($pipelinesRemoved pipelines, $jobsRemoved jobs, $mrsRemoved MRs)"
+                    "($pipelinesRemoved pipelines, $notificationsRemoved pipeline notifications, " +
+                    "$jobsRemoved jobs, $mrsRemoved MRs)"
             }
         }
     }
