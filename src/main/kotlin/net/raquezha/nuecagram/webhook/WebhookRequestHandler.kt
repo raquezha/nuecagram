@@ -8,7 +8,6 @@ import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.db.InstallationRepository
 import org.gitlab4j.api.models.Build
 import org.gitlab4j.api.models.BuildStatus
-import org.gitlab4j.api.models.Reviewer
 import org.gitlab4j.api.webhook.BuildEvent
 import org.gitlab4j.api.webhook.MergeRequestEvent
 import org.gitlab4j.api.webhook.PipelineEvent
@@ -505,7 +504,7 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val state = event.toMergeRequestState()
-        val reviewerChange = reviewerChange(event)
+        val reviewerChange = ReviewerChangeExtractor.extract(event.changes)
 
         if (state.projectId != null && state.mrIid != null) {
             cacheMergeRequestState(installationId, state, event, ctx)
@@ -614,38 +613,6 @@ class WebhookRequestHandler(
             ctx.logger.debug { "Skipping redundant MR update for !${state.mrIid} on branch ${state.sourceBranch}" }
             throw SkipEventException()
         }
-    }
-
-    private data class ReviewerChange(
-        val added: List<ReviewerIdentity>,
-        val removed: List<ReviewerIdentity>,
-    ) {
-        fun isEmpty(): Boolean = added.isEmpty() && removed.isEmpty()
-    }
-
-    private data class ReviewerIdentity(
-        val key: String,
-        val username: String?,
-        val name: String?,
-    ) {
-        val label: String = username?.let { "@$it" } ?: name ?: key
-    }
-
-    private fun reviewerChange(event: MergeRequestEvent): ReviewerChange {
-        val reviewers = event.changes?.reviewers ?: return ReviewerChange(emptyList(), emptyList())
-        val previous = reviewers.previous.orEmpty().mapNotNull { it.reviewerIdentity() }.associateBy { it.key }
-        val current = reviewers.current.orEmpty().mapNotNull { it.reviewerIdentity() }.associateBy { it.key }
-        return ReviewerChange(
-            added = (current.keys - previous.keys).sorted().mapNotNull(current::get),
-            removed = (previous.keys - current.keys).sorted().mapNotNull(previous::get),
-        )
-    }
-
-    private fun Reviewer.reviewerIdentity(): ReviewerIdentity? {
-        val username = username?.takeIf(String::isNotBlank)
-        val name = name?.takeIf(String::isNotBlank)
-        val key = username ?: name ?: return null
-        return ReviewerIdentity(key, username, name)
     }
 
     private suspend fun sendReviewerChangeReplies(

@@ -1,5 +1,6 @@
 package net.raquezha.nuecagram.webhook
 
+import org.gitlab4j.api.models.Reviewer
 import org.gitlab4j.api.webhook.ChangeContainer
 import org.gitlab4j.api.webhook.Event
 import org.gitlab4j.api.webhook.MergeRequestChanges
@@ -35,7 +36,9 @@ class WebhookEventFilter {
 
     fun hasStructuralChanges(changes: MergeRequestChanges?): Boolean {
         if (changes == null) return false
-        return hasTypedFieldChanges(changes) || hasExtraMapChanges(changes.any())
+        return hasTypedFieldChanges(changes) ||
+            ReviewerChangeExtractor.extract(changes).isNotEmpty() ||
+            hasExtraMapChanges(changes.any())
     }
 
     private fun hasTypedFieldChanges(changes: MergeRequestChanges): Boolean {
@@ -60,7 +63,6 @@ class WebhookEventFilter {
             "description",
             "labels",
             "assignees",
-            "reviewers",
             "milestone_id",
         )
         return extraChanges.entries.any { (key, container) ->
@@ -75,4 +77,89 @@ class WebhookEventFilter {
             null -> false
             else -> true
         }
+}
+
+data class ReviewerChange(
+    val added: List<ReviewerIdentity>,
+    val removed: List<ReviewerIdentity>,
+) {
+    fun isEmpty(): Boolean = added.isEmpty() && removed.isEmpty()
+    fun isNotEmpty(): Boolean = !isEmpty()
+}
+
+data class ReviewerIdentity(
+    val key: String,
+    val username: String?,
+    val name: String?,
+) {
+    val label: String = username?.let { "@$it" } ?: name ?: key
+}
+
+object ReviewerChangeExtractor {
+    fun extract(changes: MergeRequestChanges?): ReviewerChange {
+        if (changes == null) return ReviewerChange(emptyList(), emptyList())
+        return extractTyped(changes.reviewers).takeIf(ReviewerChange::isNotEmpty)
+            ?: extractRaw(changes.any()?.get("reviewers"))
+    }
+
+    private fun extractTyped(reviewers: ChangeContainer<List<Reviewer>>?): ReviewerChange {
+        if (reviewers == null) return ReviewerChange(emptyList(), emptyList())
+        return diff(
+            previous = reviewers.previous.orEmpty().mapNotNull { it.reviewerIdentity() },
+            current = reviewers.current.orEmpty().mapNotNull { it.reviewerIdentity() },
+        )
+    }
+
+    private fun extractRaw(container: Any?): ReviewerChange {
+        val (previous, current) = when (container) {
+            is ChangeContainer<*> -> container.previous to container.current
+            is Map<*, *> -> container["previous"] to container["current"]
+            else -> null to null
+        }
+        return diff(previous.toReviewerIdentities(), current.toReviewerIdentities())
+    }
+
+    private fun diff(
+        previous: List<ReviewerIdentity>,
+        current: List<ReviewerIdentity>,
+    ): ReviewerChange {
+        val previousByKey = previous.associateBy { it.key }
+        val currentByKey = current.associateBy { it.key }
+        return ReviewerChange(
+            added = (currentByKey.keys - previousByKey.keys).sorted().mapNotNull(currentByKey::get),
+            removed = (previousByKey.keys - currentByKey.keys).sorted().mapNotNull(previousByKey::get),
+        )
+    }
+
+    private fun Any?.toReviewerIdentities(): List<ReviewerIdentity> = when (this) {
+        is Iterable<*> -> mapNotNull { it.toReviewerIdentity() }
+        null -> emptyList()
+        else -> listOfNotNull(toReviewerIdentity())
+    }
+
+    private fun Any?.toReviewerIdentity(): ReviewerIdentity? = when (this) {
+        is Reviewer -> reviewerIdentity()
+        is Map<*, *> -> mapReviewerIdentity()
+        is Number -> ReviewerIdentity(toString(), null, null)
+        is String -> takeIf(String::isNotBlank)?.let { ReviewerIdentity(it, it, null) }
+        else -> null
+    }
+
+    private fun Map<*, *>.mapReviewerIdentity(): ReviewerIdentity? {
+        val username = stringValue("username")
+        val name = stringValue("name")
+        val id = stringValue("id")
+        val key = username ?: name ?: id ?: return null
+        return ReviewerIdentity(key, username, name)
+    }
+
+    private fun Map<*, *>.stringValue(key: String): String? =
+        this[key]?.toString()?.takeIf(String::isNotBlank)
+
+    private fun Reviewer.reviewerIdentity(): ReviewerIdentity? {
+        val username = username?.takeIf(String::isNotBlank)
+        val name = name?.takeIf(String::isNotBlank)
+        val key = username ?: name ?: id?.toString() ?: return null
+        return ReviewerIdentity(key, username, name)
+    }
 }
