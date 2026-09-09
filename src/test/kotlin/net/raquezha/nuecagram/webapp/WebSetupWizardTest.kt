@@ -220,6 +220,36 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun createInstallationEndpointDoesNotDuplicatePublicUrlPathInWebhookUrl() {
+        val previous = System.getProperty("nuecagram.publicUrl")
+        System.setProperty("nuecagram.publicUrl", "https://example.invalid/nuecagram")
+        try {
+            testApplication {
+                configureTestApplication()
+                val (sess, csrf) = sessionFor(client, 7020L)
+
+                val resp = client.post("/nuecagram/api/webapp/installations") {
+                    contentType(ContentType.Application.Json)
+                    header("Cookie", "nuecagram_webapp_session=$sess")
+                    header("X-CSRF-Token", csrf)
+                    setBody(
+                        """{"repoName":"Project #7020","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":7020}""",
+                    )
+                }
+
+                val body = json.decodeFromString<WizardCreatePayload>(resp.bodyAsText())
+                assertThat(body.webhookUrl).isEqualTo("https://example.invalid/nuecagram/webhook")
+            }
+        } finally {
+            if (previous == null) {
+                System.clearProperty("nuecagram.publicUrl")
+            } else {
+                System.setProperty("nuecagram.publicUrl", previous)
+            }
+        }
+    }
+
+    @Test
     fun createInstallationWritesWebappSetupAuditEvent() = testApplication {
         configureTestApplication()
         val (sess, csrf) = sessionFor(client, 7004L)
