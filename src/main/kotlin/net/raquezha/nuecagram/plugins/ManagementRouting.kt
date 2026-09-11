@@ -683,6 +683,7 @@ internal fun managementDocument(
     botUsername: String = "NuecagramBot",
 ): String {
     val version = net.raquezha.nuecagram.appVersion()
+    val bodyClass = if (body.contains("admin-shell")) " class=\"admin-page\"" else ""
     return """
     <!doctype html>
     <html lang="en">
@@ -817,35 +818,38 @@ internal fun managementDocument(
           .table-wrapper::-webkit-scrollbar-track { background: #eee4d5; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb { background: #c8b9a6; border-radius: 3px; }
           .table-wrapper::-webkit-scrollbar-thumb:hover { background: #a89986; }
-          table { width: 100%; min-width: 44rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; }
+          table { width: 100%; min-width: 52rem; border-collapse: separate; border-spacing: 0; background: rgba(255, 255, 255, 0.9); border: 1px solid #dfd5c6; border-radius: 0.5rem; overflow: hidden; font-size: 0.85rem; word-break: normal; }
           th { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; background: #eae2d6; color: #1a1612; padding: 0.8rem 1.25rem; text-align: left; border-bottom: 2px solid #dcd1c0; white-space: nowrap; }
-          td { padding: 0.75rem 1.25rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; }
+          td { padding: 0.75rem 1.25rem; text-align: left; border-bottom: 1px solid #eee4d5; vertical-align: middle; color: #2c251e; white-space: nowrap; }
           tr:last-child td { border-bottom: none; }
           tr:nth-child(even) td { background: rgba(246, 242, 236, 0.5); }
+          tr:hover td { background: rgba(255, 255, 255, 0.8); }
           .site-footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px dashed #dfd5c6; text-align: center; font-size: 0.8rem; color: #8c7f70; }
           .table-subtle { font-size: 0.8rem; color: #8c7f70; }
           .audit-timestamp { white-space: nowrap; vertical-align: middle; line-height: 1.25; min-width: 5.2rem; }
           .ts-time { font-family: 'Reddit Mono', monospace; font-size: 0.85rem; font-weight: 700; color: #1a1612; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
           .ts-date { font-family: 'Space Grotesk', sans-serif; font-size: 0.725rem; font-weight: 700; color: #8c7f70; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
-          .audit-repo { font-weight: 700; color: #1a1612; }
-          .audit-actor { font-family: 'Reddit Mono', monospace; font-size: 0.825rem; color: #2b7fa1; }
-          .audit-details-cell { line-height: 1.4; }
-          .chat-target { display: inline-flex; align-items: center; gap: 0.4rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.825rem; font-weight: 600; color: #1a1612; background: #f6f2ec; border: 1px solid #dfd5c6; padding: 0.2rem 0.55rem; border-radius: 0.375rem; margin-bottom: 0.25rem; }
+          .audit-repo { font-weight: 700; color: #1a1612; white-space: nowrap; }
+          .audit-actor { font-family: 'Reddit Mono', monospace; font-size: 0.825rem; color: #2b7fa1; white-space: nowrap; }
+          .audit-details-cell { line-height: 1.4; white-space: normal; min-width: 20rem; }
+          .chat-target { display: inline-flex; align-items: center; gap: 0.4rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.825rem; font-weight: 600; color: #1a1612; background: #f6f2ec; border: 1px solid #dfd5c6; padding: 0.2rem 0.55rem; border-radius: 0.375rem; margin-bottom: 0.25rem; white-space: nowrap; }
           .chat-icon { display: inline-flex; align-items: center; color: #2b7fa1; }
           .chat-text { white-space: nowrap; }
           .detail-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
-          .detail-chip { font-family: 'Reddit Mono', monospace; font-size: 0.75rem; background: #ffffff; color: #4a4035; padding: 0.2rem 0.55rem; border-radius: 0.35rem; border: 1px solid #dfd5c6; display: inline-flex; align-items: center; gap: 0.2rem; box-shadow: 0 1px 2px rgba(45, 30, 15, 0.04); }
+          .detail-chip { font-family: 'Reddit Mono', monospace; font-size: 0.75rem; background: #ffffff; color: #4a4035; padding: 0.2rem 0.55rem; border-radius: 0.35rem; border: 1px solid #dfd5c6; display: inline-flex; align-items: center; gap: 0.2rem; box-shadow: 0 1px 2px rgba(45, 30, 15, 0.04); white-space: nowrap; }
           .chip-key { color: #8c7f70; font-weight: 700; }
           .chip-val { color: #1a1612; font-weight: 600; }
           .chip-val-old { color: #a62b1e; text-decoration: line-through; opacity: 0.85; }
           .chip-arrow { color: #2b7fa1; font-weight: 800; padding: 0 0.05rem; }
           .chip-val-new { color: #3b8b68; font-weight: 700; }
           .panel-link-bar { margin-top: 0.85rem; text-align: right; }
-          .table-link { color: #2b7fa1; text-decoration: none; font-weight: 600; transition: color 0.15s ease; }
+          .table-link { color: #2b7fa1; text-decoration: none; font-weight: 600; transition: color 0.15s ease; white-space: nowrap; }
           .table-link:hover { color: #1c8bc0; text-decoration: underline; }
           .site-footer a { color: #2c251e; font-weight: 600; text-decoration: none; }
           .site-footer a:hover { text-decoration: underline; }
-          .admin-page { max-width: 56rem; width: 100%; box-sizing: border-box; }
+          .admin-page { max-width: 82rem; width: 100%; box-sizing: border-box; }
+          body.admin-page { max-width: 82rem; }
+          body:has(.admin-shell) { max-width: 82rem; }
           .admin-spacer { height: 0.25rem; }
           .admin-shell { display: grid; gap: 1rem; width: 100%; max-width: 100%; box-sizing: border-box; min-width: 0; }
           .admin-hero { background: rgba(255, 255, 255, 0.95); border: 1px solid #dfd5c6; border-top: 3px solid #2b7fa1; border-radius: 0.75rem; padding: 1.25rem; box-shadow: 0 4px 16px rgba(45, 30, 15, 0.04); width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden; min-width: 0; word-break: break-word; }
@@ -888,7 +892,7 @@ internal fun managementDocument(
           }
         </style>
       </head>
-      <body>
+      <body$bodyClass>
         <header class="site-header">
           <div class="header-top">
             <div class="title">nuecagram</div>
