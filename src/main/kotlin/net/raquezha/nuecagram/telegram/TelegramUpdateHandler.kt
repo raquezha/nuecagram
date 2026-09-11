@@ -9,10 +9,6 @@ import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 
 private const val PRIVATE_BOOTSTRAP_MESSAGE = "Use /start in a private chat before using admin commands."
-private const val GROUP_HELP_MESSAGE =
-    "<b>Nuecagram is managed in private chat</b>\n\n" +
-        "This group can receive GitLab notifications, but setup and repository management happen in DM.\n\n" +
-        "Open <b>@NuecagramBot</b> in a private chat and tap <b>OPEN</b> to connect repositories."
 private const val PRIVATE_START_MESSAGE =
     "<b>Nuecagram GitLab Notification Gateway</b>\n\n" +
         "I can help you deliver GitLab notifications directly to your Telegram groups and topics.\n\n" +
@@ -28,9 +24,6 @@ private const val PRIVATE_START_MESSAGE =
         "• /help - View command reference and instructions\n\n" +
         "💡 <i>Tap the <b>OPEN</b> menu button beside the chat box anytime to launch the WebApp Dashboard.</i>"
 private const val WRONG_CHAT_MESSAGE = "Installation not found in this chat."
-private const val MANAGEMENT_DM_REDIRECT_MESSAGE =
-    "Continue in a private chat with <b>@NuecagramBot</b> to manage connected repositories."
-private const val MANAGEMENT_DM_URL = "https://t.me/NuecagramBot"
 
 private data class AuthorizedInstallationCommand(
     val installation: InstallationAdminContext,
@@ -45,6 +38,14 @@ class TelegramUpdateHandler(
     private val config: ConfigWithSecrets,
 ) {
     private val menuHandler = TelegramMenuHandler(telegramService, installationRepository, config)
+
+    private val groupHelpMessage get() =
+        "<b>Nuecagram is managed in private chat</b>\n\n" +
+            "This group can receive GitLab notifications, but setup and repository management happen in DM.\n\n" +
+            "Open <b>@${config.botUsername}</b> in a private chat and tap <b>OPEN</b> to connect repositories."
+    private val managementDmRedirectMessage get() =
+        "Continue in a private chat with <b>@${config.botUsername}</b> to manage connected repositories."
+    private val managementDmUrl get() = "https://t.me/${config.botUsername}"
     suspend fun handle(update: TelegramUpdate) {
         if (!installationRepository.recordTelegramUpdate(update.updateId)) return
 
@@ -252,10 +253,10 @@ class TelegramUpdateHandler(
         } else {
             val markup = InlineKeyboardMarkup(
                 inlineKeyboard = listOf(
-                    listOf(InlineKeyboardButton(text = "Open @NuecagramBot", url = MANAGEMENT_DM_URL)),
+                    listOf(InlineKeyboardButton(text = "Open @${config.botUsername}", url = managementDmUrl)),
                 ),
             )
-            send(message.chat.id, GROUP_HELP_MESSAGE, message.messageThreadId, replyMarkup = markup)
+            send(message.chat.id, groupHelpMessage, message.messageThreadId, replyMarkup = markup)
         }
     }
 
@@ -371,10 +372,9 @@ class TelegramUpdateHandler(
     }
 
     private suspend fun sendManagementDmRedirect(message: TelegramUpdate.Message) {
-        val markup = InlineKeyboardMarkup(
-            inlineKeyboard = listOf(listOf(InlineKeyboardButton(text = "Open @NuecagramBot", url = MANAGEMENT_DM_URL))),
-        )
-        send(message.chat.id, MANAGEMENT_DM_REDIRECT_MESSAGE, message.messageThreadId, replyMarkup = markup)
+        val button = InlineKeyboardButton(text = "Open @${config.botUsername}", url = managementDmUrl)
+        val markup = InlineKeyboardMarkup(inlineKeyboard = listOf(listOf(button)))
+        send(message.chat.id, managementDmRedirectMessage, message.messageThreadId, replyMarkup = markup)
     }
 
     private fun buildSendAttempts(

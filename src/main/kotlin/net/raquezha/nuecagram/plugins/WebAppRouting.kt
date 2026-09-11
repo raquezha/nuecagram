@@ -136,13 +136,13 @@ fun Route.webAppRouting(basePath: String) {
     val json = Json { ignoreUnknownKeys = true }
 
     get("$basePath/webapp") {
-        call.handleWebAppShell(installationRepository, basePath)
+        call.handleWebAppShell(installationRepository, basePath, config.botUsername)
     }
 
     get("$basePath/webapp/app.js") {
         call.appendWebAppSecurityHeaders()
         call.respondText(
-            webAppJsScript(basePath),
+            webAppJsScript(basePath, config.botUsername),
             ContentType.Text.JavaScript,
             HttpStatusCode.OK,
         )
@@ -198,10 +198,11 @@ fun Route.webAppRouting(basePath: String) {
 private suspend fun ApplicationCall.handleWebAppShell(
     installationRepository: InstallationRepository,
     basePath: String,
+    botUsername: String,
 ) {
     appendWebAppSecurityHeaders()
     respondText(
-        webAppShellHtml(basePath),
+        webAppShellHtml(basePath, botUsername),
         ContentType.Text.Html,
         HttpStatusCode.OK,
     )
@@ -1010,7 +1011,7 @@ private fun buildCookie(
     }
 
 @Suppress("LongMethod", "MagicNumber")
-private fun webAppShellHtml(basePath: String): String = """
+private fun webAppShellHtml(basePath: String, botUsername: String = "NuecagramBot"): String = """
 <!doctype html>
 <html lang="en">
   <head>
@@ -1043,19 +1044,21 @@ private fun webAppShellHtml(basePath: String): String = """
         }
       }
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; background: var(--bg-color); color: var(--text-main); font: 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
       .container { max-width: ${CONTAINER_MAX_WIDTH_PX}px; margin: 0 auto; padding: 18px 14px 28px; }
-      h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.1; letter-spacing: -0.03em; }
-      h2 { margin: 18px 4px 8px; font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; }
+      h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.1; letter-spacing: -0.03em; font-weight: 800; }
+      h2 { margin: 18px 4px 8px; font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
       p { margin: 0 0 14px; color: var(--hint); line-height: 1.45; }
-      button { border: 0; border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 14px; font: 700 14px inherit; box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
-      button.primary { background: var(--button); color: var(--button-text); box-shadow: none; }
+      button { border: 0; border-radius: 12px; background: var(--card-bg); color: var(--text-main); padding: 11px 16px; font: 700 14px inherit; box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; transition: all 0.15s ease; }
+      button:active { transform: scale(0.98); opacity: 0.9; }
+      button.primary { background: var(--button); color: var(--button-text); box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25); }
+      button.primary:active { box-shadow: 0 1px 4px rgba(2, 132, 199, 0.2); }
       button.danger { color: var(--danger); }
       button.link { background: transparent; color: var(--button); box-shadow: none; padding: 8px 2px; }
       .top-actions { display: flex; gap: 10px; margin: 16px 0 18px; flex-wrap: wrap; }
-      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 14px; border-radius: 18px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border); }
+      .card { width: 100%; display: flex; gap: 14px; align-items: center; text-align: left; margin: 0 0 10px; padding: 14px; border-radius: 18px; background: var(--card-bg); box-shadow: inset 0 0 0 1px var(--border), 0 2px 6px rgba(0, 0, 0, 0.03); transition: transform 0.15s ease, box-shadow 0.15s ease; }
       .card.muted { opacity: .72; filter: grayscale(.25); }
-      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; }
+      .avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #eef0f3; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
       .grow { min-width: 0; flex: 1; }
       .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 13px 14px; border-top: 1px solid var(--border); }
       .card .row { padding: 0; border-top: 0; margin-bottom: 3px; }
@@ -1063,7 +1066,7 @@ private fun webAppShellHtml(basePath: String): String = """
       .title { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sub { margin-top: 3px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .meta { margin-top: 7px; color: var(--hint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .badge { margin-left: auto; border-radius: 999px; padding: 4px 7px; font-size: 11px; font-weight: 800; }
+      .badge { margin-left: auto; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; }
       .helper.ok { color: var(--success); font-weight: 700; }
       .badge-active { background: #dcfce7; color: var(--success); }
       .badge-muted { background: #fee2e2; color: var(--danger); }
@@ -1074,7 +1077,7 @@ private fun webAppShellHtml(basePath: String): String = """
       #screen-loading.active { display: flex; }
       .loading-animation { width: 220px; height: 165px; display: flex; align-items: center; justify-content: center; }
       .loading-animation svg { width: 100% !important; height: 100% !important; display: block; }
-      .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; }
+      .spinner-label { color: var(--hint); font-size: 14px; text-align: center; max-width: 260px; line-height: 1.4; font-weight: 500; }
       .dest-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--button); border-radius: 50%; animation: dest-spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
       @keyframes dest-spin { to { transform: rotate(360deg); } }
       .dest-loading-box { display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; color: var(--hint); font-size: 14px; }
@@ -1144,11 +1147,11 @@ private fun webAppShellHtml(basePath: String): String = """
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>
         <p>Notifications will be sent to:<br><strong id="createDestinationName"></strong><br><span id="createDestinationMeta"></span></p>
-        <p><a href="https://t.me/NuecagramBot?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
+        <p><a href="https://t.me/${botUsername}?startgroup=true" class="link" target="_blank" rel="noopener">+ Add bot to a new group or channel</a></p>
         <div class="field" id="fieldDestination">
           <label>Target Telegram destination</label>
           <select id="inDestination"><option value="">Loading destinations...</option></select>
-          <span style="font-size: 12px; font-style: italic; opacity: 0.85; display: block; margin-top: 6px; color: var(--hint);">Don't see your group? Make sure both <strong>you</strong> and <strong>@NuecagramBot</strong> are <strong>Administrators</strong> in the group (send a message there if it doesn't appear right away).</span>
+          <span style="font-size: 12px; font-style: italic; opacity: 0.85; display: block; margin-top: 6px; color: var(--hint);">Don't see your group? Make sure both <strong>you</strong> and <strong>@${botUsername}</strong> are <strong>Administrators</strong> in the group (send a message there if it doesn't appear right away).</span>
         </div>
         <div class="field"><label>GitLab base URL</label><input id="inUrl" value="https://gitlab.com"></div>
         <div class="field"><label>GitLab project ID</label><input id="inPid" type="number" placeholder="123456"></div>
@@ -1225,7 +1228,7 @@ private fun webAppShellHtml(basePath: String): String = """
 """.trimIndent()
 
 @Suppress("LongMethod", "MagicNumber")
-private fun webAppJsScript(basePath: String): String = """
+private fun webAppJsScript(basePath: String, botUsername: String = "NuecagramBot"): String = """
 let userCsrf = '';
 const LOADING_TEXTS = [
   'Bribing the GitLab servers...',
@@ -1406,7 +1409,7 @@ async function initWebApp() {
     });
     if (!res.ok) {
       if (res.status === 400 || res.status === 401 || !tg || !tg.initData) {
-        renderError('Telegram Access Required', 'This management portal must be opened inside Telegram.\nOpen @NuecagramBot and tap OPEN.');
+        renderError('Telegram Access Required', 'This management portal must be opened inside Telegram.\nOpen @${botUsername} and tap OPEN.');
       } else {
         renderError(res.status === 403 ? 'Admin access required' : 'Authentication required', 'Only Telegram group admins can manage repositories here.');
       }
@@ -1495,8 +1498,8 @@ function renderError(title, body) {
     el.innerHTML = '<div class="box" style="text-align:center;padding:28px 18px;">' +
       '<h1 style="font-size:20px;margin-bottom:10px;">Telegram Access Required</h1>' +
       '<p style="margin-bottom:20px;">This management portal must be opened inside Telegram.</p>' +
-      '<div class="codebox" style="margin-bottom:18px;font-weight:700;">Open @NuecagramBot and tap OPEN</div>' +
-      '<a href="https://t.me/NuecagramBot" class="primary" style="display:block;text-decoration:none;padding:12px;border-radius:12px;text-align:center;" target="_blank" rel="noopener">Open Telegram Bot</a></div>';
+      '<div class="codebox" style="margin-bottom:18px;font-weight:700;">Open @${botUsername} and tap OPEN</div>' +
+      '<a href="https://t.me/${botUsername}" class="primary" style="display:block;text-decoration:none;padding:12px;border-radius:12px;text-align:center;" target="_blank" rel="noopener">Open Telegram Bot</a></div>';
   } else {
     el.innerHTML = '<div class="box"><p>' + escapeHtml(body) + '</p></div>';
   }
