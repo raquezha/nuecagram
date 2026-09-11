@@ -6,6 +6,28 @@
 
 Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted instance can serve multiple GitLab projects through DB-backed installations, per-installation webhook secrets, and Telegram administrator onboarding.
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Nuecagram Demo" width="100%" style="max-width: 800px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);" />
+</p>
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/assets/telegram-chat.png" alt="Telegram Chat Alerts" width="48%" style="border-radius: 10px;" />
+  &nbsp;
+  <img src="docs/assets/webapp-mobile.png" alt="Telegram WebApp Dashboard" width="48%" style="border-radius: 10px;" />
+</p>
+
+<p align="center">
+  <em>Left: Live GitLab notifications with consolidated pipeline status. Right: Native Telegram WebApp repository portal.</em>
+</p>
+
+<details>
+  <summary><strong>Platform Admin Operations Dashboard</strong> (click to expand)</summary>
+  <br>
+  <img src="docs/assets/admin-dashboard.png" alt="Platform Admin Operations Dashboard" width="100%" style="border-radius: 10px;" />
+</details>
+
 ## What it does
 
 - Sends GitLab push, tag, merge request, issue, note, wiki, deployment, release, pipeline, and job notifications to Telegram.
@@ -38,7 +60,7 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted i
 
 4. Add your Telegram bot to the target group and make it an administrator. The group destination is recorded automatically and silently in the background (for existing groups without prior activity, sending `/help` in the group also records the destination).
 
-5. Open `@NuecagramBot` in Telegram and tap the **OPEN** menu button to launch the Web App management portal. Tap **+ Add repository**, select your target destination from the dropdown, and connect your GitLab project.
+5. Open your bot (e.g. `@NuecagramBot` or configured `TELEGRAM_BOT_USERNAME`) in Telegram and tap the **OPEN** menu button to launch the Web App management portal. Tap **+ Add repository**, select your target destination from the dropdown, and connect your GitLab project.
 
 6. In GitLab, create a project webhook using the URL and secret token from the Web App reveal screen. GitLab sends the token as `X-Gitlab-Token`; do not add custom Nuecagram headers.
 

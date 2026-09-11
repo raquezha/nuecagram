@@ -38,10 +38,12 @@ import kotlinx.html.th
 import kotlinx.html.thead
 import kotlinx.html.tr
 import kotlinx.html.unsafe
+import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.models.ActorType
 import net.raquezha.nuecagram.db.models.InstallationAdminContext
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.redactedUrl
+import org.koin.ktor.ext.inject
 import org.koin.ktor.ext.inject
 
 private const val SESSION_COOKIE_NAME = "nuecagram_manage_session"
@@ -54,6 +56,7 @@ private const val SHORT_ID_LENGTH = 8
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 fun Route.managementRouting(basePath: String) {
     val installationRepository by inject<InstallationRepository>()
+    val config by inject<ConfigWithSecrets>()
 
     val rootPath = basePath.ifEmpty { "/" }
     get(rootPath) {
@@ -277,10 +280,11 @@ internal suspend fun ApplicationCall.respondManagementHtml(
     body: String,
     status: HttpStatusCode = HttpStatusCode.OK,
     rightHeaderHtml: String? = null,
+    botUsername: String = "NuecagramBot",
 ) {
     appendSecurityHeaders()
     respondText(
-        managementDocument(title, body, rightHeaderHtml),
+        managementDocument(title, body, rightHeaderHtml, botUsername),
         ContentType.Text.Html,
         status,
     )
@@ -380,7 +384,7 @@ private fun rejectionHtml(title: String, message: String): String =
     }
 
 @Suppress("LongMethod")
-private fun onboardingHtml(basePath: String): String =
+private fun onboardingHtml(basePath: String, botUsername: String = "NuecagramBot"): String =
     createHTML().div {
         h2 { +"How to Start in 3 Easy Steps" }
 
@@ -391,10 +395,10 @@ private fun onboardingHtml(basePath: String): String =
             }
             p {
                 +"Add "
-                a(href = "https://t.me/NuecagramBot", classes = "table-link") {
+                a(href = "https://t.me/${botUsername}", classes = "table-link") {
                     target = "_blank"
                     rel = "noopener"
-                    strong { +"@NuecagramBot" }
+                    strong { +"@${botUsername}" }
                 }
                 +" to your destination Telegram group or forum topic, then promote it to "
                 strong { +"Administrator" }
@@ -409,7 +413,7 @@ private fun onboardingHtml(basePath: String): String =
             }
             p {
                 +"Send a private message to "
-                strong { +"@NuecagramBot" }
+                strong { +"@${botUsername}" }
                 +" and click "
                 strong { +"Start" }
                 +" (or send "
@@ -424,7 +428,7 @@ private fun onboardingHtml(basePath: String): String =
                 h3 { +"Connect your GitLab Repository" }
             }
             p {
-                +("Open @NuecagramBot in Telegram and tap OPEN to launch the Web App. " +
+                +("Open @${botUsername} in Telegram and tap OPEN to launch the Web App. " +
                     "Tap + Add repository and select your destination group or topic.")
             }
         }
@@ -676,6 +680,7 @@ internal fun managementDocument(
     title: String,
     body: String,
     rightHeaderHtml: String? = null,
+    botUsername: String = "NuecagramBot",
 ): String {
     val version = net.raquezha.nuecagram.appVersion()
     return """
@@ -888,9 +893,9 @@ internal fun managementDocument(
           <div class="header-top">
             <div class="title">nuecagram</div>
             <div class="right-meta">
-              <a href="https://t.me/NuecagramBot" target="_blank" rel="noopener" class="header-btn btn-telegram" aria-label="Open Telegram Bot">
+              <a href="https://t.me/${botUsername}" target="_blank" rel="noopener" class="header-btn btn-telegram" aria-label="Open Telegram Bot">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.68-.55.84-1.12.52l-3.01-2.22-1.45 1.4c-.16.16-.3.3-.61.3l.21-3.05 5.56-5.02c.24-.22-.05-.34-.37-.13l-6.87 4.33-2.96-.92c-.64-.2-.65-.64.13-.95l11.57-4.46c.54-.2 1.01.13.89.92z"/></svg>
-                <span>@NuecagramBot</span>
+                <span>@${botUsername}</span>
               </a>
               <a href="https://github.com/raquezha/nuecagram" target="_blank" rel="noopener" class="header-btn btn-github" aria-label="GitHub Repository">
                 <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
