@@ -73,6 +73,8 @@ data class Message(
     val text: String,
     @SerialName("disable_web_page_preview")
     val disableWebPagePreview: Boolean = false,
+    @SerialName("disable_notification")
+    val disableNotification: Boolean = false,
     @SerialName("parse_mode")
     val parseMode: String = "HTML",
     @SerialName("message_thread_id")

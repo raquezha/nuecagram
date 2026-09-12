@@ -62,6 +62,12 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
             assertThat(completionReply?.text?.lowercase()).contains("review")
+            assertThat(completionReply?.disableNotification).isFalse()
+
+            // Repeated webhook payload for same terminal pipeline does not duplicate ping
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+            val allBobPings = mockTelegramService.sentMessages().count { it.text.contains("@bob") }
+            assertThat(allBobPings).isEqualTo(1)
         }
 
     @Test

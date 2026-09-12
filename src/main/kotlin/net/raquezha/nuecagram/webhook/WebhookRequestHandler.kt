@@ -188,6 +188,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatEventMessage(event),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
+                    disableNotification = true,
                 ),
             )
         ctx.logger.debug { "Pipeline #$pipelineId: sent/updated message $messageId" }
@@ -234,12 +235,16 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
+        if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "terminal_$status")) return
+
         val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
         if (targets.usernames.isNotEmpty()) {
+            val isSilent = status in listOf("canceled", "skipped")
             sendPipelineReply(
                 text = formatPipelineCompletionReply(status, targets),
                 chatDetails = chatDetails,
                 messageId = messageId,
+                disableNotification = isSilent,
                 ctx = ctx,
             )
             ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging ${targets.usernames}" }
@@ -332,6 +337,7 @@ class WebhookRequestHandler(
         text: String,
         chatDetails: ChatDetails,
         messageId: String,
+        disableNotification: Boolean = false,
         ctx: EventProcessingContext,
     ) {
         ctx.telegramService.sendMessage(
@@ -341,6 +347,7 @@ class WebhookRequestHandler(
                 text = text,
                 parseMode = PARSE_MODE,
                 replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+                disableNotification = disableNotification,
             ),
         )
     }
@@ -522,6 +529,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatPushEventMessage(event, mrIid),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
+                    disableNotification = true,
                 ),
             )
         ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
