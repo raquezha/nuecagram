@@ -322,7 +322,8 @@ class WebhookRequestHandler(
 
     private fun resolveReviewers(rawReviewers: List<String>, author: String?): List<String> =
         if (author != null && rawReviewers.size > 1) {
-            rawReviewers.filterNot { it.equals(author, ignoreCase = true) }
+            val normalizedAuthor = author.trim().removePrefix("@")
+            rawReviewers.filterNot { it.trim().removePrefix("@").equals(normalizedAuthor, ignoreCase = true) }
         } else {
             rawReviewers
         }
@@ -680,9 +681,10 @@ class WebhookRequestHandler(
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
     private fun List<String>.handles(): String =
-        filter { it.isNotBlank() }
+        map { it.trim().removePrefix("@") }
+            .filter { it.isNotBlank() }
             .distinct()
-            .joinToString(" ") { "@${it.trim().removePrefix("@")}" }
+            .joinToString(" ") { "@$it" }
 
     private fun formatPipelineCompletionReply(
         status: String,
