@@ -290,42 +290,42 @@ class WebhookRequestHandler(
         } else {
             null
         }
-        val mrIid = event.mergeRequest?.iid ?: activeMr?.mrIid
+        val mrIid = event.extractMrIid(activeMr?.mrIid)
         val cachedParticipants = if (mrIid != null && projectId != null) {
             ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
         } else {
             null
         }
 
-        val validReviewers = cachedParticipants?.reviewerUsernames.orEmpty().filter { it.isNotBlank() }
+        val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty().filter(String::isNotBlank).distinct()
+        val author = cachedParticipants?.authorUsername?.takeIf(String::isNotBlank)
+        val validReviewers = resolveReviewers(rawReviewers, author)
 
         return when {
-            status == "success" && validReviewers.isNotEmpty() -> {
-                PipelineTargets(
-                    usernames = validReviewers,
-                    isReviewer = true,
-                    mrIid = mrIid,
-                )
-            }
-            !cachedParticipants?.authorUsername.isNullOrBlank() -> {
-                PipelineTargets(
-                    usernames = listOf(cachedParticipants.authorUsername),
-                    isReviewer = false,
-                    mrIid = mrIid,
-                )
-            }
-            !event.user?.username.isNullOrBlank() -> {
-                PipelineTargets(
-                    usernames = listOf(event.user.username),
-                    isReviewer = false,
-                    mrIid = mrIid,
-                )
-            }
-            else -> {
+            status == "success" && validReviewers.isNotEmpty() ->
+                PipelineTargets(validReviewers, isReviewer = true, mrIid = mrIid)
+            author != null ->
+                PipelineTargets(listOf(author), isReviewer = false, mrIid = mrIid)
+            !event.user?.username.isNullOrBlank() ->
+                PipelineTargets(listOf(event.user.username), isReviewer = false, mrIid = mrIid)
+            else ->
                 PipelineTargets(emptyList())
-            }
         }
     }
+
+    private fun PipelineEvent.extractMrIid(activeMrIid: Long?): Long? =
+        mergeRequest?.iid
+            ?: activeMrIid
+            ?: objectAttributes?.ref?.let { ref ->
+                Regex("""refs/merge-requests/(\d+)/""").find(ref)?.groupValues?.get(1)?.toLongOrNull()
+            }
+
+    private fun resolveReviewers(rawReviewers: List<String>, author: String?): List<String> =
+        if (author != null && rawReviewers.size > 1) {
+            rawReviewers.filterNot { it.equals(author, ignoreCase = true) }
+        } else {
+            rawReviewers
+        }
 
     private suspend fun sendPipelineReply(
         text: String,
@@ -596,16 +596,23 @@ class WebhookRequestHandler(
         event: MergeRequestEvent,
         ctx: EventProcessingContext,
     ) {
+        val existing = ctx.installationRepository.getMrParticipants(installationId, state.projectId!!, state.mrIid!!)
+        val author = if (state.action == "open") {
+            state.authorUsername ?: existing?.authorUsername
+        } else {
+            existing?.authorUsername ?: state.authorUsername
+        }
+
         ctx.installationRepository.upsertMrParticipants(
             installationId = installationId,
-            projectId = state.projectId!!,
-            mrIid = state.mrIid!!,
-            authorUsername = state.authorUsername,
+            projectId = state.projectId,
+            mrIid = state.mrIid,
+            authorUsername = author,
             reviewerUsernames = state.reviewers,
         )
         ctx.logger.debug {
             "MR !${state.mrIid} (project ${state.projectId}): " +
-                "cached author=${state.authorUsername}, reviewers=${state.reviewers}"
+                "cached author=$author, reviewers=${state.reviewers}"
         }
 
         if (state.sourceBranch.isNullOrBlank()) return
@@ -673,7 +680,9 @@ class WebhookRequestHandler(
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
     private fun List<String>.handles(): String =
-        filter { it.isNotBlank() }.joinToString(" ") { "@${it.trim().removePrefix("@")}" }
+        filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" ") { "@${it.trim().removePrefix("@")}" }
 
     private fun formatPipelineCompletionReply(
         status: String,
@@ -682,7 +691,8 @@ class WebhookRequestHandler(
         val message = randomMessageProvider.getMessageForStatus(status)
         return if (targets.isReviewer && status == "success") {
             val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
-            "${targets.usernames.handles()} Pipeline passed! Please review $mrRef. $message".trim()
+            val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
+            "${targets.usernames.handles()} $reviewerPrompt $message".trim()
         } else {
             "${targets.usernames.handles()} $message".trim()
         }

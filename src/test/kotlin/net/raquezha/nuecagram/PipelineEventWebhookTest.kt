@@ -60,7 +60,43 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
 
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
-            assertThat(completionReply?.text).contains("Please review !2923")
+            assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.text?.lowercase()).contains("review")
+        }
+
+    @Test
+    fun testDetachedMrPipelineRefPingsReviewers() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob", "charlie"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_DETACHED_MR_SUCCESS)
+
+            val completionReply = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().find { it.text.contains("@bob") }
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(completionReply).isNotNull()
+            assertThat(completionReply?.text).contains("@bob @charlie")
+            assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.text?.lowercase()).contains("review")
         }
 
     @Test
@@ -166,6 +202,35 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
     "target_branch": "main",
     "state": "opened",
     "url": "https://gitlab.com/android-team/customer-app/-/merge_requests/2923"
+  },
+  "user": {
+    "id": 38,
+    "name": "Alice Author",
+    "username": "alice"
+  },
+  "project": {
+    "id": 105,
+    "name": "customer-app",
+    "web_url": "https://gitlab.com/android-team/customer-app"
+  }
+}
+""".trimIndent()
+
+        val SAMPLE_PAYLOAD_DETACHED_MR_SUCCESS =
+            """
+{
+  "object_kind": "pipeline",
+  "object_attributes": {
+    "id": 8887,
+    "iid": 2923,
+    "source": "merge_request_event",
+    "status": "success",
+    "ref": "refs/merge-requests/2923/head",
+    "stages": ["test"],
+    "created_at": "2024-06-19 02:20:18 UTC",
+    "finished_at": "2024-06-19 02:25:18 UTC",
+    "duration": 300,
+    "url": "https://gitlab.com/android-team/customer-app/-/pipelines/8887"
   },
   "user": {
     "id": 38,

@@ -62,6 +62,25 @@ class RandomMessageProvider {
                 "Pipeline passed! Pang-senior dev ka na niyan!",
             )
 
+        private val REVIEW_PROMPTS =
+            listOf(
+                "Pipeline passed! Please review {mrRef}.",
+                "All checks passed! Ready for your review on {mrRef}.",
+                "Green build! Over to you for review on {mrRef}.",
+                "CI passed cleanly! Please take a look at {mrRef}.",
+                "Tests passed! Ready for your feedback on {mrRef}.",
+                "Pipeline succeeded! Ready for your stamp of approval on {mrRef}.",
+                "All green! Time to review {mrRef}.",
+                "Build passed! Please review the changes in {mrRef}.",
+                "Pipeline green! Your review is requested on {mrRef}.",
+                "Tests are passing! Please inspect {mrRef} when you have a moment.",
+                "Smooth build! Over to you to review {mrRef}.",
+                "Pipeline is green and ready for review on {mrRef}.",
+                "All checks are good! Please review {mrRef}.",
+                "Green light! {mrRef} is waiting for your review.",
+                "Pipeline passed! Please take a look at {mrRef}.",
+            )
+
         private val FAILED_MESSAGES =
             listOf(
                 "The pipeline has passed... away. RIP.",
@@ -230,6 +249,9 @@ class RandomMessageProvider {
     }
 
     fun getSuccessMessage(): String = "✅ ${SUCCESS_MESSAGES.random()}"
+
+    fun getReviewerPrompt(mrRef: String): String =
+        REVIEW_PROMPTS.random().replace("{mrRef}", mrRef)
 
     fun getFailedMessage(): String = "❌ ${FAILED_MESSAGES.random()}"
 
