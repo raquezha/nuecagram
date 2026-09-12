@@ -92,7 +92,9 @@ data class ReviewerIdentity(
     val username: String?,
     val name: String?,
 ) {
-    val label: String = username?.let { "@$it" } ?: name ?: key
+    val label: String = username?.takeIf(String::isNotBlank)?.let { "@${it.removePrefix("@")}" }
+        ?: name?.takeIf(String::isNotBlank)
+        ?: key
 }
 
 object ReviewerChangeExtractor {

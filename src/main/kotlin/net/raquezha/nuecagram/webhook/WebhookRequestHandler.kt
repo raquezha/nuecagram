@@ -170,8 +170,9 @@ class WebhookRequestHandler(
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val pipelineId = event.objectAttributes.id
-        val status = event.objectAttributes.status
+        val attrs = event.objectAttributes ?: return
+        val pipelineId = attrs.id
+        val status = attrs.status
 
         ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
         ctx.webhookService.cleanupStaleEntries()
@@ -281,6 +282,8 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ): PipelineTargets {
         val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
         val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.trim()
         val activeMr = if (projectId != null && !branch.isNullOrBlank()) {
             ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
@@ -294,22 +297,24 @@ class WebhookRequestHandler(
             null
         }
 
+        val validReviewers = cachedParticipants?.reviewerUsernames.orEmpty().filter { it.isNotBlank() }
+
         return when {
-            status == "success" && cachedParticipants?.reviewerUsernames?.isNotEmpty() == true -> {
+            status == "success" && validReviewers.isNotEmpty() -> {
                 PipelineTargets(
-                    usernames = cachedParticipants.reviewerUsernames,
+                    usernames = validReviewers,
                     isReviewer = true,
                     mrIid = mrIid,
                 )
             }
-            cachedParticipants?.authorUsername != null -> {
+            !cachedParticipants?.authorUsername.isNullOrBlank() -> {
                 PipelineTargets(
                     usernames = listOf(cachedParticipants.authorUsername),
                     isReviewer = false,
                     mrIid = mrIid,
                 )
             }
-            event.user?.username != null -> {
+            !event.user?.username.isNullOrBlank() -> {
                 PipelineTargets(
                     usernames = listOf(event.user.username),
                     isReviewer = false,
@@ -668,7 +673,7 @@ class WebhookRequestHandler(
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
     private fun List<String>.handles(): String =
-        joinToString(" ") { "@${it.removePrefix("@")}" }
+        filter { it.isNotBlank() }.joinToString(" ") { "@${it.trim().removePrefix("@")}" }
 
     private fun formatPipelineCompletionReply(
         status: String,
