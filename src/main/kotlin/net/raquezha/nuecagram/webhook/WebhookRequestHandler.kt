@@ -690,12 +690,12 @@ class WebhookRequestHandler(
         status: String,
         targets: PipelineTargets,
     ): String {
-        val message = randomMessageProvider.getMessageForStatus(status)
         return if (targets.isReviewer && status == "success") {
             val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
             val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
-            "${targets.usernames.handles()} $reviewerPrompt $message".trim()
+            "${targets.usernames.handles()} $reviewerPrompt".trim()
         } else {
+            val message = randomMessageProvider.getMessageForStatus(status)
             "${targets.usernames.handles()} $message".trim()
         }
     }
