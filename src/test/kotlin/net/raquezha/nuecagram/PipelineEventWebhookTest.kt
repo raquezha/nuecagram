@@ -60,6 +60,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
 
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
+            assertThat(completionReply?.text).contains("Please review !2923")
         }
 
     @Test

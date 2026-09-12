@@ -32,6 +32,12 @@ private data class MergeRequestState(
     val action: String?,
 )
 
+private data class PipelineTargets(
+    val usernames: List<String>,
+    val isReviewer: Boolean = false,
+    val mrIid: Long? = null,
+)
+
 @Suppress("TooManyFunctions")
 class WebhookRequestHandler(
     private val application: Application,
@@ -227,15 +233,15 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
-        val targetUsernames = resolvePipelineTargetUsernames(installationId, status, event, ctx)
-        if (targetUsernames.isNotEmpty()) {
+        val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
+        if (targets.usernames.isNotEmpty()) {
             sendPipelineReply(
-                text = formatPipelineCompletionReply(status, targetUsernames),
+                text = formatPipelineCompletionReply(status, targets),
                 chatDetails = chatDetails,
                 messageId = messageId,
                 ctx = ctx,
             )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging $targetUsernames" }
+            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging ${targets.usernames}" }
         }
     }
 
@@ -250,15 +256,21 @@ class WebhookRequestHandler(
         if (!event.isWaitingForBlockingManualAction()) return
         if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")) return
 
-        val targetUsernames = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
-        if (targetUsernames.isNotEmpty()) {
+        val targets = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
+        if (targets.usernames.isNotEmpty()) {
+            val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
+            val text = if (targets.isReviewer) {
+                "${targets.usernames.handles()} pipeline passed; waiting for manual action. Please review $mrRef."
+            } else {
+                "${targets.usernames.handles()} pipeline passed; waiting for manual action."
+            }
             sendPipelineReply(
-                text = "${targetUsernames.handles()} pipeline passed; waiting for manual action.",
+                text = text,
                 chatDetails = chatDetails,
                 messageId = messageId,
                 ctx = ctx,
             )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging $targetUsernames" }
+            ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging ${targets.usernames}" }
         }
     }
 
@@ -267,7 +279,7 @@ class WebhookRequestHandler(
         status: String,
         event: PipelineEvent,
         ctx: EventProcessingContext,
-    ): List<String> {
+    ): PipelineTargets {
         val projectId = event.project?.id
         val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.trim()
         val activeMr = if (projectId != null && !branch.isNullOrBlank()) {
@@ -284,16 +296,28 @@ class WebhookRequestHandler(
 
         return when {
             status == "success" && cachedParticipants?.reviewerUsernames?.isNotEmpty() == true -> {
-                cachedParticipants.reviewerUsernames
+                PipelineTargets(
+                    usernames = cachedParticipants.reviewerUsernames,
+                    isReviewer = true,
+                    mrIid = mrIid,
+                )
             }
             cachedParticipants?.authorUsername != null -> {
-                listOf(cachedParticipants.authorUsername)
+                PipelineTargets(
+                    usernames = listOf(cachedParticipants.authorUsername),
+                    isReviewer = false,
+                    mrIid = mrIid,
+                )
             }
             event.user?.username != null -> {
-                listOf(event.user.username)
+                PipelineTargets(
+                    usernames = listOf(event.user.username),
+                    isReviewer = false,
+                    mrIid = mrIid,
+                )
             }
             else -> {
-                emptyList()
+                PipelineTargets(emptyList())
             }
         }
     }
@@ -643,13 +667,19 @@ class WebhookRequestHandler(
 
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
-    private fun List<String>.handles(): String = joinToString(" ") { "@$it" }
+    private fun List<String>.handles(): String =
+        joinToString(" ") { "@${it.removePrefix("@")}" }
 
     private fun formatPipelineCompletionReply(
         status: String,
-        usernames: List<String>,
+        targets: PipelineTargets,
     ): String {
         val message = randomMessageProvider.getMessageForStatus(status)
-        return "${usernames.handles()} $message".trim()
+        return if (targets.isReviewer && status == "success") {
+            val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
+            "${targets.usernames.handles()} Pipeline passed! Please review $mrRef. $message".trim()
+        } else {
+            "${targets.usernames.handles()} $message".trim()
+        }
     }
 }
