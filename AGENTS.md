@@ -1,11 +1,13 @@
 # Agent Guidelines
 
 ## Important
+
 All code will be reviewed by another AI agent. Shortcuts, simplifications, placeholders, and fallbacks are not allowed—they waste time and will require rework. Write complete, production-ready code the first time.
 
 For long answers, always include a **TLDR;** at the top.
 
 ## Build & Test Commands
+
 - **Build:** `./gradlew build`
 - **Clean build:** `./gradlew clean build`
 - **Run tests:** `./gradlew test`
@@ -18,7 +20,10 @@ For long answers, always include a **TLDR;** at the top.
 - **Run app:** `./gradlew run`
 
 ## Commit/Push Gate (Required)
+
 - Before every commit or push, run the full local gate: `./gradlew lintKotlinMain lintKotlinTest detekt test build`.
+- Before pushing workflow, Markdown, HTML, CSS, or JavaScript changes, run Prettier on touched files, for example `npx --yes prettier@3.6.2 --write <files>`; do not hand-format YAML/HTML alignment.
+- Before pushing GitHub Actions workflow changes, parse workflow YAML and shell blocks locally, then let PR checks confirm the same.
 - Also run the CI-equivalent clean test job: `./gradlew clean test`.
 - If you changed tests, routing, shared fixtures, static/global state, or system-property/env-based config, run `./gradlew clean test` twice before push to catch order-dependent flakes.
 - If any part of that gate fails, do not commit, do not push, and fix the failure first.
@@ -28,6 +33,7 @@ For long answers, always include a **TLDR;** at the top.
 - Before push, verify the actual committed trailer matches the current helper output; if not, amend the commit before pushing so `/verify` does not fail on trailer drift.
 
 ## Branching & Release Management Protocol
+
 - **Zero Direct Push to `main`**: All code changes (features, bugfixes, docs, or version bumps) MUST be created on dedicated branches (`feat/...`, `fix/...`, `chore/...`) and merged via a Pull Request. Direct pushes to `main` are strictly prohibited.
 - **Automatic Issue Linking**: Every PR description MUST include explicit closing keywords (`Closes #<id>` or `Fixes #<id>`) to ensure GitHub automatically closes the corresponding issue upon merge.
 - **Proactive Release & Version Bump Suggestions**:
@@ -38,7 +44,9 @@ For long answers, always include a **TLDR;** at the top.
 ## Pull Request Standards (Open Source Specification)
 
 ### 1. PR Title Format
+
 PR titles must follow the **Conventional Commits** specification (`<type>(<scope>): <description>` in lowercase):
+
 - `feat`: New feature or capability (e.g., `feat(telegram): preserve topic thread ID on command replies`)
 - `fix`: Bug fix (e.g., `fix(ci): decode base64 SSH key in deploy workflow`)
 - `docs`: Documentation updates (e.g., `docs(operations): update deployment guide`)
@@ -47,24 +55,29 @@ PR titles must follow the **Conventional Commits** specification (`<type>(<scope
 - `refactor`: Code refactoring with no functional change
 
 ### 2. PR Body Contract
+
 PR descriptions must be clean, concise, and reviewer-focused. **NEVER paste raw CLI terminal output, Gradle logs, or build dumps into PR descriptions.**
 
 Use this exact structure:
 
 ```md
 ## Summary
+
 - <1 to 3 bullets describing what changed and why>
 
 ## Scope
+
 - <files or components modified>
 
 ## Verification
+
 - [x] `./gradlew lintKotlinMain lintKotlinTest`
 - [x] `./gradlew detekt`
 - [x] `./gradlew test`
 - [x] `./gradlew build`
 
 ## Risk / Rollback
+
 - Risk: <Low / Medium / High with reason>
 - Rollback: <revert commit or restore previous state>
 ```
@@ -124,6 +137,7 @@ src/test/kotlin/net/raquezha/nuecagram/
 ## Architecture
 
 ### Request Flow
+
 1. GitLab sends webhook POST to the configured base path, for example `/nuecagram/webhook`
 2. `WebhookRequestHandler` validates `X-Gitlab-Token` against the installation store and parses the event
 3. `WebhookMessageFormatter` formats event into Telegram message
@@ -131,18 +145,22 @@ src/test/kotlin/net/raquezha/nuecagram/
 5. For pipeline events, messages are consolidated (create/update pattern)
 
 ### Key Components
+
 - **WebhookRequestHandler**: Routes events to appropriate handlers based on `X-Gitlab-Event` header
 - **WebhookMessageFormatter**: Converts GitLab events to formatted Telegram messages (HTML)
 - **WebHookService**: Manages pipeline message ID tracking for consolidation
 - **TelegramService**: Wraps Telegram Bot API (send/edit messages)
 
 ### Pipeline Message Consolidation
+
 Pipeline and job events are consolidated into a single updating message per pipeline:
+
 - First event creates a new message, stores `pipelineId -> messageId`
 - Subsequent events update the existing message
 - Shows job tree with status icons and timing
 
 ### Pipeline & Notification Delivery Policy
+
 - **Reviewer Tagging**: Successful MR pipelines tag assigned reviewers with randomized review call-to-action prompts.
 - **Bot Token Filtering**: Automated CI service tokens (e.g. `group_*_bot_*`, `project_*_bot_*`, `CI_VERSION_WRITEBACK2`) are detected via `isGitLabBotUser()` and never tagged in Telegram chat; falls back to human commit author.
 - **Smart Notification Delivery (`disable_notification`)**:
@@ -151,11 +169,13 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - **Terminal Deduplication**: Terminal pipeline completion replies are deduplicated via `tryMarkPipelineNotification` to prevent repeat pings on GitLab webhook retries.
 
 ## Code Style (Kotlinter/ktlint & detekt enforced)
+
 - Wildcard imports are allowed (ktlint rule disabled in `.editorconfig`)
 - Remove trailing whitespace; ensure files end with newline
 - Generated code in `generated/` is excluded from linting
 
 ## SOLID Principles & Clean Kotlin Guidelines
+
 - **SOLID Architecture (Enforced)**:
   - **Single Responsibility (SRP)**: Keep handler functions, routes, and services focused strictly on one responsibility. Separate request parsing, context resolution, and validation from execution/dispatch.
   - **Open-Closed (OCP)**: Use sealed interfaces and polymorphic handlers rather than modifying core routing when adding capabilities.
@@ -168,16 +188,19 @@ Pipeline and job events are consolidated into a single updating message per pipe
   - Keep function length short, focused, and idiomatic.
 
 ## Naming Conventions
+
 - **Packages:** lowercase dot-separated (`net.raquezha.nuecagram`)
 - **Classes:** PascalCase; interfaces have no prefix, impls use `*Impl` suffix
 - **Test classes:** End with `Test` (e.g., `ApplicationTest`)
 - **Constants:** SCREAMING_SNAKE_CASE in companion objects
 
 ## Error Handling
+
 - Use custom exceptions (e.g., `SkipEventException`) for flow control
 - Wrap async operations in try-catch; log errors via `KLogger`
 
 ## Environment Variables
+
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token from BotFather
 - `TELEGRAM_WEBHOOK_SECRET`: Telegram webhook header secret
 - `PLATFORM_ADMIN_PASSWORD`: platform admin password
@@ -185,9 +208,11 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`: PostgreSQL connection
 
 ## Deployment
-Use the single `compose.yaml` with a private `.env` copied from `env.example` for local and production deployment. Production stores that file at `/opt/nuecagram/.env` and uses the protected workflow documented in `docs/operations.md`.
+
+Use the single `compose.yaml` with a private `.env` copied from `env.example` for local and production deployment. Production stores that file at `/opt/nuecagram/.env`; the main-branch workflow deploys the version tag first, verifies it, then creates the GitHub release.
 
 ## Tech Stack
+
 - **Language:** Kotlin 1.9.24
 - **Framework:** Ktor (server + client)
 - **DI:** Koin with annotations

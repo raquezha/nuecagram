@@ -71,7 +71,7 @@ Nuecagram is a self-hosted GitLab-to-Telegram notification service. One hosted i
 The full operations guide lives in [`docs/`](docs/index.md):
 
 - [Onboarding](docs/onboarding.md)
-- [Operations](docs/operations.md) - includes protected production deploy and rollback prerequisites
+- [Operations](docs/operations.md) - includes automated production deploy, release, and rollback prerequisites
 - [Webhook scripts](docs/webhook-scripts.md)
 
 Build the documentation site with:

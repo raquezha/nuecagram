@@ -180,7 +180,7 @@ class TelegramOnboardingWebhookTest : BaseEventTestHelper() {
     @Test
     fun removedSetupCommandDoesNotLaunchWebAppOrCreateInstallation() {
         val previous = System.getProperty("nuecagram.publicUrl")
-        System.setProperty("nuecagram.publicUrl", "https://android.nweca.com/nuecagram")
+        System.setProperty("nuecagram.publicUrl", "https://example.com/nuecagram")
         try {
             testApplication {
                 configureTestApplication()

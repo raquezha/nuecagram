@@ -457,7 +457,7 @@ class ManagementUiTest : BaseEventTestHelper() {
                 val targetRevUrl = """<div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;" """ +
                     """onclick="copyValue(this.innerText, this)"></div>"""
                 val replacementRevUrl = """<div id="revUrl" class="codebox" style="margin-top:4px;cursor:pointer;">""" +
-                    """https://android.nweca.com/nuecagram/webhook</div>"""
+                    """https://example.com/nuecagram/webhook</div>"""
 
                 val targetRevHooks = """<a id="btnRevGitlabHooks" href="#" target="_blank" rel="noopener" """ +
                     """class="primary" style="display:none;text-align:center;text-decoration:none;""" +
