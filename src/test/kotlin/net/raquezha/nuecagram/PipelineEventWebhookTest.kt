@@ -127,6 +127,36 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun testBotTriggeredPipelineFallsBackToCommitAuthorEmailHandle() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val authorJson = "{\"name\": \"Razyl Vidal\", \"email\": \"raquezha@example.com\"}"
+            val botPayloadWithCommitAuthor = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"username\": \"admin\"", "\"username\": \"group_44_bot_token\"")
+                .replace("\"name\": \"Administrator\"", "\"name\": \"CI_VERSION_WRITEBACK2\"")
+                .replace("\"author\": null", "\"author\": $authorJson")
+
+            postWebhook(EVENT_PIPELINE, botPayloadWithCommitAuthor)
+
+            val completionReply = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().find { it.text.contains("@raquezha") }
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(completionReply).isNotNull()
+            assertThat(completionReply?.text).contains("@raquezha")
+            assertThat(completionReply?.text).doesNotContain("group_44_bot")
+        }
+
+    @Test
     fun testMrPipelineFailurePingsCreator() =
         testApplication {
             configureTestApplication()

@@ -294,7 +294,7 @@ class WebhookRequestHandler(
         val author = cachedParticipants?.authorUsername?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
         val validReviewers = resolveReviewers(rawReviewers, author)
         val fallbackUser = event.user?.username?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
-            ?: event.commit?.author?.name?.takeIf { it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser() }
+            ?: extractCommitAuthorHandle(event)
 
         return when {
             status == "success" && validReviewers.isNotEmpty() ->
@@ -345,6 +345,13 @@ class WebhookRequestHandler(
         } else {
             rawReviewers
         }
+
+    private fun extractCommitAuthorHandle(event: PipelineEvent): String? =
+        event.commit?.author?.name?.takeIf {
+            it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser()
+        } ?: event.commit?.author?.email?.takeIf(String::isNotBlank)
+            ?.substringBefore("@")
+            ?.takeIf { it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser() }
 
     private suspend fun sendPipelineReply(
         text: String,
