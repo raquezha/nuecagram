@@ -39,6 +39,34 @@ class PushEventWebhookTest : BaseEventTestHelper() {
             assertThat(message?.disableNotification).isTrue()
         }
 
+    @Test
+    fun testMainPushEventIsSentWithAudibleNotification() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val mainPayload = SAMPLE_PAYLOAD
+                .replace("\"ref\": \"refs/heads/nuecalytics\"", "\"ref\": \"refs/heads/main\"")
+                .replace("\"ref_protected\": false", "\"ref_protected\": true")
+
+            val response = postWebhook(EVENT_PUSH, mainPayload)
+            assertThat(response).isEqualTo("Webhook received successfully")
+
+            val message = kotlinx.coroutines.runBlocking {
+                var found: net.raquezha.nuecagram.telegram.Message? = null
+                for (i in 1..100) {
+                    found = mockTelegramService.sentMessages().firstOrNull()
+                    if (found != null) break
+                    kotlinx.coroutines.delay(50)
+                }
+                found
+            }
+
+            assertThat(message).isNotNull()
+            assertThat(message?.disableNotification).isFalse()
+        }
+
     companion object {
         val SAMPLE_PAYLOAD =
             """

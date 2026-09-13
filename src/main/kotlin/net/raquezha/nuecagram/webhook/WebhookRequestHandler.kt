@@ -418,6 +418,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatJobOnlyPipelineMessage(trackedPipeline, pipelineId),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
+                    disableNotification = true,
                 ),
             )
         ctx.logger.debug {
@@ -520,6 +521,9 @@ class WebhookRequestHandler(
             null
         }
 
+        val isMainBranch = branch in listOf("main", "master", "production", "staging")
+        val isSilentPush = !isMainBranch
+
         val messageId =
             ctx.telegramService.sendMessage(
                 Message(
@@ -529,7 +533,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatPushEventMessage(event, mrIid),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
-                    disableNotification = true,
+                    disableNotification = isSilentPush,
                 ),
             )
         ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
