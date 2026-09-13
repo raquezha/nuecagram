@@ -115,16 +115,14 @@ The entrypoint accepts only `deploy` or `rollback` and only valid `raquezha/nuec
 
 Every push to `main`:
 1. Runs CI quality gates: lint, test, build, dependency scan.
-2. Builds the Docker image and tags it with `sha-<commit>`.
-3. Resolves the pushed image digest and requests production deployment.
-4. Triggers the protected `production` environment approval gate on GitHub.
-5. Upon approval, SSHs to the server, runs `/usr/local/bin/nuecagram-deploy`, and waits for `/nuecagram/health/ready`.
-6. Atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` upon healthy deployment.
+2. Builds the Docker image and tags it with both `v<version>` and `sha-<commit>`.
+3. Creates the GitHub tag and release with grouped release notes plus artifact checksums.
+4. SSHs to the server without a GitHub environment approval gate, runs `/usr/local/bin/nuecagram-deploy`, and waits for `/nuecagram/health/ready`.
+5. Atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` to the deployed version tag upon healthy deployment.
 
 ## Rollback
 
 To trigger a rollback:
-1. Open **Actions > Build & Deploy to Production > Run workflow**.
+1. Open **Actions > Deploy to Production > Run workflow**.
 2. Select `rollback` and leave `image_digest` as `previous`.
-3. Approve the production deployment gate.
-4. The server deploys the previously recorded healthy digest and verifies readiness.
+3. The server deploys the previously recorded healthy image and verifies readiness.
