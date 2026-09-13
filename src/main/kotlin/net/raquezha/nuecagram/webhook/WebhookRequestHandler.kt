@@ -294,6 +294,7 @@ class WebhookRequestHandler(
         val author = cachedParticipants?.authorUsername?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
         val validReviewers = resolveReviewers(rawReviewers, author)
         val fallbackUser = event.user?.username?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
+            ?: event.commit?.author?.name?.takeIf { it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser() }
 
         return when {
             status == "success" && validReviewers.isNotEmpty() ->
@@ -731,6 +732,9 @@ class WebhookRequestHandler(
         if (clean.isBlank()) return true
         return clean.matches(Regex("""^(project|group)_\d+_bot.*""")) ||
             clean.matches(Regex("""^service[_-]account.*""")) ||
+            clean.matches(Regex(""".*writeback.*""")) ||
+            clean.matches(Regex("""^ci[_-].*""")) ||
+            clean.matches(Regex(""".*token.*bot.*""")) ||
             clean in listOf(
                 "gitlab-ci-token",
                 "support-bot",
