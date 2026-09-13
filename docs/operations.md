@@ -56,6 +56,7 @@ Allow public traffic only to SSH, HTTP, and HTTPS as required. Production Compos
 ## Telegram Bot Token Rotation
 
 To rotate the `TELEGRAM_BOT_TOKEN`:
+
 1. Request a new bot token from Telegram's `@BotFather` using `/revoke` or by creating a new token for your bot.
 2. Update `TELEGRAM_BOT_TOKEN` in `/opt/nuecagram/.env` (or local `.env`) with the new token string.
 3. Restart the Nuecagram container or service:
@@ -114,8 +115,9 @@ The entrypoint accepts only `deploy` or `rollback` and only valid `raquezha/nuec
 ## Continuous deployment flow
 
 Every push to `main`:
+
 1. Runs CI quality gates: lint, test, assemble-only build, dependency scan.
-2. Builds the Docker image and tags it with both `v<version>` and `sha-<commit>`.
+2. Resolves the next unused patch version when the requested tag already exists, then builds the Docker image and tags it with both `v<version>` and `sha-<commit>`.
 3. Deploys the version tag through the `production` GitHub environment, which provides deployment vars/secrets but has no required reviewer approval gate.
 4. Verifies `/nuecagram/health/ready` inside the protected deploy entrypoint, then atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` to the deployed version tag.
 5. Verifies the public site shows the deployed version.
@@ -124,6 +126,7 @@ Every push to `main`:
 ## Rollback
 
 To trigger a rollback:
+
 1. Open **Actions > Deploy to Production > Run workflow**.
 2. Select `rollback` and leave `image_digest` as `previous`.
 3. The server deploys the previously recorded healthy image and verifies readiness.

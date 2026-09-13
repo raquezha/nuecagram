@@ -12,7 +12,7 @@ on:
       merge_sha:
         description: Main-branch commit SHA to publish and deploy (defaults to HEAD)
         required: false
-        default: ''
+        default: ""
 
 permissions:
   contents: write
@@ -75,21 +75,27 @@ jobs:
         id: resolve-version
         run: |
           version=$(tr -d '[:space:]' < version.txt)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version.txt must contain x.y.z" >&2
+            exit 1
+          fi
           tag="v$version"
           git fetch origin --tags || true
-          if git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
+          while git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; do
             echo "Tag $tag already exists. Auto-incrementing patch version..."
             IFS='.' read -r major minor patch <<< "$version"
             patch=$((patch + 1))
             version="$major.$minor.$patch"
             tag="v$version"
+          done
+          if [ "$version" != "$(tr -d '[:space:]' < version.txt)" ]; then
             echo "$version" > version.txt
             echo "$version" > src/main/resources/version.txt
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add version.txt src/main/resources/version.txt
-            git commit -m "chore(release): auto-bump version to $version [skip ci]" || true
-            git push origin HEAD:main || true
+            git commit -m "chore(release): auto-bump version to $version [skip ci]"
+            git push origin HEAD:main
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -107,7 +113,6 @@ jobs:
           mkdir -p release-artifacts
           cp build/libs/nuecagram-fat.jar "release-artifacts/nuecagram-$version-fat.jar"
           sha256sum "release-artifacts/nuecagram-$version-fat.jar" > release-artifacts/checksums.txt
-          sha256sum build/jib/nuecagram-jib-image.tar >> release-artifacts/checksums.txt
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

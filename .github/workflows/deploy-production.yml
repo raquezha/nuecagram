@@ -116,7 +116,14 @@ jobs:
         if: inputs.action == 'deploy' && startsWith(env.SANITY_IMAGE, 'raquezha/nuecagram:v')
         run: |
           version="${SANITY_IMAGE##*:}"
-          curl -fsSL "$PUBLIC_URL" | grep -F "${version}"
+          for attempt in {1..30}; do
+            if curl -fsSL "$PUBLIC_URL" | grep -F "${version}"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Public site did not show ${version} after deploy" >&2
+          exit 1
 
       - name: Remove SSH credentials
         if: always()
