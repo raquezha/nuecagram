@@ -72,7 +72,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Auto-resolve version tag
+      - name: Resolve version tag
         id: resolve-version
         run: |
           version=$(tr -d '[:space:]' < version.txt)
@@ -82,21 +82,9 @@ jobs:
           fi
           tag="v$version"
           git fetch origin --tags || true
-          while git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; do
-            echo "Tag $tag already exists. Auto-incrementing patch version..."
-            IFS='.' read -r major minor patch <<< "$version"
-            patch=$((patch + 1))
-            version="$major.$minor.$patch"
-            tag="v$version"
-          done
-          if [ "$version" != "$(tr -d '[:space:]' < version.txt)" ]; then
-            echo "$version" > version.txt
-            echo "$version" > src/main/resources/version.txt
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add version.txt src/main/resources/version.txt
-            git commit -m "chore(release): auto-bump version to $version [skip ci]"
-            git push origin HEAD:main
+          if git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
+            echo "Tag $tag already exists. Bump version.txt through a release PR before deploying." >&2
+            exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
