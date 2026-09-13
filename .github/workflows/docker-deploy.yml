@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha_tag: ${{ steps.sha_tag.outputs.sha_tag }}
+      version_tag: ${{ steps.push-image.outputs.tag }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha }}
     steps:
@@ -84,6 +85,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build release artifacts
         run: ./gradlew buildImage buildFatJar
@@ -120,12 +122,55 @@ jobs:
         run: |
           tag="${{ steps.push-image.outputs.tag }}"
           version="${{ steps.push-image.outputs.version }}"
-          target_sha="${{ steps.sha_tag.outputs.target_sha }}"
+          target_sha="${{ steps.resolve-version.outputs.release_sha }}"
           if ! git rev-parse "$tag" >/dev/null 2>&1; then
             git tag "$tag" "$target_sha"
             git push origin "$tag" || true
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            previous_tag=$(git describe --tags --abbrev=0 "$target_sha^" 2>/dev/null || true)
+            range="$target_sha"
+            if [ -n "$previous_tag" ]; then
+              range="$previous_tag..$target_sha"
+            fi
+            features=$(mktemp)
+            fixes=$(mktemp)
+            deployment=$(mktemp)
+            maintenance=$(mktemp)
+            docs=$(mktemp)
+            other=$(mktemp)
+            while IFS=$'\t' read -r subject short_sha; do
+              item="* $subject ($short_sha)"
+              case "$subject" in
+                feat*) echo "$item" >> "$features" ;;
+                fix*) echo "$item" >> "$fixes" ;;
+                ci*|build*) echo "$item" >> "$deployment" ;;
+                chore*|refactor*|perf*|test*) echo "$item" >> "$maintenance" ;;
+                docs*) echo "$item" >> "$docs" ;;
+                *) echo "$item" >> "$other" ;;
+              esac
+            done < <(git log --reverse --format='%s%x09%h' "$range")
+            {
+              echo "## What's Changed"
+              if [ -s "$features" ]; then echo; echo "### Features"; cat "$features"; fi
+              if [ -s "$fixes" ]; then echo; echo "### Fixes"; cat "$fixes"; fi
+              if [ -s "$deployment" ]; then echo; echo "### CI / Deployment"; cat "$deployment"; fi
+              if [ -s "$maintenance" ]; then echo; echo "### Maintenance"; cat "$maintenance"; fi
+              if [ -s "$docs" ]; then echo; echo "### Documentation"; cat "$docs"; fi
+              if [ -s "$other" ]; then echo; echo "### Other"; cat "$other"; fi
+              if ! [ -s "$features" ] && ! [ -s "$fixes" ] && ! [ -s "$deployment" ] && ! [ -s "$maintenance" ] && ! [ -s "$docs" ] && ! [ -s "$other" ]; then
+                echo
+                echo "No user-facing changes in this release."
+              fi
+              echo
+              echo "## Deployment"
+              echo "* Docker image: \`raquezha/nuecagram:$tag\`"
+              echo "* Published from commit: \`$target_sha\`"
+              if [ -n "$previous_tag" ]; then
+                echo
+                echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$previous_tag...$tag"
+              fi
+            } > release-notes.md
             cd build/libs
             sha256sum "nuecagram-fat.jar" > checksums.txt
             cd ../jib
@@ -135,7 +180,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --target "$target_sha" \
               --title "v$version" \
-              --generate-notes \
+              --notes-file release-notes.md \
               "build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar" \
               "build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar" \
               "build/libs/checksums.txt#checksums.txt" || true
@@ -146,5 +191,5 @@ jobs:
     uses: ./.github/workflows/deploy-production.yml
     with:
       action: deploy
-      image_digest: raquezha/nuecagram:${{ needs.publish.outputs.sha_tag }}
+      image_digest: raquezha/nuecagram:${{ needs.publish.outputs.version_tag }}
     secrets: inherit
