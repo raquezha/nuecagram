@@ -3,7 +3,11 @@ name: Dependency Scan
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-on: [workflow_call, workflow_dispatch]
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "25 3 * * 1"
 
 permissions:
   contents: read
@@ -11,9 +15,39 @@ permissions:
 jobs:
   dependency-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect dependency-relevant changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_scan=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- \
+            .github/workflows \
+            build.gradle.kts \
+            settings.gradle.kts \
+            gradle.properties \
+            gradle \
+            compose.yaml \
+            Dockerfile; then
+            echo "run_scan=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_scan=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip dependency scan
+        if: steps.changes.outputs.run_scan == 'false'
+        run: echo "No dependency-relevant files changed. Scheduled scan still covers newly disclosed CVEs."
+
       - uses: aquasecurity/trivy-action@v0.36.0
+        if: steps.changes.outputs.run_scan == 'true'
         with:
           scan-type: fs
           scan-ref: .

@@ -39,6 +39,7 @@ jobs:
   publish:
     needs: [lint, test, build, dependency-scan]
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     outputs:
       sha_tag: ${{ steps.sha_tag.outputs.sha_tag }}
       version: ${{ steps.push-image.outputs.version }}
@@ -156,6 +157,7 @@ jobs:
   release:
     needs: [publish, auto-deploy]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout released commit
         uses: actions/checkout@v5
