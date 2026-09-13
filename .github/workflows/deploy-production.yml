@@ -40,7 +40,7 @@ jobs:
     environment:
       name: production
     env:
-      PUBLIC_URL: ${{ vars.NUECAGRAM_PUBLIC_URL || 'https://android.nweca.com/nuecagram' }}
+      PUBLIC_URL: ${{ vars.NUECAGRAM_PUBLIC_URL }}
       SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
       SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
       SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
@@ -54,6 +54,7 @@ jobs:
         run: |
           test -n "$SSH_PRIVATE_KEY_B64"
           test -n "$SSH_KNOWN_HOSTS"
+          test -n "$PUBLIC_URL"
           [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
           [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]]
