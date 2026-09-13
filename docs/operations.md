@@ -117,8 +117,9 @@ Every push to `main`:
 1. Runs CI quality gates: lint, test, build, dependency scan.
 2. Builds the Docker image and tags it with both `v<version>` and `sha-<commit>`.
 3. Creates the GitHub tag and release with grouped release notes plus artifact checksums.
-4. SSHs to the server without a GitHub environment approval gate, runs `/usr/local/bin/nuecagram-deploy`, and waits for `/nuecagram/health/ready`.
-5. Atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` to the deployed version tag upon healthy deployment.
+4. Uses the `production` GitHub environment for deployment vars/secrets only; required reviewer approval is disabled.
+5. SSHs to the server, runs `/usr/local/bin/nuecagram-deploy`, and waits for `/nuecagram/health/ready`.
+6. Atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` to the deployed version tag upon healthy deployment.
 
 ## Rollback
 
