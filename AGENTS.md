@@ -185,7 +185,7 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`: PostgreSQL connection
 
 ## Deployment
-Use the single `compose.yaml` with a private `.env` copied from `env.example` for local and production deployment. Production stores that file at `/opt/nuecagram/.env` and uses the protected workflow documented in `docs/operations.md`.
+Use the single `compose.yaml` with a private `.env` copied from `env.example` for local and production deployment. Production stores that file at `/opt/nuecagram/.env`; the main-branch workflow deploys the version tag first, verifies it, then creates the GitHub release.
 
 ## Tech Stack
 - **Language:** Kotlin 1.9.24

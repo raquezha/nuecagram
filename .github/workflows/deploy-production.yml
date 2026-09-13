@@ -40,6 +40,7 @@ jobs:
     environment:
       name: production
     env:
+      PUBLIC_URL: ${{ vars.NUECAGRAM_PUBLIC_URL || 'https://android.nweca.com/nuecagram' }}
       SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
       SSH_PORT: ${{ vars.PRODUCTION_SSH_PORT || '22' }}
       SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
@@ -110,6 +111,12 @@ jobs:
             -p "$SSH_PORT" \
             "$SSH_USER@$SSH_HOST" \
             "sudo /usr/local/bin/nuecagram-deploy --mode $ACTION --image $IMAGE"
+
+      - name: Verify deployed version
+        if: inputs.action == 'deploy' && startsWith(env.SANITY_IMAGE, 'raquezha/nuecagram:v')
+        run: |
+          version="${SANITY_IMAGE##*:}"
+          curl -fsSL "$PUBLIC_URL" | grep -F "${version}"
 
       - name: Remove SSH credentials
         if: always()

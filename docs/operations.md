@@ -114,12 +114,12 @@ The entrypoint accepts only `deploy` or `rollback` and only valid `raquezha/nuec
 ## Continuous deployment flow
 
 Every push to `main`:
-1. Runs CI quality gates: lint, test, build, dependency scan.
+1. Runs CI quality gates: lint, test, assemble-only build, dependency scan.
 2. Builds the Docker image and tags it with both `v<version>` and `sha-<commit>`.
-3. Creates the GitHub tag and release with grouped release notes plus artifact checksums.
-4. Uses the `production` GitHub environment for deployment vars/secrets only; required reviewer approval is disabled.
-5. SSHs to the server, runs `/usr/local/bin/nuecagram-deploy`, and waits for `/nuecagram/health/ready`.
-6. Atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` to the deployed version tag upon healthy deployment.
+3. Deploys the version tag through the `production` GitHub environment, which provides deployment vars/secrets but has no required reviewer approval gate.
+4. Verifies `/nuecagram/health/ready` inside the protected deploy entrypoint, then atomically updates `NUECAGRAM_IMAGE` in `/opt/nuecagram/.env` to the deployed version tag.
+5. Verifies the public site shows the deployed version.
+6. Creates the GitHub tag and release only after deployment succeeds, with grouped release notes and artifact checksums.
 
 ## Rollback
 

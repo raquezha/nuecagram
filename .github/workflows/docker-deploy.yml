@@ -19,6 +19,10 @@ permissions:
   packages: write
   pull-requests: read
 
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   lint:
     uses: ./.github/workflows/lint.yml
@@ -37,7 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha_tag: ${{ steps.sha_tag.outputs.sha_tag }}
+      version: ${{ steps.push-image.outputs.version }}
       version_tag: ${{ steps.push-image.outputs.tag }}
+      release_sha: ${{ steps.resolve-version.outputs.release_sha }}
     env:
       MERGE_SHA: ${{ inputs.merge_sha }}
     steps:
@@ -60,8 +66,10 @@ jobs:
         with:
           java-version: "17"
           distribution: temurin
-          cache: gradle
           overwrite-settings: false
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Auto-resolve version tag
         id: resolve-version
@@ -88,10 +96,26 @@ jobs:
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build release artifacts
-        run: ./gradlew buildImage buildFatJar
+        run: ./gradlew --build-cache buildImage buildFatJar
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Prepare release artifacts
+        run: |
+          version="${{ steps.resolve-version.outputs.version }}"
+          mkdir -p release-artifacts
+          cp build/libs/nuecagram-fat.jar "release-artifacts/nuecagram-$version-fat.jar"
+          sha256sum "release-artifacts/nuecagram-$version-fat.jar" > release-artifacts/checksums.txt
+          sha256sum build/jib/nuecagram-jib-image.tar >> release-artifacts/checksums.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release-artifacts
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Load Docker image
         run: docker load -i build/jib/nuecagram-jib-image.tar
@@ -116,16 +140,41 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Generate checksums & Create GitHub release
+  auto-deploy:
+    needs: publish
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      action: deploy
+      image_digest: raquezha/nuecagram:${{ needs.publish.outputs.version_tag }}
+    secrets: inherit
+
+  release:
+    needs: [publish, auto-deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout released commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.publish.outputs.release_sha }}
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: release-artifacts
+          path: release-artifacts
+
+      - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${{ steps.push-image.outputs.tag }}"
-          version="${{ steps.push-image.outputs.version }}"
-          target_sha="${{ steps.resolve-version.outputs.release_sha }}"
+          tag="${{ needs.publish.outputs.version_tag }}"
+          version="${{ needs.publish.outputs.version }}"
+          target_sha="${{ needs.publish.outputs.release_sha }}"
+          git fetch origin --tags || true
           if ! git rev-parse "$tag" >/dev/null 2>&1; then
             git tag "$tag" "$target_sha"
-            git push origin "$tag" || true
+            git push origin "$tag"
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             previous_tag=$(git describe --tags --abbrev=0 "$target_sha^" 2>/dev/null || true)
@@ -171,25 +220,11 @@ jobs:
                 echo "**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$previous_tag...$tag"
               fi
             } > release-notes.md
-            cd build/libs
-            sha256sum "nuecagram-fat.jar" > checksums.txt
-            cd ../jib
-            sha256sum "nuecagram-jib-image.tar" >> ../libs/checksums.txt
-            cd ../..
             gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$target_sha" \
               --title "v$version" \
               --notes-file release-notes.md \
-              "build/libs/nuecagram-fat.jar#nuecagram-$version-fat.jar" \
-              "build/jib/nuecagram-jib-image.tar#nuecagram-$version.jib.tar" \
-              "build/libs/checksums.txt#checksums.txt" || true
+              "release-artifacts/nuecagram-$version-fat.jar" \
+              "release-artifacts/checksums.txt"
           fi
-
-  auto-deploy:
-    needs: publish
-    uses: ./.github/workflows/deploy-production.yml
-    with:
-      action: deploy
-      image_digest: raquezha/nuecagram:${{ needs.publish.outputs.version_tag }}
-    secrets: inherit
