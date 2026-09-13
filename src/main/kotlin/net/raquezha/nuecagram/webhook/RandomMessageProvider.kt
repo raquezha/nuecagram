@@ -62,6 +62,64 @@ class RandomMessageProvider {
                 "Pipeline passed! Pang-senior dev ka na niyan!",
             )
 
+        private val REVIEW_PROMPTS =
+            listOf(
+                "Pipeline passed! Please review {mrRef}.",
+                "All checks passed! Ready for your review on {mrRef}.",
+                "Green build! Over to you for review on {mrRef}.",
+                "CI passed cleanly! Please take a look and review {mrRef}.",
+                "Tests passed! Ready for your review on {mrRef}.",
+                "Pipeline succeeded! Ready for your review and stamp of approval on {mrRef}.",
+                "All green! Time to review {mrRef}.",
+                "Build passed! Please review the changes in {mrRef}.",
+                "Pipeline green! Your review is requested on {mrRef}.",
+                "Tests are passing! Please review {mrRef} when you have a moment.",
+                "Smooth build! Over to you to review {mrRef}.",
+                "Pipeline is green and ready for review on {mrRef}.",
+                "All checks are good! Please review {mrRef}.",
+                "Green light! {mrRef} is waiting for your review.",
+                "Pipeline passed! Please review and inspect {mrRef}.",
+                "LGTM incoming? The build is green, please review {mrRef}!",
+                "The CI gods are pleased with {mrRef}. Now it's your turn to review!",
+                "Tests are green! Time to review {mrRef}.",
+                "Fresh code out of the oven! Please review {mrRef} while it's hot.",
+                "Zero failing tests on {mrRef}! Ready for your eagle eyes to review.",
+                "Pipeline flew through without a scratch. Review needed on {mrRef}!",
+                "The tests said yes! Does your review say yes to {mrRef} too?",
+                "Green build alert! Time to drop some review wisdom on {mrRef}.",
+                "All automated checks passed on {mrRef}. Human review requested!",
+                "Robot tests passed on {mrRef}. Please apply human review!",
+                "The pipeline gave {mrRef} a 10/10. Ready for your review score!",
+                "CI gauntlet survived! Please review {mrRef} before it expires.",
+                "Code compiles, tests pass! Give {mrRef} that sweet review stamp.",
+                "Clean pipeline! Put down that coffee and review {mrRef} real quick.",
+                "Not a single test complained about {mrRef}. Time for your review!",
+                "Ready for review on {mrRef}! No pressure, but everyone is waiting.",
+                "The hard part is done, CI passed! Now the fun part: review {mrRef}.",
+                "Build is green! Time to review and find any sneaky bugs in {mrRef}.",
+                "Tests passed! Don't leave {mrRef} hanging in review purgatory.",
+                "Green pipeline! Review {mrRef} now and be the hero of the sprint.",
+                "Pipeline passed! Review {mrRef} with approval and go grab a snack.",
+                "All tests green on {mrRef}! Your rubber duck said it's time to review.",
+                "Smooth sailing in CI! Please give {mrRef} a quick review.",
+                "Everything is passing on {mrRef}! Hit us with that review feedback.",
+                "Code is tested, vetted, and waiting for your review on {mrRef}!",
+                "Green na green ang pipeline sa {mrRef}! Pa-review naman diyan, lodi!",
+                "All tests passed sa {mrRef}! Silip and review naman diyan, par!",
+                "Smooth build sa {mrRef}! Pa-review at pa-stamp ng approval, boss!",
+                "Pasado lahat ng tests sa {mrRef}! Kape muna sabay review!",
+                "Wala nang red sa CI ng {mrRef}! Isa kang bayani kapag na-review mo 'to.",
+                "Green na ang ilaw sa {mrRef}! Quick review lang daw sabi ni author.",
+                "Passing lahat sa {mrRef}! 'Wag mo nang patagalin sa review queue, par!",
+                "First try green sa {mrRef}! Pa-review kung LGTM na ba!",
+                "CI approved si {mrRef}! Ikaw na lang kulang sa review para ma-ship na!",
+                "Smooth sailing sa {mrRef}! Baka pwedeng pa-review bago mag-uwian!",
+                "Bigyan ng jacket! I-review mo na 'to sa {mrRef}!",
+                "Hetong paybtawsan pieces! Review mo na lods ang {mrRef}!",
+                "Bigyan ng jacket at paybtawsan! Pa-review na sa {mrRef}!",
+                "Paybtawsan para sa mabilis na review sa {mrRef}!",
+            )
+
         private val FAILED_MESSAGES =
             listOf(
                 "The pipeline has passed... away. RIP.",
@@ -230,6 +288,9 @@ class RandomMessageProvider {
     }
 
     fun getSuccessMessage(): String = "✅ ${SUCCESS_MESSAGES.random()}"
+
+    fun getReviewerPrompt(mrRef: String): String =
+        REVIEW_PROMPTS.random().replace("{mrRef}", mrRef)
 
     fun getFailedMessage(): String = "❌ ${FAILED_MESSAGES.random()}"
 

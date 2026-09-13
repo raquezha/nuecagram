@@ -142,6 +142,14 @@ Pipeline and job events are consolidated into a single updating message per pipe
 - Subsequent events update the existing message
 - Shows job tree with status icons and timing
 
+### Pipeline & Notification Delivery Policy
+- **Reviewer Tagging**: Successful MR pipelines tag assigned reviewers with randomized review call-to-action prompts.
+- **Bot Token Filtering**: Automated CI service tokens (e.g. `group_*_bot_*`, `project_*_bot_*`, `CI_VERSION_WRITEBACK2`) are detected via `isGitLabBotUser()` and never tagged in Telegram chat; falls back to human commit author.
+- **Smart Notification Delivery (`disable_notification`)**:
+  - Feature branch pushes and intermediate pipeline running updates are delivered silently (`disable_notification: true`) to prevent chat noise.
+  - Production/main pushes, build failures, manual-waiting actions, and reviewer review requests alert audibly (`disable_notification: false`).
+- **Terminal Deduplication**: Terminal pipeline completion replies are deduplicated via `tryMarkPipelineNotification` to prevent repeat pings on GitLab webhook retries.
+
 ## Code Style (Kotlinter/ktlint & detekt enforced)
 - Wildcard imports are allowed (ktlint rule disabled in `.editorconfig`)
 - Remove trailing whitespace; ensure files end with newline

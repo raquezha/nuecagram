@@ -32,6 +32,12 @@ private data class MergeRequestState(
     val action: String?,
 )
 
+private data class PipelineTargets(
+    val usernames: List<String>,
+    val isReviewer: Boolean = false,
+    val mrIid: Long? = null,
+)
+
 @Suppress("TooManyFunctions")
 class WebhookRequestHandler(
     private val application: Application,
@@ -164,8 +170,9 @@ class WebhookRequestHandler(
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val pipelineId = event.objectAttributes.id
-        val status = event.objectAttributes.status
+        val attrs = event.objectAttributes ?: return
+        val pipelineId = attrs.id
+        val status = attrs.status
 
         ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
         ctx.webhookService.cleanupStaleEntries()
@@ -181,6 +188,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatEventMessage(event),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
+                    disableNotification = true,
                 ),
             )
         ctx.logger.debug { "Pipeline #$pipelineId: sent/updated message $messageId" }
@@ -227,15 +235,19 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
-        val targetUsernames = resolvePipelineTargetUsernames(installationId, status, event, ctx)
-        if (targetUsernames.isNotEmpty()) {
+        if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "terminal_$status")) return
+
+        val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
+        if (targets.usernames.isNotEmpty()) {
+            val isSilent = status in listOf("canceled", "skipped")
             sendPipelineReply(
-                text = formatPipelineCompletionReply(status, targetUsernames),
+                text = formatPipelineCompletionReply(status, targets),
                 chatDetails = chatDetails,
                 messageId = messageId,
+                disableNotification = isSilent,
                 ctx = ctx,
             )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging $targetUsernames" }
+            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging ${targets.usernames}" }
         }
     }
 
@@ -250,15 +262,21 @@ class WebhookRequestHandler(
         if (!event.isWaitingForBlockingManualAction()) return
         if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")) return
 
-        val targetUsernames = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
-        if (targetUsernames.isNotEmpty()) {
+        val targets = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
+        if (targets.usernames.isNotEmpty()) {
+            val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
+            val text = if (targets.isReviewer) {
+                "${targets.usernames.handles()} pipeline passed; waiting for manual action. Please review $mrRef."
+            } else {
+                "${targets.usernames.handles()} pipeline passed; waiting for manual action."
+            }
             sendPipelineReply(
-                text = "${targetUsernames.handles()} pipeline passed; waiting for manual action.",
+                text = text,
                 chatDetails = chatDetails,
                 messageId = messageId,
                 ctx = ctx,
             )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging $targetUsernames" }
+            ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging ${targets.usernames}" }
         }
     }
 
@@ -267,41 +285,79 @@ class WebhookRequestHandler(
         status: String,
         event: PipelineEvent,
         ctx: EventProcessingContext,
-    ): List<String> {
+    ): PipelineTargets {
+        val (mrIid, cachedParticipants) = findCachedMrParticipants(installationId, event, ctx)
+
+        val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty()
+            .filter { it.isNotBlank() && !it.isGitLabBotUser() }
+            .distinct()
+        val author = cachedParticipants?.authorUsername?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
+        val validReviewers = resolveReviewers(rawReviewers, author)
+        val fallbackUser = event.user?.username?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
+            ?: extractCommitAuthorHandle(event)
+
+        return when {
+            status == "success" && validReviewers.isNotEmpty() ->
+                PipelineTargets(validReviewers, isReviewer = true, mrIid = mrIid)
+            author != null ->
+                PipelineTargets(listOf(author), isReviewer = false, mrIid = mrIid)
+            fallbackUser != null ->
+                PipelineTargets(listOf(fallbackUser), isReviewer = false, mrIid = mrIid)
+            else ->
+                PipelineTargets(emptyList())
+        }
+    }
+
+    private suspend fun findCachedMrParticipants(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): Pair<Long?, net.raquezha.nuecagram.db.models.MrParticipants?> {
         val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
         val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.trim()
         val activeMr = if (projectId != null && !branch.isNullOrBlank()) {
             ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
         } else {
             null
         }
-        val mrIid = event.mergeRequest?.iid ?: activeMr?.mrIid
-        val cachedParticipants = if (mrIid != null && projectId != null) {
+        val mrIid = event.extractMrIid(activeMr?.mrIid)
+        val cached = if (mrIid != null && projectId != null) {
             ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
         } else {
             null
         }
-
-        return when {
-            status == "success" && cachedParticipants?.reviewerUsernames?.isNotEmpty() == true -> {
-                cachedParticipants.reviewerUsernames
-            }
-            cachedParticipants?.authorUsername != null -> {
-                listOf(cachedParticipants.authorUsername)
-            }
-            event.user?.username != null -> {
-                listOf(event.user.username)
-            }
-            else -> {
-                emptyList()
-            }
-        }
+        return mrIid to cached
     }
+
+    private fun PipelineEvent.extractMrIid(activeMrIid: Long?): Long? =
+        mergeRequest?.iid
+            ?: activeMrIid
+            ?: objectAttributes?.ref?.let { ref ->
+                Regex("""refs/merge-requests/(\d+)/""").find(ref)?.groupValues?.get(1)?.toLongOrNull()
+            }
+
+    private fun resolveReviewers(rawReviewers: List<String>, author: String?): List<String> =
+        if (author != null && rawReviewers.size > 1) {
+            val normalizedAuthor = author.trim().removePrefix("@")
+            rawReviewers.filterNot { it.trim().removePrefix("@").equals(normalizedAuthor, ignoreCase = true) }
+        } else {
+            rawReviewers
+        }
+
+    private fun extractCommitAuthorHandle(event: PipelineEvent): String? =
+        event.commit?.author?.name?.takeIf {
+            it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser()
+        } ?: event.commit?.author?.email?.takeIf(String::isNotBlank)
+            ?.substringBefore("@")
+            ?.takeIf { it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser() }
 
     private suspend fun sendPipelineReply(
         text: String,
         chatDetails: ChatDetails,
         messageId: String,
+        disableNotification: Boolean = false,
         ctx: EventProcessingContext,
     ) {
         ctx.telegramService.sendMessage(
@@ -311,6 +367,7 @@ class WebhookRequestHandler(
                 text = text,
                 parseMode = PARSE_MODE,
                 replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+                disableNotification = disableNotification,
             ),
         )
     }
@@ -381,6 +438,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatJobOnlyPipelineMessage(trackedPipeline, pipelineId),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
+                    disableNotification = true,
                 ),
             )
         ctx.logger.debug {
@@ -483,6 +541,9 @@ class WebhookRequestHandler(
             null
         }
 
+        val isMainBranch = branch in listOf("main", "master", "production", "staging")
+        val isSilentPush = !isMainBranch
+
         val messageId =
             ctx.telegramService.sendMessage(
                 Message(
@@ -492,6 +553,7 @@ class WebhookRequestHandler(
                     text = ctx.formatter.formatPushEventMessage(event, mrIid),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
+                    disableNotification = isSilentPush,
                 ),
             )
         ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
@@ -567,16 +629,23 @@ class WebhookRequestHandler(
         event: MergeRequestEvent,
         ctx: EventProcessingContext,
     ) {
+        val existing = ctx.installationRepository.getMrParticipants(installationId, state.projectId!!, state.mrIid!!)
+        val author = if (state.action == "open") {
+            state.authorUsername ?: existing?.authorUsername
+        } else {
+            existing?.authorUsername ?: state.authorUsername
+        }
+
         ctx.installationRepository.upsertMrParticipants(
             installationId = installationId,
-            projectId = state.projectId!!,
-            mrIid = state.mrIid!!,
-            authorUsername = state.authorUsername,
+            projectId = state.projectId,
+            mrIid = state.mrIid,
+            authorUsername = author,
             reviewerUsernames = state.reviewers,
         )
         ctx.logger.debug {
             "MR !${state.mrIid} (project ${state.projectId}): " +
-                "cached author=${state.authorUsername}, reviewers=${state.reviewers}"
+                "cached author=$author, reviewers=${state.reviewers}"
         }
 
         if (state.sourceBranch.isNullOrBlank()) return
@@ -623,10 +692,12 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val mr = "!${event.objectAttributes?.iid ?: "?"}"
+        val addedHumans = change.added.filterNot { it.username?.isGitLabBotUser() == true }
+        val removedHumans = change.removed.filterNot { it.username?.isGitLabBotUser() == true }
         listOfNotNull(
-            change.added.takeIf(List<ReviewerIdentity>::isNotEmpty)
+            addedHumans.takeIf(List<ReviewerIdentity>::isNotEmpty)
                 ?.let { "${it.labels()} were added to review $mr." },
-            change.removed.takeIf(List<ReviewerIdentity>::isNotEmpty)
+            removedHumans.takeIf(List<ReviewerIdentity>::isNotEmpty)
                 ?.let { "${it.labels()} were removed from review on $mr." },
         ).forEach { text ->
             ctx.telegramService.sendMessage(
@@ -643,13 +714,40 @@ class WebhookRequestHandler(
 
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
-    private fun List<String>.handles(): String = joinToString(" ") { "@$it" }
+    private fun List<String>.handles(): String =
+        map { it.trim().removePrefix("@") }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" ") { "@$it" }
 
     private fun formatPipelineCompletionReply(
         status: String,
-        usernames: List<String>,
+        targets: PipelineTargets,
     ): String {
-        val message = randomMessageProvider.getMessageForStatus(status)
-        return "${usernames.handles()} $message".trim()
+        return if (targets.isReviewer && status == "success") {
+            val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
+            val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
+            "${targets.usernames.handles()} $reviewerPrompt".trim()
+        } else {
+            val message = randomMessageProvider.getMessageForStatus(status)
+            "${targets.usernames.handles()} $message".trim()
+        }
+    }
+
+    internal fun String.isGitLabBotUser(): Boolean {
+        val clean = trim().removePrefix("@").lowercase()
+        if (clean.isBlank()) return true
+        return clean.matches(Regex("""^(project|group)_\d+_bot.*""")) ||
+            clean.matches(Regex("""^service[_-]account.*""")) ||
+            clean.matches(Regex(""".*writeback.*""")) ||
+            clean.matches(Regex("""^ci[_-].*""")) ||
+            clean.matches(Regex(""".*token.*bot.*""")) ||
+            clean in listOf(
+                "gitlab-ci-token",
+                "support-bot",
+                "alert-bot",
+                "automation-bot",
+                "security-bot",
+            )
     }
 }
