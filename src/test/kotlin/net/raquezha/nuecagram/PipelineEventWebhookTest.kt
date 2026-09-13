@@ -106,6 +106,27 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
+    fun testBotTokenUserIsNotTaggedInPipelineReplies() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val botPayload = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"username\": \"admin\"", "\"username\": \"group_44_bot_token\"")
+                .replace("\"name\": \"Administrator\"", "\"name\": \"CI_VERSION_WRITEBACK2\"")
+
+            postWebhook(EVENT_PIPELINE, botPayload)
+
+            // Allow async processing
+            kotlinx.coroutines.delay(150)
+
+            // The main pipeline card is sent, but no reply tagging the bot is sent
+            val sent = mockTelegramService.sentMessages()
+            assertThat(sent.none { it.text.contains("group_44_bot") }).isTrue()
+        }
+
+    @Test
     fun testMrPipelineFailurePingsCreator() =
         testApplication {
             configureTestApplication()

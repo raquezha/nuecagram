@@ -286,6 +286,32 @@ class WebhookRequestHandler(
         event: PipelineEvent,
         ctx: EventProcessingContext,
     ): PipelineTargets {
+        val (mrIid, cachedParticipants) = findCachedMrParticipants(installationId, event, ctx)
+
+        val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty()
+            .filter { it.isNotBlank() && !it.isGitLabBotUser() }
+            .distinct()
+        val author = cachedParticipants?.authorUsername?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
+        val validReviewers = resolveReviewers(rawReviewers, author)
+        val fallbackUser = event.user?.username?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
+
+        return when {
+            status == "success" && validReviewers.isNotEmpty() ->
+                PipelineTargets(validReviewers, isReviewer = true, mrIid = mrIid)
+            author != null ->
+                PipelineTargets(listOf(author), isReviewer = false, mrIid = mrIid)
+            fallbackUser != null ->
+                PipelineTargets(listOf(fallbackUser), isReviewer = false, mrIid = mrIid)
+            else ->
+                PipelineTargets(emptyList())
+        }
+    }
+
+    private suspend fun findCachedMrParticipants(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): Pair<Long?, net.raquezha.nuecagram.db.models.MrParticipants?> {
         val projectId = event.project?.id
             ?: event.mergeRequest?.targetProjectId
             ?: event.mergeRequest?.sourceProjectId
@@ -296,26 +322,12 @@ class WebhookRequestHandler(
             null
         }
         val mrIid = event.extractMrIid(activeMr?.mrIid)
-        val cachedParticipants = if (mrIid != null && projectId != null) {
+        val cached = if (mrIid != null && projectId != null) {
             ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
         } else {
             null
         }
-
-        val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty().filter(String::isNotBlank).distinct()
-        val author = cachedParticipants?.authorUsername?.takeIf(String::isNotBlank)
-        val validReviewers = resolveReviewers(rawReviewers, author)
-
-        return when {
-            status == "success" && validReviewers.isNotEmpty() ->
-                PipelineTargets(validReviewers, isReviewer = true, mrIid = mrIid)
-            author != null ->
-                PipelineTargets(listOf(author), isReviewer = false, mrIid = mrIid)
-            !event.user?.username.isNullOrBlank() ->
-                PipelineTargets(listOf(event.user.username), isReviewer = false, mrIid = mrIid)
-            else ->
-                PipelineTargets(emptyList())
-        }
+        return mrIid to cached
     }
 
     private fun PipelineEvent.extractMrIid(activeMrIid: Long?): Long? =
@@ -672,10 +684,12 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val mr = "!${event.objectAttributes?.iid ?: "?"}"
+        val addedHumans = change.added.filterNot { it.username?.isGitLabBotUser() == true }
+        val removedHumans = change.removed.filterNot { it.username?.isGitLabBotUser() == true }
         listOfNotNull(
-            change.added.takeIf(List<ReviewerIdentity>::isNotEmpty)
+            addedHumans.takeIf(List<ReviewerIdentity>::isNotEmpty)
                 ?.let { "${it.labels()} were added to review $mr." },
-            change.removed.takeIf(List<ReviewerIdentity>::isNotEmpty)
+            removedHumans.takeIf(List<ReviewerIdentity>::isNotEmpty)
                 ?.let { "${it.labels()} were removed from review on $mr." },
         ).forEach { text ->
             ctx.telegramService.sendMessage(
@@ -710,5 +724,19 @@ class WebhookRequestHandler(
             val message = randomMessageProvider.getMessageForStatus(status)
             "${targets.usernames.handles()} $message".trim()
         }
+    }
+
+    internal fun String.isGitLabBotUser(): Boolean {
+        val clean = trim().removePrefix("@").lowercase()
+        if (clean.isBlank()) return true
+        return clean.matches(Regex("""^(project|group)_\d+_bot.*""")) ||
+            clean.matches(Regex("""^service[_-]account.*""")) ||
+            clean in listOf(
+                "gitlab-ci-token",
+                "support-bot",
+                "alert-bot",
+                "automation-bot",
+                "security-bot",
+            )
     }
 }
