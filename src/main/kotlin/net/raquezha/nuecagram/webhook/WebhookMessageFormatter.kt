@@ -75,7 +75,7 @@ class WebhookMessageFormatter {
 
     fun formatEventMessage(event: Event, mrIid: Long? = null): String =
         when (event) {
-            is PipelineEvent -> formatPipelineEvent(event)
+            is PipelineEvent -> formatPipelineEvent(event, mrIid)
             is PushEvent -> formatPushEventMessage(event, mrIid)
             is TagPushEvent -> formatTagPushEvent(event)
             is WikiPageEvent -> formatWikiPageEvent(event)
@@ -104,7 +104,7 @@ class WebhookMessageFormatter {
 
     private fun String.italicBold() = this.escapeHtml().let { "<b><i>$it</i></b>" }
 
-    private fun String.link(label: String) = "<a href=\"$this\">${label.escapeHtml()}</a>"
+    private fun String.link(label: String) = "<a href=\"${this.escapeHtml()}\">${label.escapeHtml()}</a>"
 
     private fun String.isNullHash(): Boolean = this == "0000000000000000000000000000000000000000"
 
@@ -371,7 +371,7 @@ class WebhookMessageFormatter {
         return "Commit $shortSha" to title
     }
 
-    private fun formatPipelineEvent(event: PipelineEvent): String {
+    private fun formatPipelineEvent(event: PipelineEvent, mrIid: Long? = null): String {
         val status = event.objectAttributes.status
         val pipelineId = event.objectAttributes.id
         val ref = event.objectAttributes.ref
@@ -384,70 +384,21 @@ class WebhookMessageFormatter {
         val statusEmoji = getPipelineStatusEmoji(status)
         val statusText = getPipelineStatusText(status)
         val clickablePipeline = pipelineUrl.link("#$pipelineId")
+        val mrBadge = formatMrBadge(
+            event.mergeRequest?.iid ?: mrIid,
+            projectWebUrl,
+            event.mergeRequest?.url,
+        )
 
         return buildString {
             append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
-            append("${projectName.bold()} • ${ref.bold()} • $commitSha\n")
+            append("${projectName.bold()} • ${ref.bold()}$mrBadge • $commitSha\n")
 
-            // GitLab sends job data in 'builds' array, not 'jobs'
             val builds = event.builds.orEmpty()
             if (builds.isNotEmpty()) {
-                append("\n")
-                val sortedBuilds =
-                    builds.sortedWith(
-                        compareBy(
-                            { getStageOrder(it.stage, event.objectAttributes.stages) },
-                            { it.id },
-                        ),
-                    )
-
-                sortedBuilds.forEachIndexed { index, build ->
-                    val isLast = index == sortedBuilds.size - 1
-                    val prefix = if (isLast) "└─" else "├─"
-                    val buildEmoji = getBuildStatusEmoji(build.status)
-                    val buildName = build.name
-                    val buildUrl = "$projectWebUrl/-/jobs/${build.id}"
-
-                    val buildStatusText = formatBuildStatus(build, buildUrl)
-                    append("$prefix $buildEmoji $buildName$buildStatusText\n")
-                }
-                append("\n")
+                appendBuildRows(builds, event.objectAttributes.stages, projectWebUrl)
             } else {
-                // Enhanced display when no job details available
-                // Show commit message for context
-                val commitTitle =
-                    event.commit?.title ?: event.commit
-                        ?.message
-                        ?.lines()
-                        ?.firstOrNull()
-                        ?.trim()
-                if (!commitTitle.isNullOrBlank()) {
-                    append("💬 ${commitTitle.italic()}\n")
-                }
-
-                // Show stages if available
-                val stages = event.objectAttributes.stages.orEmpty()
-                if (stages.isNotEmpty()) {
-                    append("📋 Stages: ${stages.joinToString(" → ")}\n")
-                }
-
-                // Show pipeline source if not a simple push
-                val source = event.objectAttributes.source
-                if (!source.isNullOrBlank() && source != "push") {
-                    append("🚀 via $source\n")
-                }
-
-                // Show merge request context if available
-                val mergeRequest = event.mergeRequest
-                if (mergeRequest != null) {
-                    val mrTitle = mergeRequest.title
-                    val mrUrl = mergeRequest.url
-                    if (!mrTitle.isNullOrBlank() && !mrUrl.isNullOrBlank()) {
-                        append("🔀 MR: ${mrUrl.link(mrTitle)}\n")
-                    }
-                }
-
-                append("\n")
+                appendPipelineFallbackDetails(event)
             }
 
             val duration = event.objectAttributes.duration
@@ -456,6 +407,64 @@ class WebhookMessageFormatter {
             }
             append("Triggered by ${userName.bold()}")
         }
+    }
+
+    private fun StringBuilder.appendBuildRows(
+        builds: List<Build>,
+        stages: List<String>?,
+        projectWebUrl: String,
+    ) {
+        append("\n")
+        val sortedBuilds = builds.sortedWith(
+            compareBy(
+                { getStageOrder(it.stage, stages) },
+                { it.id },
+            ),
+        )
+
+        sortedBuilds.forEachIndexed { index, build ->
+            val isLast = index == sortedBuilds.size - 1
+            val prefix = if (isLast) "└─" else "├─"
+            val buildEmoji = getBuildStatusEmoji(build.status)
+            val buildName = build.name.orEmpty().escapeHtml()
+            val buildUrl = "$projectWebUrl/-/jobs/${build.id}"
+
+            val buildStatusText = formatBuildStatus(build, buildUrl)
+            append("$prefix $buildEmoji $buildName$buildStatusText\n")
+        }
+        append("\n")
+    }
+
+    private fun StringBuilder.appendPipelineFallbackDetails(event: PipelineEvent) {
+        val commitTitle =
+            event.commit?.title ?: event.commit
+                ?.message
+                ?.lines()
+                ?.firstOrNull()
+                ?.trim()
+        if (!commitTitle.isNullOrBlank()) {
+            append("💬 ${commitTitle.italic()}\n")
+        }
+
+        val stages = event.objectAttributes.stages.orEmpty()
+        if (stages.isNotEmpty()) {
+            append("📋 Stages: ${stages.joinToString(" → ").escapeHtml()}\n")
+        }
+
+        val source = event.objectAttributes.source
+        if (!source.isNullOrBlank() && source != "push") {
+            append("🚀 via ${source.escapeHtml()}\n")
+        }
+
+        val mergeRequest = event.mergeRequest
+        if (mergeRequest != null) {
+            val mrTitle = mergeRequest.title
+            val mrUrl = mergeRequest.url
+            if (!mrTitle.isNullOrBlank() && !mrUrl.isNullOrBlank()) {
+                append("🔀 MR: ${mrUrl.link(mrTitle)}\n")
+            }
+        }
+        append("\n")
     }
 
     private fun getPipelineStatusEmoji(status: String): String =
@@ -684,9 +693,10 @@ class WebhookMessageFormatter {
         }
     }
 
-    private fun formatMrBadge(mrIid: Long?, projectWebUrl: String): String {
+    private fun formatMrBadge(mrIid: Long?, projectWebUrl: String, mrUrl: String? = null): String {
         if (mrIid == null) return ""
         val label = "!$mrIid"
+        if (!mrUrl.isNullOrBlank()) return " (${mrUrl.link(label)})"
         val cleanUrl = projectWebUrl.trimEnd('/')
         return if (cleanUrl.isNotBlank()) {
             " (${"$cleanUrl/-/merge_requests/$mrIid".link(label)})"

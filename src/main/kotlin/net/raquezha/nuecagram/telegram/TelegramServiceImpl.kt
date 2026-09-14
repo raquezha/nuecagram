@@ -1,6 +1,7 @@
 package net.raquezha.nuecagram.telegram
 
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -132,13 +133,23 @@ class TelegramServiceImpl(
     override suspend fun sendMessage(message: Message): String {
         val method = if (message.messageId.isNullOrBlank()) METHOD_SEND_MESSAGE else METHOD_EDIT_MESSAGE_TEXT
         val response = client.postJson(endpoint(method), message)
-            .requireOk("Failed to send message")
         val bodyText = response.bodyAsText()
         val apiResponse = runCatching {
             telegramJson.decodeFromString<TelegramApiResponse<TelegramMessageResult>>(bodyText)
-        }.getOrElse { throw HttpException("Telegram API response error: $bodyText", it) }
-        return apiResponse.result?.messageId?.toString()
-            ?: throw HttpException("Telegram API response missing 'result' field: $bodyText")
+        }.getOrElse { throw HttpException("Invalid Telegram message response (${response.status})", it) }
+        val description = apiResponse.description.orEmpty()
+        val editRejected = method == METHOD_EDIT_MESSAGE_TEXT &&
+            response.status == HttpStatusCode.BadRequest && !apiResponse.ok
+        return when {
+            editRejected && description.startsWith("Bad Request: message is not modified") ->
+                requireNotNull(message.messageId)
+            editRejected && description == "Bad Request: message to edit not found" ->
+                sendMessage(message.copy(messageId = null))
+            response.status == HttpStatusCode.OK && apiResponse.ok ->
+                apiResponse.result?.messageId?.toString()
+                    ?: throw HttpException("Telegram message response missing result")
+            else -> throw HttpException("Failed to send Telegram message (${response.status})")
+        }
     }
 
     override suspend fun answerCallbackQuery(
@@ -166,6 +177,8 @@ class TelegramServiceImpl(
 
     private suspend inline fun <reified T : Any> HttpClient.postJson(url: String, payload: T): HttpResponse =
         post(url) {
+            // Each caller validates the response; retain error bodies for Telegram-specific handling.
+            expectSuccess = false
             contentType(ContentType.Application.Json)
             setBody(telegramJson.encodeToString(payload))
         }

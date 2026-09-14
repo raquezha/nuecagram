@@ -222,6 +222,124 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(afterSuccess.count { it.text.contains("@bob @charlie") }).isEqualTo(2)
         }
 
+    @Test
+    fun testPipelineRetryEditsMessageInPlaceAndDoesNotDuplicateSuccessPing() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            // First run: pipeline passes
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            val initialMessages = waitForMessages(mockTelegramService, 2)
+            assertThat(initialMessages.size).isEqualTo(2)
+            val initialCard = initialMessages[0]
+            val initialReply = initialMessages[1]
+            assertThat(initialReply.replyToMessageId).isEqualTo(1L)
+            assertThat(initialReply.text).contains("@raquezha")
+
+            // Second run: retried job finishes and pipeline succeeds again (same pipelineId 53481)
+            val retriedPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"duration\": 178", "\"duration\": 210")
+            postWebhook(EVENT_PIPELINE, retriedPayload)
+            val updatedMessages = waitForMessages(mockTelegramService, 3)
+
+            // Edited card in-place with existing messageId 1
+            assertThat(updatedMessages.size).isEqualTo(3)
+            val editedCard = updatedMessages[2]
+            assertThat(editedCard.messageId).isEqualTo("1")
+
+            // No duplicate reply ping was sent
+            val replies = updatedMessages.filter { it.replyToMessageId != null }
+            assertThat(replies.size).isEqualTo(1)
+        }
+
+    @Test
+    fun testPipelineRecoveryFromFailedToSuccessSendsFixedPing() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            // First run: pipeline fails
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_FAILED)
+            val failedMessages = waitForMessages(mockTelegramService, 2)
+            assertThat(failedMessages.size).isEqualTo(2)
+            assertThat(failedMessages[1].text).contains("@raquezha")
+
+            // Second run: retrying the failed job succeeds (same pipelineId 53480)
+            val recoveredPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"id\": 53481", "\"id\": 53480")
+            postWebhook(EVENT_PIPELINE, recoveredPayload)
+            val recoveredMessages = waitForMessages(mockTelegramService, 4)
+
+            assertThat(recoveredMessages.size).isEqualTo(4)
+            // Edited in-place
+            val editedCard = recoveredMessages[2]
+            assertThat(editedCard.messageId).isEqualTo("1")
+
+            // Recovery reply sent with "Pipeline fixed!"
+            val recoveryReply = recoveredMessages[3]
+            assertThat(recoveryReply.replyToMessageId).isEqualTo(1L)
+            assertThat(recoveryReply.text).contains("@raquezha")
+            assertThat(recoveryReply.text).contains("Pipeline fixed!")
+        }
+
+    @Test
+    fun testMultiplePipelinesDoNotSilenceEachOtherAndRetryDoesNotDuplicate() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            // Pipeline 1 passes
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            val messages1 = waitForMessages(mockTelegramService, 2)
+            assertThat(messages1.size).isEqualTo(2)
+
+            // Sibling/distinct Pipeline 2 on same commit also passes and is NOT silenced
+            val siblingPayload = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"id\": 53481", "\"id\": 53482")
+                .replace("\"source\": \"push\"", "\"source\": \"merge_request_event\"")
+            postWebhook(EVENT_PIPELINE, siblingPayload)
+            val messages2 = waitForMessages(mockTelegramService, 4)
+            assertThat(messages2.size).isEqualTo(4)
+
+            // Retrying pipeline 1 edits pipeline 1 in-place and does NOT send another reply
+            val retriedPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"duration\": 178", "\"duration\": 210")
+            postWebhook(EVENT_PIPELINE, retriedPayload)
+            val messages3 = waitForMessages(mockTelegramService, 5)
+            assertThat(messages3.size).isEqualTo(5)
+            val editedCard = messages3[4]
+            assertThat(editedCard.messageId).isEqualTo("1")
+
+            // Total replies remain 2 (one for pipeline 1, one for pipeline 2)
+            val totalReplies = messages3.filter { it.replyToMessageId != null }
+            assertThat(totalReplies.size).isEqualTo(2)
+        }
+
+    @Test
+    fun testPipelineCardHeaderContainsMrLinkWhenActiveMrExists() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertActiveMr(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    sourceBranch = "main",
+                    mrIid = 42L,
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            val messages = waitForMessages(mockTelegramService, 2)
+            val card = messages[0]
+            val expectedMrLink =
+                "<b>main</b> (<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/42\">!42</a>)"
+            assertThat(card.text).contains(expectedMrLink)
+        }
+
     private fun waitForMessages(
         mockTelegramService: net.raquezha.nuecagram.telegram.MockTelegramService,
         count: Int,
