@@ -36,10 +36,10 @@ For long answers, always include a **TLDR;** at the top.
 
 - **Zero Direct Push to `main`**: All code changes (features, bugfixes, docs, or version bumps) MUST be created on dedicated branches (`feat/...`, `fix/...`, `chore/...`) and merged via a Pull Request. Direct pushes to `main` are strictly prohibited.
 - **Automatic Issue Linking**: Every PR description MUST include explicit closing keywords (`Closes #<id>` or `Fixes #<id>`) to ensure GitHub automatically closes the corresponding issue upon merge.
-- **Proactive Release & Version Bump Suggestions**:
-  - After completing feature/fix slices, the agent MUST check if a version bump is needed (`patch` or `minor`).
-  - The agent MUST proactively suggest or create a release PR (`chore(release): bump version to x.y.z`) updating `version.txt` and `src/main/resources/version.txt`.
-  - Merging the release PR triggers the automated production deployment pipeline with the updated version string.
+- **Automated Release Management**:
+  - Developers and agents do not need to manually bump versions in feature/fix PRs.
+  - When non-release PRs merge to `main`, CI tests pass, deployment is gracefully skipped for existing tags, and the automated release bot automatically opens or updates a Release PR (`chore(release): bump version to x.y.z`).
+  - Merging the Release PR triggers the automated production deployment pipeline with the updated version string and creates the GitHub release.
 
 ## Pull Request Standards (Open Source Specification)
 
