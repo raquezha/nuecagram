@@ -72,6 +72,13 @@ class WebHookService(
         val createdAt: Long = System.currentTimeMillis(),
     )
 
+    private data class PipelineEntry(
+        val messageId: String,
+        val lastTerminalStatus: String? = null,
+        val lastFinishedAtEpochSeconds: Long? = null,
+        val updatedAt: Long = System.currentTimeMillis(),
+    )
+
     private data class RequestWindow(
         var count: Int,
         val startedAt: Long,
@@ -100,7 +107,7 @@ class WebHookService(
     )
 
     private val runningJobsIdMap = ConcurrentHashMap<InstallationJobKey, JobEntry>()
-    private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, String>()
+    private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, PipelineEntry>()
     private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
     private val pipelineNotificationMap = ConcurrentHashMap<InstallationPipelineNotificationKey, Long>()
     private val mrMessageIdMap = ConcurrentHashMap<InstallationMrKey, JobEntry>()
@@ -194,14 +201,45 @@ class WebHookService(
     fun getPipelineMessageId(
         installationId: UUID,
         pipelineId: Long,
-    ): String? = pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)]
+    ): String? = pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)]?.messageId
 
     fun setPipelineMessageId(
         installationId: UUID,
         pipelineId: Long,
         messageId: String,
+        nowMs: Long = System.currentTimeMillis(),
     ) {
-        pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)] = messageId
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        pipelineMessageIdMap.compute(key) { _, existing ->
+            existing?.copy(messageId = messageId, updatedAt = nowMs)
+                ?: PipelineEntry(messageId = messageId, updatedAt = nowMs)
+        }
+    }
+
+    fun getPipelineLastTerminalStatus(
+        installationId: UUID,
+        pipelineId: Long,
+    ): String? = pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)]?.lastTerminalStatus
+
+    fun getPipelineLastFinishedAt(
+        installationId: UUID,
+        pipelineId: Long,
+    ): Long? = pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)]?.lastFinishedAtEpochSeconds
+
+    fun setPipelineLastTerminalStatus(
+        installationId: UUID,
+        pipelineId: Long,
+        status: String,
+        finishedAtEpochSeconds: Long? = null,
+    ) {
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        pipelineMessageIdMap.computeIfPresent(key) { _, existing ->
+            existing.copy(
+                lastTerminalStatus = status,
+                lastFinishedAtEpochSeconds = finishedAtEpochSeconds ?: existing.lastFinishedAtEpochSeconds,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
     }
 
     fun getTrackedPipeline(
@@ -274,7 +312,7 @@ class WebHookService(
     ) {
         val key = InstallationPipelineKey(installationId, pipelineId)
         trackedPipelines[key]?.setMessageId(messageId)
-        pipelineMessageIdMap[key] = messageId
+        setPipelineMessageId(installationId, pipelineId, messageId)
     }
 
     fun tryMarkPipelineNotification(
@@ -285,6 +323,14 @@ class WebHookService(
         InstallationPipelineNotificationKey(installationId, pipelineId, kind),
         System.currentTimeMillis(),
     ) == null
+
+    fun hasPipelineNotification(
+        installationId: UUID,
+        pipelineId: Long,
+        kind: String,
+    ): Boolean = pipelineNotificationMap.containsKey(
+        InstallationPipelineNotificationKey(installationId, pipelineId, kind),
+    )
 
     fun clearTrackedPipeline(
         installationId: UUID,
@@ -329,14 +375,20 @@ class WebHookService(
         mrMessageIdMap.clear()
     }
 
-    fun cleanupStaleEntries(maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS) {
-        val cutoff = System.currentTimeMillis() - maxAgeMs
+    fun cleanupStaleEntries(
+        maxAgeMs: Long = DEFAULT_STALE_ENTRY_TTL_MS,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        val cutoff = nowMs - maxAgeMs
+
+        pipelineMessageIdMap.entries.removeIf { entry ->
+            entry.value.updatedAt < cutoff
+        }
 
         // Cleanup stale tracked pipelines atomically
         var pipelinesRemoved = 0
         trackedPipelines.entries.removeIf { entry ->
-            if (entry.value.createdAt < cutoff) {
-                pipelineMessageIdMap.remove(entry.key)
+            if (entry.value.createdAt < cutoff && !pipelineMessageIdMap.containsKey(entry.key)) {
                 pipelinesRemoved++
                 true
             } else {
@@ -346,7 +398,8 @@ class WebHookService(
 
         var notificationsRemoved = 0
         pipelineNotificationMap.entries.removeIf { entry ->
-            if (entry.value < cutoff) {
+            val pipelineKey = InstallationPipelineKey(entry.key.installationId, entry.key.pipelineId)
+            if (entry.value < cutoff && !pipelineMessageIdMap.containsKey(pipelineKey)) {
                 notificationsRemoved++
                 true
             } else {
@@ -365,7 +418,7 @@ class WebHookService(
             }
         }
 
-        val mrCutoff = System.currentTimeMillis() - DEFAULT_MR_MESSAGE_TTL_MS
+        val mrCutoff = nowMs - DEFAULT_MR_MESSAGE_TTL_MS
         var mrsRemoved = 0
         mrMessageIdMap.entries.removeIf { entry ->
             if (entry.value.createdAt < mrCutoff) {

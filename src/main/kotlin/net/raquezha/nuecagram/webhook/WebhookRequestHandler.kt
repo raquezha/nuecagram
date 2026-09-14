@@ -40,8 +40,13 @@ private data class PipelineTargets(
 
 @Suppress("TooManyFunctions")
 class WebhookRequestHandler(
-    private val application: Application,
+    private val application: Application? = null,
     private val randomMessageProvider: RandomMessageProvider,
+    private val webhookService: WebHookService? = null,
+    private val installationRepository: InstallationRepository? = null,
+    private val telegramService: TelegramService? = null,
+    private val formatter: WebhookMessageFormatter? = null,
+    private val logger: KLogger? = null,
 ) {
     private val eventFilter = WebhookEventFilter()
 
@@ -54,6 +59,10 @@ class WebhookRequestHandler(
         const val MESSAGE_STOPPED = "Queue stopped processing."
         const val MESSAGE_ERROR = "Error processing webhook data."
         const val MESSAGE_SKIPPED = "This event is skipped."
+
+        /** Maximum delivery retry attempts for transient failures before logging */
+        const val MAX_EVENT_RETRIES = 3
+        const val INITIAL_RETRY_BACKOFF_MS = 500L
 
         /** Maximum number of pending webhook events in the queue */
         private const val QUEUE_CAPACITY = 100
@@ -89,28 +98,67 @@ class WebhookRequestHandler(
     }
 
     suspend fun processQueue() {
+        val app = application
         val ctx = EventProcessingContext(
-            webhookService = application.inject<WebHookService>().value,
-            installationRepository = application.inject<InstallationRepository>().value,
-            logger = application.inject<KLogger>().value,
-            telegramService = application.inject<TelegramService>().value,
-            formatter = application.inject<WebhookMessageFormatter>().value,
+            webhookService = webhookService ?: requireNotNull(app).inject<WebHookService>().value,
+            installationRepository = installationRepository
+                ?: requireNotNull(app).inject<InstallationRepository>().value,
+            logger = logger ?: requireNotNull(app).inject<KLogger>().value,
+            telegramService = telegramService ?: requireNotNull(app).inject<TelegramService>().value,
+            formatter = formatter ?: requireNotNull(app).inject<WebhookMessageFormatter>().value,
         )
 
         ctx.logger.debug { MESSAGE_PROCESSING }
         for (data in queue) {
-            try {
-                processEvent(
-                    data = data,
-                    ctx = ctx,
-                )
-            } catch (skipEx: SkipEventException) {
-                ctx.logger.debug { MESSAGE_SKIPPED }
-            } catch (e: Exception) {
-                ctx.logger.error { "$MESSAGE_ERROR \n${e.message}" }
-            }
+            processEventWithRetry(data, ctx)
         }
         ctx.logger.debug { MESSAGE_STOPPED }
+    }
+
+    private suspend fun processEventWithRetry(
+        data: EventData,
+        ctx: EventProcessingContext,
+    ) {
+        var attempts = 0
+        var backoffMs = INITIAL_RETRY_BACKOFF_MS
+        while (attempts < MAX_EVENT_RETRIES) {
+            attempts++
+            try {
+                processEvent(data = data, ctx = ctx)
+                return
+            } catch (skipEx: SkipEventException) {
+                ctx.logger.debug { MESSAGE_SKIPPED }
+                return
+            } catch (cancellation: java.util.concurrent.CancellationException) {
+                throw cancellation
+            } catch (e: Exception) {
+                val isTransient = isTransientFailure(e)
+                if (isTransient && attempts < MAX_EVENT_RETRIES) {
+                    ctx.logger.warn(e) {
+                        "Transient error processing ${data.headerEvent} (attempt $attempts/$MAX_EVENT_RETRIES). " +
+                            "Retrying in ${backoffMs}ms..."
+                    }
+                    kotlinx.coroutines.delay(backoffMs)
+                    backoffMs *= 2
+                } else {
+                    ctx.logger.error(e) {
+                        "$MESSAGE_ERROR after $attempts attempt(s): ${e.message}"
+                    }
+                    return
+                }
+            }
+        }
+    }
+
+    private fun isTransientFailure(e: Throwable): Boolean = when (e) {
+        is java.io.IOException -> true
+        is io.ktor.client.plugins.ServerResponseException -> true
+        is org.apache.http.HttpException -> {
+            val msg = e.message.orEmpty()
+            msg.contains("429") || msg.contains("500") || msg.contains("502") ||
+                msg.contains("503") || msg.contains("504")
+        }
+        else -> false
     }
 
     private suspend fun processEvent(
@@ -174,9 +222,20 @@ class WebhookRequestHandler(
         val pipelineId = attrs.id
         val status = attrs.status
 
-        ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
-        ctx.webhookService.cleanupStaleEntries()
+        val finishedAtSeconds = attrs.finishedAt?.toInstant()?.epochSecond
+        val lastFinishedAt = ctx.webhookService.getPipelineLastFinishedAt(installationId, pipelineId)
+        if (lastFinishedAt != null && finishedAtSeconds != null && finishedAtSeconds < lastFinishedAt) {
+            ctx.logger.warn {
+                "Skipping out-of-order pipeline event for #$pipelineId " +
+                    "(event finishedAt=$finishedAtSeconds < lastFinishedAt=$lastFinishedAt)"
+            }
+            return
+        }
 
+        ctx.webhookService.cleanupStaleEntries()
+        ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
+
+        val (mrIid, _) = findCachedMrParticipants(installationId, event, ctx)
         val existingMessageId = ctx.webhookService.getPipelineMessageId(installationId, pipelineId)
 
         val messageId =
@@ -185,12 +244,13 @@ class WebhookRequestHandler(
                     chatId = chatDetails.chatId,
                     threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                     messageId = existingMessageId,
-                    text = ctx.formatter.formatEventMessage(event),
+                    text = ctx.formatter.formatEventMessage(event, mrIid),
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
                     disableNotification = true,
                 ),
             )
+        ctx.webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
         ctx.logger.debug { "Pipeline #$pipelineId: sent/updated message $messageId" }
 
         when (status) {
@@ -204,8 +264,6 @@ class WebhookRequestHandler(
                     messageId = messageId,
                     ctx = ctx,
                 )
-                ctx.webhookService.clearTrackedPipeline(installationId, pipelineId)
-                ctx.logger.debug { "Pipeline #$pipelineId finished ($status), cleared all tracking" }
             }
             "manual" -> {
                 handleManualWaitingPipelineReply(
@@ -216,14 +274,9 @@ class WebhookRequestHandler(
                     messageId = messageId,
                     ctx = ctx,
                 )
-                ctx.webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
-                ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
-            }
-            else -> {
-                ctx.webhookService.setPipelineMessageId(installationId, pipelineId, messageId)
-                ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
             }
         }
+        ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
     }
 
     private suspend fun handleTerminalPipelineReply(
@@ -235,19 +288,33 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
-        if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "terminal_$status")) return
+        val lastStatus = ctx.webhookService.getPipelineLastTerminalStatus(installationId, pipelineId)
+        if (lastStatus == status) {
+            ctx.logger.debug { "Pipeline #$pipelineId already notified status $status, skipping duplicate reply" }
+            return
+        }
 
         val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
         if (targets.usernames.isNotEmpty()) {
+            val isRecovery = status == "success" && lastStatus == "failed"
+            val replyText = formatPipelineCompletionReply(status, targets, isRecovery)
+
             val isSilent = status in listOf("canceled", "skipped")
             sendPipelineReply(
-                text = formatPipelineCompletionReply(status, targets),
+                text = replyText,
                 chatDetails = chatDetails,
                 messageId = messageId,
                 disableNotification = isSilent,
                 ctx = ctx,
             )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply tagging ${targets.usernames}" }
+            val finishedAtSeconds = event.objectAttributes?.finishedAt?.toInstant()?.epochSecond
+            ctx.webhookService.setPipelineLastTerminalStatus(
+                installationId = installationId,
+                pipelineId = pipelineId,
+                status = status,
+                finishedAtEpochSeconds = finishedAtSeconds,
+            )
+            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply ($status) tagging ${targets.usernames}" }
         }
     }
 
@@ -260,7 +327,7 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         if (!event.isWaitingForBlockingManualAction()) return
-        if (!ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")) return
+        if (ctx.webhookService.hasPipelineNotification(installationId, pipelineId, "manual_waiting")) return
 
         val targets = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
         if (targets.usernames.isNotEmpty()) {
@@ -276,6 +343,7 @@ class WebhookRequestHandler(
                 messageId = messageId,
                 ctx = ctx,
             )
+            ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")
             ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging ${targets.usernames}" }
         }
     }
@@ -322,9 +390,18 @@ class WebhookRequestHandler(
         } else {
             null
         }
+        val targetProjectId = event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: activeMr?.targetProjectId
+            ?: projectId
         val mrIid = event.extractMrIid(activeMr?.mrIid)
-        val cached = if (mrIid != null && projectId != null) {
-            ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
+        val cached = if (mrIid != null && targetProjectId != null) {
+            ctx.installationRepository.getMrParticipants(installationId, targetProjectId, mrIid)
+                ?: if (targetProjectId != projectId && projectId != null) {
+                    ctx.installationRepository.getMrParticipants(installationId, projectId, mrIid)
+                } else {
+                    null
+                }
         } else {
             null
         }
@@ -723,14 +800,17 @@ class WebhookRequestHandler(
     private fun formatPipelineCompletionReply(
         status: String,
         targets: PipelineTargets,
+        isRecovery: Boolean = false,
     ): String {
         return if (targets.isReviewer && status == "success") {
             val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
             val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
-            "${targets.usernames.handles()} $reviewerPrompt".trim()
+            val base = "${targets.usernames.handles()} $reviewerPrompt".trim()
+            if (isRecovery) "$base Pipeline fixed!" else base
         } else {
             val message = randomMessageProvider.getMessageForStatus(status)
-            "${targets.usernames.handles()} $message".trim()
+            val base = "${targets.usernames.handles()} $message".trim()
+            if (isRecovery) "$base Pipeline fixed!" else base
         }
     }
 
