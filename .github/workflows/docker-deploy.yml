@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
+      is_release: ${{ steps.resolve-version.outputs.is_release }}
       sha_tag: ${{ steps.sha_tag.outputs.sha_tag }}
       version: ${{ steps.push-image.outputs.version }}
       version_tag: ${{ steps.push-image.outputs.tag }}
@@ -83,20 +84,25 @@ jobs:
           tag="v$version"
           git fetch origin --tags || true
           if git rev-parse "$tag" >/dev/null 2>&1 || git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
-            echo "Tag $tag already exists. Bump version.txt through a release PR before deploying." >&2
-            exit 1
+            echo "Tag $tag already exists. Skipping production deployment."
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New release tag $tag detected. Proceeding with deployment."
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build release artifacts
+        if: steps.resolve-version.outputs.is_release == 'true'
         run: ./gradlew --build-cache buildImage buildFatJar
         env:
           DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
       - name: Prepare release artifacts
+        if: steps.resolve-version.outputs.is_release == 'true'
         run: |
           version="${{ steps.resolve-version.outputs.version }}"
           mkdir -p release-artifacts
@@ -104,6 +110,7 @@ jobs:
           sha256sum "release-artifacts/nuecagram-$version-fat.jar" > release-artifacts/checksums.txt
 
       - name: Upload release artifacts
+        if: steps.resolve-version.outputs.is_release == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
@@ -112,15 +119,18 @@ jobs:
           retention-days: 7
 
       - name: Load Docker image
+        if: steps.resolve-version.outputs.is_release == 'true'
         run: docker load -i build/jib/nuecagram-jib-image.tar
 
       - name: Log in to Docker Hub
+        if: steps.resolve-version.outputs.is_release == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
       - name: Tag and push immutable image
+        if: steps.resolve-version.outputs.is_release == 'true'
         id: push-image
         run: |
           version="${{ steps.resolve-version.outputs.version }}"
@@ -136,6 +146,7 @@ jobs:
 
   auto-deploy:
     needs: publish
+    if: needs.publish.outputs.is_release == 'true'
     uses: ./.github/workflows/deploy-production.yml
     with:
       action: deploy
@@ -144,6 +155,7 @@ jobs:
 
   release:
     needs: [publish, auto-deploy]
+    if: needs.publish.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -222,4 +234,129 @@ jobs:
               --notes-file release-notes.md \
               "release-artifacts/nuecagram-$version-fat.jar" \
               "release-artifacts/checksums.txt"
+          fi
+
+  propose-release:
+    needs: publish
+    if: github.event_name == 'push' && needs.publish.outputs.is_release != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Propose Release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch origin --tags --force || true
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$latest_tag" ] && [ "$(git rev-parse "$latest_tag")" = "$(git rev-parse HEAD)" ]; then
+            echo "HEAD is at $latest_tag. No new commits to release."
+            exit 0
+          fi
+
+          current_version=$(tr -d '[:space:]' < version.txt)
+          IFS='.' read -r major minor patch <<< "$current_version"
+
+          range="${latest_tag}..HEAD"
+          if [ -z "$latest_tag" ]; then
+            range="HEAD"
+          fi
+
+          has_breaking=$(git log "$range" --oneline | grep -E '^[a-f0-9]+ (feat!|fix!|refactor!|chore!)|BREAKING CHANGE' || true)
+          has_feat=$(git log "$range" --oneline | grep -E '^[a-f0-9]+ feat' || true)
+          if [ -n "$has_breaking" ]; then
+            next_version="$((major + 1)).0.0"
+          elif [ -n "$has_feat" ]; then
+            next_version="$major.$((minor + 1)).0"
+          else
+            next_version="$major.$minor.$((patch + 1))"
+          fi
+
+          echo "Latest tag: $latest_tag | Current: $current_version | Next: $next_version"
+          branch="chore/release-preview"
+
+          features=$(mktemp)
+          fixes=$(mktemp)
+          deployment=$(mktemp)
+          maintenance=$(mktemp)
+          docs=$(mktemp)
+          other=$(mktemp)
+          tab="$(printf '\t')"
+          while IFS="$tab" read -r subject short_sha; do
+            item="* $subject ($short_sha)"
+            case "$subject" in
+              feat*) echo "$item" >> "$features" ;;
+              fix*) echo "$item" >> "$fixes" ;;
+              ci*|build*) echo "$item" >> "$deployment" ;;
+              chore*|refactor*|perf*|test*) echo "$item" >> "$maintenance" ;;
+              docs*) echo "$item" >> "$docs" ;;
+              *) echo "$item" >> "$other" ;;
+            esac
+          done < <(git log --reverse --format='%s%x09%h' "$range")
+
+          body=$(mktemp)
+          {
+            echo "## Summary"
+            echo ""
+            echo "- Automated release bump from \`$current_version\` to \`$next_version\`."
+            echo "- Merging this PR triggers production deployment for \`v$next_version\`."
+            echo ""
+            echo "## Scope"
+            echo ""
+            echo "- \`version.txt\`"
+            echo "- \`src/main/resources/version.txt\`"
+            echo ""
+            echo "## Verification"
+            echo ""
+            echo "- [x] \`./gradlew lintKotlinMain lintKotlinTest\`"
+            echo "- [x] \`./gradlew detekt\`"
+            echo "- [x] \`./gradlew test\`"
+            echo "- [x] \`./gradlew build\`"
+            echo ""
+            echo "## Risk / Rollback"
+            echo ""
+            echo "- Risk: Low. Version metadata bump to trigger production deployment."
+            echo "- Rollback: Revert merge commit on main."
+            echo ""
+            echo "## Changes since $latest_tag"
+            if [ -s "$features" ]; then echo; echo "### Features"; cat "$features"; fi
+            if [ -s "$fixes" ]; then echo; echo "### Fixes"; cat "$fixes"; fi
+            if [ -s "$deployment" ]; then echo; echo "### CI / Deployment"; cat "$deployment"; fi
+            if [ -s "$maintenance" ]; then echo; echo "### Maintenance"; cat "$maintenance"; fi
+            if [ -s "$docs" ]; then echo; echo "### Documentation"; cat "$docs"; fi
+            if [ -s "$other" ]; then echo; echo "### Other"; cat "$other"; fi
+          } > "$body"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          echo "$next_version" > version.txt
+          echo "$next_version" > src/main/resources/version.txt
+          git add version.txt src/main/resources/version.txt
+          git commit -m "chore(release): bump version to $next_version"
+
+          git push origin "$branch" --force
+
+          existing_pr=$(gh pr list --head "$branch" --state open --json number -q '.[0].number')
+          if [ -n "$existing_pr" ]; then
+            echo "Updating existing Release PR #$existing_pr for $next_version..."
+            gh pr edit "$existing_pr" \
+              --title "chore(release): bump version to $next_version" \
+              --body-file "$body"
+          else
+            echo "Opening new Release PR for $next_version..."
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore(release): bump version to $next_version" \
+              --body-file "$body" || {
+                echo "::warning::Could not create release PR. Check that 'Allow GitHub Actions to create and approve pull requests' is enabled in Settings > Actions > General."
+              }
           fi
