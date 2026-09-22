@@ -61,6 +61,9 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.text).contains(
+                "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>"
+            )
             assertThat(completionReply?.text?.lowercase()).contains("review")
             assertThat(completionReply?.disableNotification).isFalse()
 
