@@ -118,6 +118,9 @@ class PipelineRetryRegressionTest {
         val recovery = delivered.last()
         assertThat(recovery.text).contains("@bob")
         assertThat(recovery.text).contains("!2923")
+        assertThat(recovery.text).contains(
+            "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>",
+        )
         assertThat(recovery.text.lowercase()).contains("review")
         assertThat(recovery.text).contains("Pipeline fixed!")
         assertThat(recovery.disableNotification).isFalse()
@@ -125,13 +128,23 @@ class PipelineRetryRegressionTest {
 
     @Test
     fun forkMrBadgeUsesTargetMrUrlNotSourceProjectUrl() {
+        coEvery { repository.getActiveMrForBranch(installationId, 105L, "feature-branch") } returns
+            ActiveMergeRequest(2923L, "feature-branch", targetProjectId = 105L, lastCommitSha = null)
+        coEvery { repository.getMrParticipants(any(), any(), any()) } returns
+            MrParticipants("alice", listOf("bob"))
         val mr = PipelineEventWebhookTest.SAMPLE_PAYLOAD_MR_SUCCESS.replace(
             "https://gitlab.com/android-team/customer-app/-/merge_requests/2923",
             "https://gitlab.com/upstream/customer-app/-/merge_requests/2923",
         )
         runEvents(mr)
-        assertThat(delivered.first().text).contains(
-            "(<a href=\"https://gitlab.com/upstream/customer-app/-/merge_requests/2923\">!2923</a>)",
+        val upstreamLink =
+            "<a href=\"https://gitlab.com/upstream/customer-app/-/merge_requests/2923\">!2923</a>"
+        assertThat(delivered.first().text).contains("($upstreamLink)")
+        val reply = delivered.last { it.replyToMessageId != null }
+        assertThat(reply.text).contains("@bob")
+        assertThat(reply.text).contains(upstreamLink)
+        assertThat(reply.text).doesNotContain(
+            "https://gitlab.com/android-team/customer-app/-/merge_requests/2923",
         )
     }
 
