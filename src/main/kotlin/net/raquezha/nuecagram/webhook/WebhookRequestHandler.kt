@@ -36,7 +36,30 @@ private data class PipelineTargets(
     val usernames: List<String>,
     val isReviewer: Boolean = false,
     val mrIid: Long? = null,
-)
+    val projectWebUrl: String? = null,
+    val mrUrl: String? = null,
+) {
+    /**
+     * Prefer GitLab's canonical MR URL (fork-safe), then construct from project web URL.
+     * Escapes href/label the same way [WebhookMessageFormatter] link helpers do.
+     */
+    fun mrRef(): String {
+        if (mrIid == null) return "the merge request"
+        val label = "!$mrIid"
+        val href = when {
+            !mrUrl.isNullOrBlank() -> mrUrl.trim()
+            !projectWebUrl.isNullOrBlank() -> "${projectWebUrl.trimEnd('/')}/-/merge_requests/$mrIid"
+            else -> return label
+        }
+        return "<a href=\"${href.escapeHtml()}\">${label.escapeHtml()}</a>"
+    }
+
+    private fun String.escapeHtml(): String =
+        replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+}
 
 @Suppress("TooManyFunctions")
 class WebhookRequestHandler(
@@ -331,7 +354,7 @@ class WebhookRequestHandler(
 
         val targets = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
         if (targets.usernames.isNotEmpty()) {
-            val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
+            val mrRef = targets.mrRef()
             val text = if (targets.isReviewer) {
                 "${targets.usernames.handles()} pipeline passed; waiting for manual action. Please review $mrRef."
             } else {
@@ -355,6 +378,8 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ): PipelineTargets {
         val (mrIid, cachedParticipants) = findCachedMrParticipants(installationId, event, ctx)
+        val projectWebUrl = event.project?.webUrl
+        val mrUrl = event.mergeRequest?.url
 
         val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty()
             .filter { it.isNotBlank() && !it.isGitLabBotUser() }
@@ -366,11 +391,29 @@ class WebhookRequestHandler(
 
         return when {
             status == "success" && validReviewers.isNotEmpty() ->
-                PipelineTargets(validReviewers, isReviewer = true, mrIid = mrIid)
+                PipelineTargets(
+                    validReviewers,
+                    isReviewer = true,
+                    mrIid = mrIid,
+                    projectWebUrl = projectWebUrl,
+                    mrUrl = mrUrl,
+                )
             author != null ->
-                PipelineTargets(listOf(author), isReviewer = false, mrIid = mrIid)
+                PipelineTargets(
+                    listOf(author),
+                    isReviewer = false,
+                    mrIid = mrIid,
+                    projectWebUrl = projectWebUrl,
+                    mrUrl = mrUrl,
+                )
             fallbackUser != null ->
-                PipelineTargets(listOf(fallbackUser), isReviewer = false, mrIid = mrIid)
+                PipelineTargets(
+                    listOf(fallbackUser),
+                    isReviewer = false,
+                    mrIid = mrIid,
+                    projectWebUrl = projectWebUrl,
+                    mrUrl = mrUrl,
+                )
             else ->
                 PipelineTargets(emptyList())
         }
@@ -803,7 +846,7 @@ class WebhookRequestHandler(
         isRecovery: Boolean = false,
     ): String {
         return if (targets.isReviewer && status == "success") {
-            val mrRef = targets.mrIid?.let { "!$it" } ?: "the merge request"
+            val mrRef = targets.mrRef()
             val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
             val base = "${targets.usernames.handles()} $reviewerPrompt".trim()
             if (isRecovery) "$base Pipeline fixed!" else base

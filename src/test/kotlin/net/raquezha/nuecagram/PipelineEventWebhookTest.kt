@@ -61,6 +61,9 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.text).contains(
+                "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>"
+            )
             assertThat(completionReply?.text?.lowercase()).contains("review")
             assertThat(completionReply?.disableNotification).isFalse()
 
@@ -102,6 +105,9 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.text).contains(
+                "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>",
+            )
             assertThat(completionReply?.text?.lowercase()).contains("review")
         }
 
@@ -210,6 +216,10 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_MANUAL_WAITING)
             val afterManual = waitForMessages(mockTelegramService, 2)
             assertThat(afterManual.last().text).contains("@bob @charlie pipeline passed; waiting for manual action.")
+            assertThat(afterManual.last().text).contains(
+                "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2925\">!2925</a>",
+            )
+            assertThat(afterManual.last().text).contains("Please review")
 
             postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_MANUAL_WAITING)
             val afterRepeatedManual = waitForMessages(mockTelegramService, 3)
