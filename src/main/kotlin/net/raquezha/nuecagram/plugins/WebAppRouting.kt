@@ -17,6 +17,7 @@ import io.ktor.server.routing.post
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -33,6 +34,7 @@ import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.TelegramWebAppAuth
 import net.raquezha.nuecagram.telegram.isTelegramAdmin
+import net.raquezha.nuecagram.telegram.isTelegramMember
 import net.raquezha.nuecagram.configuredPublicUrl
 import org.koin.ktor.ext.inject
 
@@ -309,11 +311,30 @@ private suspend fun ApplicationCall.handleGetInstallations(
     telegramService: TelegramService,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
-    if (!verifyAdminStatus(session, telegramService)) return
+    val groupChatId = session.telegramChatId?.takeIf { it < 0 }
+    val groupUserStatus = if (groupChatId != null) {
+        if (!verifyBotAdminStatus(groupChatId, telegramService)) return
+        telegramApiCall { telegramService.chatMemberStatus(groupChatId, session.telegramUserId) }
+            .getOrElse {
+                respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ErrorResponsePayload("Telegram membership could not be verified"),
+                )
+                return
+            }
+    } else {
+        null
+    }
+    if (groupChatId != null && !isTelegramMember(groupUserStatus)) {
+        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group membership required"))
+        return
+    }
 
-    val isGroupContext = session.telegramChatId != null && session.telegramChatId < 0
+    val isGroupContext = groupChatId != null
     val scopedOnly = request.queryParameters["scope"] != "all"
-    val items = if (isGroupContext && scopedOnly) {
+    val items = if (isGroupContext && scopedOnly && !isTelegramAdmin(groupUserStatus)) {
+        emptyList()
+    } else if (isGroupContext && scopedOnly) {
         installationRepository.listInstallationsForContext(session.telegramChatId, session.telegramTopicId)
     } else {
         val adminChatIds = mutableMapOf<Long, Boolean>()
@@ -366,7 +387,11 @@ private suspend fun ApplicationCall.handleGetDestinations(
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
     val userId = session.telegramUserId
-    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull()
+    val botUserId = telegramApiCall { telegramService.getMe()?.id }.getOrNull()
+    if (botUserId == null) {
+        respond(HttpStatusCode.ServiceUnavailable, ErrorResponsePayload("Telegram bot identity is unavailable"))
+        return
+    }
 
     val installedList = installationRepository.installationsForAdmin(userId)
     val knownList = installationRepository.knownTelegramDestinations()
@@ -375,13 +400,13 @@ private suspend fun ApplicationCall.handleGetDestinations(
     val activeAdminMap = coroutineScope {
         allChatIds.map { chatId ->
             async {
-                val userIsAdmin = runCatching { telegramService.chatMemberStatus(chatId, userId) }
-                    .map(::isTelegramAdmin)
+                val userIsMember = telegramApiCall { telegramService.chatMemberStatus(chatId, userId) }
+                    .map(::isTelegramMember)
                     .getOrDefault(false)
 
-                val isActive = userIsAdmin && (botUserId == null || runCatching {
+                val isActive = userIsMember && telegramApiCall {
                     telegramService.chatMemberStatus(chatId, botUserId)
-                }.map(::isTelegramAdmin).getOrDefault(false))
+                }.map(::isTelegramAdmin).getOrDefault(false)
 
                 chatId to isActive
             }
@@ -641,16 +666,25 @@ private suspend fun resolveDmId(
     }
 }
 
-private suspend fun isTargetAdmin(
-    session: WebAppSessionContext,
+private suspend fun checkInstallationTargetAccess(
+    userId: Long,
     targetChatId: Long,
     telegramService: TelegramService,
-): Boolean {
-    val userStatus = runCatching { telegramService.chatMemberStatus(targetChatId, session.telegramUserId) }.getOrNull()
-    if (!isTelegramAdmin(userStatus)) return false
-    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
-    val botStatus = runCatching { telegramService.chatMemberStatus(targetChatId, botUserId) }.getOrNull()
-    return isTelegramAdmin(botStatus)
+): TargetAccess {
+    val userStatus = telegramApiCall { telegramService.chatMemberStatus(targetChatId, userId) }
+        .getOrElse { return TargetAccess.UNAVAILABLE }
+    if (!isTelegramMember(userStatus)) return TargetAccess.USER_NOT_MEMBER
+
+    return when (telegramBotAdminStatus(targetChatId, telegramService)) {
+        BotAdminStatus.ADMIN ->
+            if (isTelegramAdmin(userStatus)) {
+                TargetAccess.ADMIN_ALLOWED
+            } else {
+                TargetAccess.MEMBER_ALLOWED
+            }
+        BotAdminStatus.NOT_ADMIN -> TargetAccess.BOT_NOT_ADMIN
+        BotAdminStatus.UNAVAILABLE -> TargetAccess.UNAVAILABLE
+    }
 }
 
 private suspend fun ApplicationCall.processCreateInstallation(
@@ -661,42 +695,67 @@ private suspend fun ApplicationCall.processCreateInstallation(
     basePath: String,
 ): WebAppResponseSpec? {
     val session = authenticateWebAppSession(installationRepository) ?: return null
-    if (!verifyAdminStatus(session, telegramService)) return null
     if (!verifyCsrfHeader(installationRepository, session)) return null
 
     val bodyText = receiveText()
     val parsed = runCatching { json.decodeFromString<CreateInstallationRequestPayload>(bodyText) }.getOrNull()
     val target = resolveTargetDestination(session, parsed)
     val dmId = resolveDmId(session, installationRepository)
-
-    return when {
-        dmId == null -> respondError(HttpStatusCode.Forbidden, "DM bootstrap required")
-        target.chatId == null || target.chatId >= 0 ->
-            respondError(HttpStatusCode.BadRequest, "Valid target Telegram group chat ID required")
-        !isTargetAdmin(session, target.chatId, telegramService) ->
-            respondError(
-                HttpStatusCode.Forbidden,
-                "Telegram group administrator permissions required for target group",
-            )
-        parsed == null || parsed.gitlabBaseUrl.isBlank() ->
-            respondError(HttpStatusCode.BadRequest, "Missing or invalid payload")
-        parsed.repoName.isBlank() || parsed.repoName.trim() == "Unknown Repository" ->
-            respondError(HttpStatusCode.BadRequest, "repoName must be non-blank and not use the legacy fallback value")
-        !parsed.gitlabBaseUrl.startsWith("https://") ->
-            respondError(HttpStatusCode.BadRequest, "gitlabBaseUrl must start with https://")
-        else -> createAndRespond(
-            installationRepository = installationRepository,
-            config = config,
-            basePath = basePath,
-            parsed = parsed,
-            target = target,
-            telegramUserId = session.telegramUserId,
-            actorMetadata = AuditMetadataPatch(
-                actorUsername = session.username,
-                actorFirstName = session.firstName,
-            ),
-        )
+    val targetAccess = if (parsed != null && dmId != null && target.chatId != null && target.chatId < 0) {
+        checkInstallationTargetAccess(session.telegramUserId, target.chatId, telegramService)
+    } else {
+        null
     }
+
+    if (validateCreateRequest(dmId, parsed, target, targetAccess)) return null
+    return createAndRespond(
+        installationRepository = installationRepository,
+        config = config,
+        basePath = basePath,
+        parsed = requireNotNull(parsed),
+        target = target,
+        session = session,
+        targetAccess = requireNotNull(targetAccess),
+    )
+}
+
+private suspend fun ApplicationCall.validateCreateRequest(
+    dmId: Long?,
+    parsed: CreateInstallationRequestPayload?,
+    target: TargetDestination,
+    targetAccess: TargetAccess?,
+): Boolean {
+    val error = createRequestError(dmId, parsed, target, targetAccess) ?: return false
+    respondError(error.first, error.second)
+    return true
+}
+
+private fun createRequestError(
+    dmId: Long?,
+    parsed: CreateInstallationRequestPayload?,
+    target: TargetDestination,
+    targetAccess: TargetAccess?,
+): Pair<HttpStatusCode, String>? = when {
+    dmId == null -> HttpStatusCode.Forbidden to "DM bootstrap required"
+    target.chatId == null || target.chatId >= 0 ->
+        HttpStatusCode.BadRequest to "Valid target Telegram group chat ID required"
+    parsed == null || parsed.gitlabBaseUrl.isBlank() ->
+        HttpStatusCode.BadRequest to "Missing or invalid payload"
+    targetAccess == null || targetAccess == TargetAccess.UNAVAILABLE ->
+        HttpStatusCode.ServiceUnavailable to "Telegram destination access could not be verified"
+    targetAccess == TargetAccess.USER_NOT_MEMBER ->
+        HttpStatusCode.Forbidden to "You must be a member of the target Telegram group"
+    targetAccess == TargetAccess.BOT_NOT_ADMIN ->
+        HttpStatusCode.Forbidden to "Nuecagram must be an administrator in the target Telegram group"
+    else -> createPayloadError(requireNotNull(parsed))
+}
+
+private fun createPayloadError(parsed: CreateInstallationRequestPayload): Pair<HttpStatusCode, String>? = when {
+    parsed.repoName.isBlank() || parsed.repoName.trim() == "Unknown Repository" ->
+        HttpStatusCode.BadRequest to "repoName must be non-blank and not use the legacy fallback value"
+    !parsed.gitlabBaseUrl.startsWith("https://") ->
+        HttpStatusCode.BadRequest to "gitlabBaseUrl must start with https://"
+    else -> null
 }
 
 private suspend fun createAndRespond(
@@ -705,8 +764,8 @@ private suspend fun createAndRespond(
     basePath: String,
     parsed: CreateInstallationRequestPayload,
     target: TargetDestination,
-    telegramUserId: Long,
-    actorMetadata: AuditMetadataPatch,
+    session: WebAppSessionContext,
+    targetAccess: TargetAccess,
 ): WebAppResponseSpec {
     val installation = installationRepository.createInstallation(
         repoName = parsed.repoName,
@@ -716,14 +775,19 @@ private suspend fun createAndRespond(
         telegramChatId = target.chatId!!,
         telegramTopicId = target.topicId,
     )
-    installationRepository.recordInstallationAdmin(installation.id, telegramUserId)
+    if (targetAccess == TargetAccess.ADMIN_ALLOWED) {
+        installationRepository.recordInstallationAdmin(installation.id, session.telegramUserId)
+    }
     val tok = installationRepository.issueWebhookSecret(installation.id)
     installationRepository.writeAuditEvent(
         installationId = installation.id,
         actorType = ActorType.WEBAPP_SESSION,
-        actorId = telegramUserId.toString(),
+        actorId = session.telegramUserId.toString(),
         action = "webapp_setup",
-        metadataPatch = actorMetadata,
+        metadataPatch = AuditMetadataPatch(
+            actorUsername = session.username,
+            actorFirstName = session.firstName,
+        ),
     )
     return WebAppResponseSpec(
         HttpStatusCode.Created,
@@ -869,21 +933,60 @@ private suspend fun ApplicationCall.verifyAdminStatus(
     session: WebAppSessionContext,
     telegramService: TelegramService,
 ): Boolean {
-    val chatId = session.telegramChatId ?: return true
-    if (chatId > 0) return true
-    val status = runCatching { telegramService.chatMemberStatus(chatId, session.telegramUserId) }.getOrNull()
+    val chatId = session.telegramChatId?.takeIf { it < 0 } ?: return true
+    val status = telegramApiCall { telegramService.chatMemberStatus(chatId, session.telegramUserId) }
+        .getOrNull()
     if (!isTelegramAdmin(status)) {
         respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
         return false
     }
-    val botUserId = runCatching { telegramService.getMe()?.id }.getOrNull() ?: return true
-    val botStatus = runCatching { telegramService.chatMemberStatus(chatId, botUserId) }.getOrNull()
-    if (!isTelegramAdmin(botStatus)) {
-        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("Telegram group administrator permissions required"))
-        return false
-    }
-    return true
+    return verifyBotAdminStatus(chatId, telegramService)
 }
+
+private suspend fun ApplicationCall.verifyBotAdminStatus(
+    chatId: Long,
+    telegramService: TelegramService,
+): Boolean = when (telegramBotAdminStatus(chatId, telegramService)) {
+    BotAdminStatus.ADMIN -> true
+    BotAdminStatus.NOT_ADMIN -> {
+        respond(
+            HttpStatusCode.Forbidden,
+            ErrorResponsePayload("Add Nuecagram to this group and make it an administrator before continuing."),
+        )
+        false
+    }
+    BotAdminStatus.UNAVAILABLE -> {
+        respond(
+            HttpStatusCode.ServiceUnavailable,
+            ErrorResponsePayload("Could not verify Nuecagram's group permissions. Please try again."),
+        )
+        false
+    }
+}
+
+private enum class BotAdminStatus { ADMIN, NOT_ADMIN, UNAVAILABLE }
+
+private enum class TargetAccess { ADMIN_ALLOWED, MEMBER_ALLOWED, USER_NOT_MEMBER, BOT_NOT_ADMIN, UNAVAILABLE }
+
+private suspend fun telegramBotAdminStatus(
+    chatId: Long,
+    telegramService: TelegramService,
+): BotAdminStatus {
+    val botUserId = telegramApiCall { telegramService.getMe()?.id }.getOrNull()
+        ?: return BotAdminStatus.UNAVAILABLE
+    val status = telegramApiCall { telegramService.chatMemberStatus(chatId, botUserId) }
+        .fold({ it }, { return BotAdminStatus.UNAVAILABLE })
+    return if (isTelegramAdmin(status)) BotAdminStatus.ADMIN else BotAdminStatus.NOT_ADMIN
+}
+
+private suspend fun <T> telegramApiCall(block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (exception: Exception) {
+        Result.failure(exception)
+    }
 
 private suspend fun ApplicationCall.authenticateWebAppSession(
     installationRepository: InstallationRepository,
@@ -1443,7 +1546,11 @@ async function loadInstallations(silent) {
     const qs = listMode === 'all' ? '?scope=all' : '';
     const res = await fetch('${basePath}/api/webapp/installations' + qs, { headers: getAuthHeaders() });
     if (!res.ok) {
-      if (!silent) renderError(res.status === 403 ? 'Admin access required' : 'Nuecagram needs admin access', res.status === 403 ? 'Only Telegram group admins can manage repositories here.' : 'Give the bot admin access in this group to manage repositories.');
+      if (!silent) {
+        const error = await res.json().catch(function() { return null; });
+        const message = error && error.error ? error.error : 'Could not load installations. Please try again.';
+        renderError('Setup unavailable', message);
+      }
       return;
     }
     items = await res.json();
@@ -1592,7 +1699,7 @@ function renderDestinationOptions(dests) {
     selectEl.selectedIndex = 0;
     updateChatNameFromDestination();
   } else {
-    selectEl.innerHTML = '<option value="">No Telegram groups found — add bot to a group first</option>';
+    selectEl.innerHTML = '<option value="">No eligible groups. Add Nuecagram as an administrator in a group where you are a member.</option>';
     selectEl.disabled = false;
   }
 }
@@ -1604,7 +1711,7 @@ function updateChatNameFromDestination() {
   const idx = selectEl.selectedIndex;
   if (idx < 0 || !selectEl.options[idx]) return;
   const selectedText = selectEl.options[idx].text;
-  if (selectedText && selectedText.indexOf('Loading') === -1 && selectedText.indexOf('No Telegram groups') === -1 && selectedText.indexOf('Could not load') === -1) {
+  if (selectedText && selectedText.indexOf('Loading') === -1 && selectedText.indexOf('No Telegram groups') === -1 && selectedText.indexOf('No eligible groups') === -1 && selectedText.indexOf('Could not load') === -1) {
     if (!chatNameEl.value || chatNameEl.getAttribute('data-autofilled') === 'true') {
       chatNameEl.value = selectedText;
       chatNameEl.setAttribute('data-autofilled', 'true');
@@ -1652,8 +1759,9 @@ async function openAdd() {
         cachedDestinations = dests;
         renderDestinationOptions(dests);
       } else {
+        const error = await res.json().catch(function() { return null; });
         if (!cachedDestinations) {
-          selectEl.innerHTML = '<option value="">Could not load destinations</option>';
+          selectEl.innerHTML = '<option value="">Could not load destinations: ' + escapeHtml(error && error.error ? error.error : 'please try again.') + '</option>';
           selectEl.disabled = false;
         }
       }
@@ -1692,7 +1800,11 @@ async function createInstallation() {
       method: 'POST', headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
-    if (res.status !== 201) { document.getElementById('wizErr').innerText = 'Could not create repository. Check the GitLab project ID.'; return; }
+    if (res.status !== 201) {
+      const error = await res.json().catch(function() { return null; });
+      document.getElementById('wizErr').innerText = error && error.error ? error.error : 'Could not create repository. Check the GitLab project ID.';
+      return;
+    }
     const data = await res.json();
     cachedDestinations = null;
     const gitlabProjectUrl = payload.gitlabBaseUrl.replace(/\/+$/, '') + (payload.gitlabProjectId ? '/projects/' + payload.gitlabProjectId : '');

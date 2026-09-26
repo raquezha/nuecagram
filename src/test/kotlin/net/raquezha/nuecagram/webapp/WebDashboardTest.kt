@@ -489,7 +489,7 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
-    fun nonAdminUserIsRejectedWithForbidden() = testApplication {
+    fun nonAdminMemberCanOpenGroupSetupWithoutSeeingExistingInstallations() = testApplication {
         configureTestApplication()
         val groupChatId = -100123456L
         mockTelegramService.setChatMemberStatus(groupChatId, 7777L, "member")
@@ -512,7 +512,8 @@ class WebDashboardTest : BaseEventTestHelper() {
         val listResp = client.get("/nuecagram/api/webapp/installations") {
             header("Cookie", "nuecagram_webapp_session=$sessionCookie")
         }
-        assertThat(listResp.status).isEqualTo(HttpStatusCode.Forbidden)
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())).isEmpty()
     }
 
     @Test
@@ -670,7 +671,7 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
-    fun demotedAdminDoesNotSeeStaleDestinationsInWebApp() = testApplication {
+    fun regularMemberCanSeeDestinationWhenBotRemainsAdmin() = testApplication {
         configureTestApplication()
         runBlocking { installationRepository.recordInstallationAdmin(installation.id, 9999L) }
         mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "member")
@@ -689,7 +690,7 @@ class WebDashboardTest : BaseEventTestHelper() {
         }
         assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
         val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
-        assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
+        assertThat(items.map { it.telegramChatId }).contains(installation.telegramChatId)
     }
 
     @Test
