@@ -252,7 +252,7 @@ class WebAppAuthEndpointTest : BaseEventTestHelper() {
         assertThat(response.headers["Content-Type"]).contains("javascript")
         val js = response.bodyAsText()
         assertThat(js).contains("function getAuthHeaders(")
-        assertThat(js).contains("headers: getAuthHeaders({ 'Content-Type': 'application/json' })")
+        assertThat(js).contains("headers: getAuthHeaders({ \"Content-Type\": \"application/json\" })")
         assertThat(js).contains("Connection error")
         assertThat(js).contains("Repository not found")
     }
