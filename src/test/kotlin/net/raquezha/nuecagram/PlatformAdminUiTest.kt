@@ -18,10 +18,30 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.runBlocking
 import net.raquezha.nuecagram.db.redactedUrl
+import net.raquezha.nuecagram.plugins.loginThrottleMessage
 import org.junit.Test
 
 @Suppress("TooManyFunctions")
 class PlatformAdminUiTest : BaseEventTestHelper() {
+    @Test
+    fun throttledAdminLoginShowsTheActualWaitTime() = testApplication {
+        configureTestApplication()
+        val noRedirectClient = client.config { followRedirects = false }
+        val form = loginForm(noRedirectClient)
+
+        repeat(5) {
+            assertThat(submitLogin(noRedirectClient, form, "incorrect-password").status)
+                .isEqualTo(HttpStatusCode.Unauthorized)
+        }
+        val response = submitLogin(noRedirectClient, form, "incorrect-password")
+        val retryAfter = response.headers[HttpHeaders.RetryAfter]!!.toLong()
+
+        assertThat(response.status).isEqualTo(HttpStatusCode.TooManyRequests)
+        assertThat(retryAfter).isIn(1L..900L)
+        assertThat(response.bodyAsText()).contains(loginThrottleMessage(retryAfter))
+        assertThat(response.bodyAsText()).doesNotContain("5 failed attempts")
+    }
+
     @Test
     fun redactedUrlPreservesPlainNamesAndSanitizesUrls() {
         assertThat("Nuecagram Prod".redactedUrl()).isEqualTo("Nuecagram Prod")

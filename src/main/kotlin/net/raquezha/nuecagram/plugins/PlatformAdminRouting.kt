@@ -13,6 +13,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import net.raquezha.nuecagram.ConfigWithSecrets
@@ -62,6 +63,7 @@ private const val LOGIN_CSRF_SECONDS = 10 * SECONDS_PER_MINUTE
 private const val MAX_LOGIN_FAILURES = 5
 private const val MAX_PASSWORD_LENGTH = 1024
 private const val LOGIN_WINDOW_MINUTES = 15L
+private const val LOGIN_THROTTLE_CLEANUP_INTERVAL_SECONDS = 60L
 private const val AUDIT_WINDOW_HOURS = 24L
 private const val MAX_PREVIEW_ITEMS = 5
 private const val SHORT_ID_LENGTH = 8
@@ -92,15 +94,13 @@ fun Route.platformAdminRouting(basePath: String) {
 
     post("$basePath/admin/login") {
         val clientId = call.request.origin.remoteHost
-        if (loginThrottle.isBlocked(clientId)) {
-            call.response.headers.append(
-                HttpHeaders.RetryAfter,
-                (LOGIN_WINDOW_MINUTES * SECONDS_PER_MINUTE).toString(),
-            )
+        val retryAfterSeconds = loginThrottle.retryAfterSeconds(clientId)
+        if (retryAfterSeconds != null) {
+            call.response.headers.append(HttpHeaders.RetryAfter, retryAfterSeconds.toString())
             call.respondManagementHtml(
                 status = HttpStatusCode.TooManyRequests,
                 title = "Try again later",
-                body = authMessageHtml("Try again later", "Too many failed login attempts."),
+                body = authMessageHtml("Try again later", loginThrottleMessage(retryAfterSeconds)),
             )
             return@post
         }
@@ -1019,17 +1019,28 @@ private fun String?.toPositivePage(): Long = this?.toLongOrNull()?.takeIf { it >
 
 private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8)
 
-private class LoginThrottle {
+internal class LoginThrottle {
     // ponytail: process-local throttle; move to shared storage if the service runs multiple replicas.
     private val failures = mutableMapOf<String, ArrayDeque<Instant>>()
+    private var lastCleanup: Instant? = null
 
     @Synchronized
-    fun isBlocked(clientId: String, now: Instant = Instant.now()): Boolean =
-        recentFailures(clientId, now).size >= MAX_LOGIN_FAILURES
+    fun retryAfterSeconds(clientId: String, now: Instant = Instant.now()): Long? {
+        cleanupIfDue(now)
+        val attempts = recentFailures(clientId, now) ?: return null
+        if (attempts.size < MAX_LOGIN_FAILURES) return null
+
+        val retryAt = attempts.first().plus(LOGIN_WINDOW_MINUTES, ChronoUnit.MINUTES)
+        val remaining = Duration.between(now, retryAt)
+        return (remaining.seconds + if (remaining.nano > 0) 1 else 0).coerceAtLeast(1)
+    }
 
     @Synchronized
     fun recordFailure(clientId: String, now: Instant = Instant.now()) {
-        recentFailures(clientId, now).addLast(now)
+        cleanupIfDue(now)
+        val attempts = recentFailures(clientId, now) ?: ArrayDeque()
+        attempts.addLast(now)
+        failures[clientId] = attempts
     }
 
     @Synchronized
@@ -1037,10 +1048,50 @@ private class LoginThrottle {
         failures.remove(clientId)
     }
 
-    private fun recentFailures(clientId: String, now: Instant): ArrayDeque<Instant> {
-        val attempts = failures.getOrPut(clientId) { ArrayDeque() }
+    @Synchronized
+    internal fun pruneExpired(now: Instant): Int {
+        val cutoff = now.minus(LOGIN_WINDOW_MINUTES, ChronoUnit.MINUTES)
+        val iterator = failures.entries.iterator()
+        var removed = 0
+        while (iterator.hasNext()) {
+            val attempts = iterator.next().value
+            while (attempts.firstOrNull()?.isBefore(cutoff) == true) attempts.removeFirst()
+            if (attempts.isEmpty()) {
+                iterator.remove()
+                removed++
+            }
+        }
+        return removed
+    }
+
+    private fun cleanupIfDue(now: Instant) {
+        val previousCleanup = lastCleanup
+        if (
+            previousCleanup == null ||
+            !now.isBefore(previousCleanup.plusSeconds(LOGIN_THROTTLE_CLEANUP_INTERVAL_SECONDS))
+        ) {
+            pruneExpired(now)
+            lastCleanup = now
+        }
+    }
+
+    private fun recentFailures(clientId: String, now: Instant): ArrayDeque<Instant>? {
+        val attempts = failures[clientId] ?: return null
         val cutoff = now.minus(LOGIN_WINDOW_MINUTES, ChronoUnit.MINUTES)
         while (attempts.firstOrNull()?.isBefore(cutoff) == true) attempts.removeFirst()
-        return attempts
+        if (attempts.isEmpty()) failures.remove(clientId)
+        return attempts.takeIf { it.isNotEmpty() }
+    }
+}
+
+internal fun loginThrottleMessage(retryAfterSeconds: Long): String {
+    val waitSeconds = retryAfterSeconds.coerceAtLeast(1)
+    return if (waitSeconds < SECONDS_PER_MINUTE) {
+        val unit = if (waitSeconds == 1L) "second" else "seconds"
+        "Too many sign-in attempts. Please try again in $waitSeconds $unit."
+    } else {
+        val minutes = (waitSeconds + SECONDS_PER_MINUTE - 1) / SECONDS_PER_MINUTE
+        val unit = if (minutes == 1L) "minute" else "minutes"
+        "Too many sign-in attempts. Please try again in about $minutes $unit."
     }
 }
