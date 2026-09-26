@@ -3,6 +3,7 @@ package net.raquezha.nuecagram.telegram
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.delay
 
 data class AnsweredCallback(
     val callbackQueryId: String,
@@ -13,6 +14,8 @@ data class AnsweredCallback(
 @Suppress("TooManyFunctions")
 class MockTelegramService : TelegramService {
     private val messageCounter = AtomicInteger(0)
+    private val activeMemberLookups = AtomicInteger(0)
+    private val maxConcurrentMemberLookups = AtomicInteger(0)
     private val sentMessages = CopyOnWriteArrayList<Message>()
     private val memberStatuses = ConcurrentHashMap<Pair<Long, Long>, String>()
     private val answeredCallbacks = CopyOnWriteArrayList<AnsweredCallback>()
@@ -23,6 +26,8 @@ class MockTelegramService : TelegramService {
     private var failChatMemberLookup = false
     @Volatile
     private var failGetMe = false
+    @Volatile
+    private var memberLookupDelayMs = 0L
 
     @Volatile
     private var webhookUrl: String? = null
@@ -77,8 +82,15 @@ class MockTelegramService : TelegramService {
         chatId: Long,
         userId: Long,
     ): String? {
-        check(!failChatMemberLookup) { "chat member lookup failed" }
-        return memberStatuses[chatId to userId] ?: if (userId == 10001L) "administrator" else null
+        val active = activeMemberLookups.incrementAndGet()
+        maxConcurrentMemberLookups.updateAndGet { current -> maxOf(current, active) }
+        try {
+            if (memberLookupDelayMs > 0) delay(memberLookupDelayMs)
+            check(!failChatMemberLookup) { "chat member lookup failed" }
+            return memberStatuses[chatId to userId] ?: if (userId == 10001L) "administrator" else null
+        } finally {
+            activeMemberLookups.decrementAndGet()
+        }
     }
 
     override suspend fun answerCallbackQuery(
@@ -97,6 +109,12 @@ class MockTelegramService : TelegramService {
     fun failGetMe() {
         failGetMe = true
     }
+
+    fun setMemberLookupDelay(delayMs: Long) {
+        memberLookupDelayMs = delayMs
+    }
+
+    fun maxConcurrentMemberLookups(): Int = maxConcurrentMemberLookups.get()
 
     fun configuredWebhookUrl(): String? = webhookUrl
 
@@ -129,6 +147,9 @@ class MockTelegramService : TelegramService {
         deletedScopes.clear()
         failChatMemberLookup = false
         failGetMe = false
+        memberLookupDelayMs = 0L
+        activeMemberLookups.set(0)
+        maxConcurrentMemberLookups.set(0)
         webhookUrl = null
         webhookHeader = null
         menuButton = null

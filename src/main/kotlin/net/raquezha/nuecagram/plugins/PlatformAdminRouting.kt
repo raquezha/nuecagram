@@ -62,6 +62,7 @@ private const val LOGIN_CSRF_SECONDS = 10 * SECONDS_PER_MINUTE
 private const val MAX_LOGIN_FAILURES = 5
 private const val MAX_PASSWORD_LENGTH = 1024
 private const val LOGIN_WINDOW_MINUTES = 15L
+private const val LOGIN_THROTTLE_CLEANUP_INTERVAL_SECONDS = 60L
 private const val AUDIT_WINDOW_HOURS = 24L
 private const val MAX_PREVIEW_ITEMS = 5
 private const val SHORT_ID_LENGTH = 8
@@ -1019,17 +1020,23 @@ private fun String?.toPositivePage(): Long = this?.toLongOrNull()?.takeIf { it >
 
 private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8)
 
-private class LoginThrottle {
+internal class LoginThrottle {
     // ponytail: process-local throttle; move to shared storage if the service runs multiple replicas.
     private val failures = mutableMapOf<String, ArrayDeque<Instant>>()
+    private var lastCleanup: Instant? = null
 
     @Synchronized
-    fun isBlocked(clientId: String, now: Instant = Instant.now()): Boolean =
-        recentFailures(clientId, now).size >= MAX_LOGIN_FAILURES
+    fun isBlocked(clientId: String, now: Instant = Instant.now()): Boolean {
+        cleanupIfDue(now)
+        return (recentFailures(clientId, now)?.size ?: 0) >= MAX_LOGIN_FAILURES
+    }
 
     @Synchronized
     fun recordFailure(clientId: String, now: Instant = Instant.now()) {
-        recentFailures(clientId, now).addLast(now)
+        cleanupIfDue(now)
+        val attempts = recentFailures(clientId, now) ?: ArrayDeque()
+        attempts.addLast(now)
+        failures[clientId] = attempts
     }
 
     @Synchronized
@@ -1037,10 +1044,38 @@ private class LoginThrottle {
         failures.remove(clientId)
     }
 
-    private fun recentFailures(clientId: String, now: Instant): ArrayDeque<Instant> {
-        val attempts = failures.getOrPut(clientId) { ArrayDeque() }
+    @Synchronized
+    internal fun pruneExpired(now: Instant): Int {
+        val cutoff = now.minus(LOGIN_WINDOW_MINUTES, ChronoUnit.MINUTES)
+        val iterator = failures.entries.iterator()
+        var removed = 0
+        while (iterator.hasNext()) {
+            val attempts = iterator.next().value
+            while (attempts.firstOrNull()?.isBefore(cutoff) == true) attempts.removeFirst()
+            if (attempts.isEmpty()) {
+                iterator.remove()
+                removed++
+            }
+        }
+        return removed
+    }
+
+    private fun cleanupIfDue(now: Instant) {
+        val previousCleanup = lastCleanup
+        if (
+            previousCleanup == null ||
+            !now.isBefore(previousCleanup.plusSeconds(LOGIN_THROTTLE_CLEANUP_INTERVAL_SECONDS))
+        ) {
+            pruneExpired(now)
+            lastCleanup = now
+        }
+    }
+
+    private fun recentFailures(clientId: String, now: Instant): ArrayDeque<Instant>? {
+        val attempts = failures[clientId] ?: return null
         val cutoff = now.minus(LOGIN_WINDOW_MINUTES, ChronoUnit.MINUTES)
         while (attempts.firstOrNull()?.isBefore(cutoff) == true) attempts.removeFirst()
-        return attempts
+        if (attempts.isEmpty()) failures.remove(clientId)
+        return attempts.takeIf { it.isNotEmpty() }
     }
 }
