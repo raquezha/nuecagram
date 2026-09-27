@@ -322,43 +322,51 @@ private suspend fun ApplicationCall.handleDeleteInstallation(
     telegramService: TelegramService,
 ) {
     val session = authenticateWebAppSession(installationRepository) ?: return
-    if (!verifyAdminStatus(session, telegramService)) return
-    if (!verifyCsrfHeader(installationRepository, session)) return
+    if (!verifyAdminStatus(session, telegramService) || !verifyCsrfHeader(installationRepository, session)) return
 
     val dmId = resolveDmId(session, installationRepository)
-    if (dmId == null) {
-        respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
-        return
-    }
-
     val idParam = parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-    if (idParam == null) {
-        respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+    val item = if (idParam != null) installationRepository.installationAdminContext(idParam) else null
+
+    when {
+        dmId == null -> respond(HttpStatusCode.Forbidden, ErrorResponsePayload("DM bootstrap required"))
+        idParam == null -> respond(HttpStatusCode.BadRequest, ErrorResponsePayload("Invalid installation ID"))
+        item == null || !canAccess(session, item, telegramService) -> {
+            respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
+        }
+        else -> executeDeleteInstallation(installationRepository, session, item)
+    }
+}
+
+private suspend fun ApplicationCall.executeDeleteInstallation(
+    installationRepository: InstallationRepository,
+    session: WebAppSessionContext,
+    item: InstallationAdminContext,
+) {
+    val deleted = try {
+        installationRepository.softDeleteInstallation(
+            id = item.id,
+            actorType = ActorType.WEBAPP_SESSION,
+            actorId = session.telegramUserId.toString(),
+            action = "webapp_delete",
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = session.username,
+                actorFirstName = session.firstName,
+                repoName = item.repoName,
+                nickname = item.chatName,
+                chatId = item.telegramChatId,
+                topicId = item.telegramTopicId,
+            ),
+        )
+    } catch (_: IllegalStateException) {
+        respond(HttpStatusCode.InternalServerError, ErrorResponsePayload("Failed to record audit event"))
         return
     }
 
-    val item = installationRepository.installationAdminContext(idParam)
-    if (item == null || !canAccess(session, item, telegramService)) {
-        respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
-        return
-    }
-
-    val deleted = installationRepository.softDeleteInstallation(item.id)
     if (!deleted) {
         respond(HttpStatusCode.NotFound, ErrorResponsePayload("Installation not found"))
         return
     }
-
-    installationRepository.writeAuditEvent(
-        installationId = item.id,
-        actorType = ActorType.WEBAPP_SESSION,
-        actorId = session.telegramUserId.toString(),
-        action = "webapp_delete",
-        metadataPatch = AuditMetadataPatch(
-            actorUsername = session.username,
-            actorFirstName = session.firstName,
-        ),
-    )
 
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.NoContent)

@@ -23,6 +23,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.BaseEventTestHelper
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.testing.TelegramWebAppTestUtils.buildTestInitData
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import org.junit.Test
@@ -75,6 +76,7 @@ private data class TestDestinationPayload(
 
 class WebDashboardTest : BaseEventTestHelper() {
     private val testConfig: ConfigWithSecrets by inject()
+    private val platformAdminReadRepository: PlatformAdminReadRepository by inject()
     private val mockTelegramService: MockTelegramService
         get() = telegramService as MockTelegramService
     private val json = Json { ignoreUnknownKeys = true }
@@ -835,5 +837,28 @@ class WebDashboardTest : BaseEventTestHelper() {
         }
 
         assertThat(statuses).containsExactly(HttpStatusCode.NoContent, HttpStatusCode.NotFound)
+    }
+
+    @Test
+    fun deleteEndpointPreservesInstallationDetailsInAuditEvent() = testApplication {
+        configureTestApplication()
+        mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "administrator")
+        runBlocking { installationRepository.upsertTelegramPrivateChat(9999L, installation.telegramChatId) }
+
+        val (sessionCookie, csrf) = issueSessionWithNonce(client, userId = 9999L, chatId = installation.telegramChatId)
+
+        val deleteResp = client.delete("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+        }
+        assertThat(deleteResp.status).isEqualTo(HttpStatusCode.NoContent)
+
+        val auditRecords = runBlocking { platformAdminReadRepository.auditEvents() }
+        val deleteRecord = auditRecords.firstOrNull {
+            it.installationId == installation.id && it.action == "webapp_delete"
+        }
+        assertThat(deleteRecord).isNotNull()
+        assertThat(deleteRecord!!.repository).isEqualTo(installation.repoName)
+        assertThat(deleteRecord.chatDetails).contains(installation.telegramChatId.toString())
     }
 }
