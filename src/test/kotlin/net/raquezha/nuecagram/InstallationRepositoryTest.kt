@@ -3,6 +3,7 @@ package net.raquezha.nuecagram
 import com.google.common.truth.Truth.assertThat
 import de.infix.testBalloon.framework.core.testSuite
 import java.sql.DriverManager
+import java.sql.SQLException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -562,6 +563,34 @@ val InstallationRepositoryTests by testSuite {
         // Webhook resolution returns SoftDeleted
         val deletedRes = repository.resolveWebhookInstallation(cred.raw)
         assertThat(deletedRes).isEqualTo(net.raquezha.nuecagram.db.models.WebhookInstallationResult.SoftDeleted)
+    }
+
+    postgresTest("allows recreating a soft-deleted GitLab project but rejects active duplicates") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val baseUrl = "https://gitlab.example.com/recreate-soft-deleted"
+            val projectId = 9220L
+            val deleted = repository.createInstallation(baseUrl, projectId, -100220L, null)
+
+            assertThat(repository.softDeleteInstallation(deleted.id)).isTrue()
+
+            val recreated = repository.createInstallation(baseUrl, projectId, -100221L, 17L)
+            val persisted = repository.installationAdminContext(recreated.id)
+            assertThat(persisted).isNotNull()
+            assertThat(persisted!!.telegramChatId).isEqualTo(-100221L)
+            assertThat(persisted.telegramTopicId).isEqualTo(17L)
+
+            val duplicateError = runCatching {
+                repository.createInstallation(baseUrl, projectId, -100222L, null)
+            }.exceptionOrNull()
+            assertThat(duplicateError).isNotNull()
+            assertThat(generateSequence(duplicateError) { it.cause }
+                .filterIsInstance<SQLException>()
+                .any { it.sqlState == "23505" }).isTrue()
+        } finally {
+            DatabaseFactory.close()
+        }
     }
 
     postgresTest("persists and retrieves active MR and recent branch push state") { config ->
