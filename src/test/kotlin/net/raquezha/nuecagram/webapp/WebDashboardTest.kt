@@ -433,7 +433,7 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(htmlResponse.status).isEqualTo(HttpStatusCode.OK)
         val html = htmlResponse.bodyAsText()
 
-        val referencedIds = Regex("""getElementById\('([^']+)'\)""")
+        val referencedIds = Regex("""getElementById\(['\"]([^'\"]+)['\"]\)""")
             .findAll(js)
             .map { it.groupValues[1] }
             .toSet()
@@ -455,13 +455,13 @@ class WebDashboardTest : BaseEventTestHelper() {
         val html = client.get("/nuecagram/webapp").bodyAsText()
         val js = client.get("/nuecagram/webapp/app.js").bodyAsText()
 
-        assertThat(html).contains("#screen-loading { display: none;")
-        assertThat(html).contains("#screen-loading.active { display: flex; }")
-        assertThat(js).contains("if (name !== 'loading' && loadingTimer)")
+        assertThat(Regex("#screen-loading\\s*\\{\\s*display:\\s*none;").containsMatchIn(html)).isTrue()
+        assertThat(Regex("#screen-loading\\.active\\s*\\{\\s*display:\\s*flex;").containsMatchIn(html)).isTrue()
+        assertThat(js).contains("if (name !== \"loading\" && loadingTimer)")
         assertThat(js).contains("clearInterval(loadingTimer);")
-        assertThat(js).contains("showScreen('list');")
-        assertThat(js).contains("document.querySelector('#screen-list .top-actions')")
-        assertThat(js).contains("topActions.style.display = 'flex'")
+        assertThat(js).contains("showScreen(\"list\");")
+        assertThat(js).contains("document.querySelector(\"#screen-list .top-actions\")")
+        assertThat(js).contains("topActions.style.display = \"flex\"")
         assertThat(js).contains("catch (e) {")
     }
 
@@ -477,8 +477,11 @@ class WebDashboardTest : BaseEventTestHelper() {
         assertThat(html).contains("id=\"delConfirmTitle\"")
         assertThat(html).contains("id=\"btnConfirmRotate\"")
         assertThat(html).contains("id=\"btnConfirmDelete\"")
-        assertThat(html).contains("Make sure both <strong>you</strong>")
-        assertThat(html).contains("and <strong>@NuecagramBot</strong> are <strong>Administrators</strong>")
+        val normalizedHtml = html.replace(Regex("\\s+"), " ")
+        assertThat(normalizedHtml).contains(
+            "Make sure <strong>you</strong> are a group member and <strong>@NuecagramBot</strong> is an " +
+                "<strong>Administrator</strong>",
+        )
         assertThat(js).contains("openRotateConfirm")
         assertThat(js).contains("confirmRotateInstallation")
         assertThat(js).contains("openDeleteConfirm")
@@ -489,7 +492,7 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
-    fun nonAdminUserIsRejectedWithForbidden() = testApplication {
+    fun nonAdminMemberCanOpenGroupSetupWithoutSeeingExistingInstallations() = testApplication {
         configureTestApplication()
         val groupChatId = -100123456L
         mockTelegramService.setChatMemberStatus(groupChatId, 7777L, "member")
@@ -512,7 +515,8 @@ class WebDashboardTest : BaseEventTestHelper() {
         val listResp = client.get("/nuecagram/api/webapp/installations") {
             header("Cookie", "nuecagram_webapp_session=$sessionCookie")
         }
-        assertThat(listResp.status).isEqualTo(HttpStatusCode.Forbidden)
+        assertThat(listResp.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(json.decodeFromString<List<TestInstallationPayload>>(listResp.bodyAsText())).isEmpty()
     }
 
     @Test
@@ -670,7 +674,7 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
-    fun demotedAdminDoesNotSeeStaleDestinationsInWebApp() = testApplication {
+    fun regularMemberCanSeeDestinationWhenBotRemainsAdmin() = testApplication {
         configureTestApplication()
         runBlocking { installationRepository.recordInstallationAdmin(installation.id, 9999L) }
         mockTelegramService.setChatMemberStatus(installation.telegramChatId, 9999L, "member")
@@ -689,7 +693,7 @@ class WebDashboardTest : BaseEventTestHelper() {
         }
         assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
         val items = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
-        assertThat(items.map { it.telegramChatId }).doesNotContain(installation.telegramChatId)
+        assertThat(items.map { it.telegramChatId }).contains(installation.telegramChatId)
     }
 
     @Test
