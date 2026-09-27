@@ -123,4 +123,24 @@ class AuthSessionRepository(
         metadataJson = metadataJson,
         metadataPatch = metadataPatch,
     )
+
+    /**
+     * Writes an audit event within an active database transaction (Tx).
+     * Must be called inside a [DatabaseFactory.dbTransaction] block.
+     */
+    internal fun writeAuditEventInTx(
+        installationId: UUID?,
+        actorType: String,
+        actorId: String?,
+        action: String,
+        metadataJson: String = "{}",
+        metadataPatch: AuditMetadataPatch = AuditMetadataPatch(),
+    ): Boolean = auditEventRepository.writeAuditEventInTx(
+        installationId = installationId,
+        actorType = actorType,
+        actorId = actorId,
+        action = action,
+        metadataJson = metadataJson,
+        metadataPatch = metadataPatch,
+    )
 }

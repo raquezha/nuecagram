@@ -14,6 +14,7 @@ import kotlinx.coroutines.coroutineScope
 import net.raquezha.nuecagram.db.DatabaseFactory
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
+import net.raquezha.nuecagram.db.models.ActorType
 import net.raquezha.nuecagram.db.models.WebhookInstallationResult
 import net.raquezha.nuecagram.testing.postgresTest
 
@@ -632,6 +633,97 @@ val InstallationRepositoryTests by testSuite {
             )
             assertThat(cleaned).isAtLeast(1)
             assertThat(repository.getLatestPushSha(inst.id, 501L, "feature/login")).isNull()
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
+
+    postgresTest("snapshots metadata for soft-deleted installations and rolls back failed delete audits") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+
+            val inst = repository.createInstallation(
+                repoName = "org/deleted-repo",
+                chatName = "Alerts Room",
+                gitlabBaseUrl = "https://gitlab.example.com/org/deleted-repo",
+                gitlabProjectId = 9912L,
+                telegramChatId = -100888L,
+                telegramTopicId = 44L,
+            )
+
+            // Soft-delete the installation first, then call writeAuditEvent directly
+            val deleted = repository.softDeleteInstallation(inst.id)
+            assertThat(deleted).isTrue()
+
+            val wroteAudit = repository.writeAuditEvent(
+                installationId = inst.id,
+                actorType = ActorType.TELEGRAM,
+                actorId = "123",
+                action = "post_delete_audit",
+            )
+            assertThat(wroteAudit).isTrue()
+
+            DriverManager.getConnection(config.url, config.username, config.password).use { connection ->
+                connection.prepareStatement(
+                    """
+                    SELECT metadata ->> 'repo_name' AS repo_name,
+                           metadata ->> 'nickname' AS nickname,
+                           metadata ->> 'chat_id' AS chat_id,
+                           metadata ->> 'topic_id' AS topic_id
+                    FROM audit_events
+                    WHERE installation_id = ? AND action = 'post_delete_audit'
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setObject(1, inst.id)
+                    statement.executeQuery().use { result ->
+                        assertThat(result.next()).isTrue()
+                        assertThat(result.getString("repo_name")).isEqualTo("org/deleted-repo")
+                        assertThat(result.getString("nickname")).isEqualTo("Alerts Room")
+                        assertThat(result.getString("chat_id")).isEqualTo("-100888")
+                        assertThat(result.getString("topic_id")).isEqualTo("44")
+                    }
+                }
+            }
+
+            // Transactional soft-delete with audit write failure (null actorId for WEBAPP_SESSION)
+            val secondInst = repository.createInstallation(
+                repoName = "org/atomic-repo",
+                chatName = "Atomic Room",
+                gitlabBaseUrl = "https://gitlab.example.com/org/atomic-repo",
+                gitlabProjectId = 9913L,
+                telegramChatId = -100999L,
+                telegramTopicId = 55L,
+            )
+
+            val auditFailure = runCatching {
+                repository.softDeleteInstallation(
+                    id = secondInst.id,
+                    actorType = ActorType.WEBAPP_SESSION,
+                    actorId = null,
+                    action = "webapp_delete",
+                )
+            }.exceptionOrNull()
+
+            assertThat(auditFailure).isInstanceOf(IllegalStateException::class.java)
+
+            // Verify installation was NOT soft-deleted (transaction rolled back)
+            val activeContext = repository.installationAdminContext(secondInst.id)
+            assertThat(activeContext).isNotNull()
+            assertThat(activeContext!!.repoName).isEqualTo("org/atomic-repo")
+
+            // Verify no audit event was created
+            DriverManager.getConnection(config.url, config.username, config.password).use { connection ->
+                connection.prepareStatement(
+                    "SELECT COUNT(*) FROM audit_events WHERE installation_id = ? AND action = 'webapp_delete'",
+                ).use { statement ->
+                    statement.setObject(1, secondInst.id)
+                    statement.executeQuery().use { result ->
+                        assertThat(result.next()).isTrue()
+                        assertThat(result.getInt(1)).isEqualTo(0)
+                    }
+                }
+            }
         } finally {
             // Pool cleaned up automatically on re-initialization
         }

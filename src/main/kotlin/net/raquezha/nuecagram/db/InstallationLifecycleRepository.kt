@@ -136,10 +136,19 @@ class InstallationLifecycleRepository(
     }
 
     suspend fun softDeleteInstallation(id: UUID): Boolean = databaseFactory.dbTransaction {
+        softDeleteInstallationInTx(id)
+    }
+
+    /**
+     * Soft-deletes the installation row within an active database transaction (Tx).
+     * Returns true if a row was updated, false if not found or already deleted.
+     * Must be called inside a [DatabaseFactory.dbTransaction] block.
+     */
+    internal fun softDeleteInstallationInTx(id: UUID): Boolean {
         val count = Installations.update({ (Installations.id eq id) and (Installations.deletedAt.isNull()) }) {
             it[deletedAt] = Instant.now().databaseTime()
         }
-        count > 0
+        return count > 0
     }
 
     private fun deriveRepositoryName(gitlabBaseUrl: String, gitlabProjectId: Long?): String {

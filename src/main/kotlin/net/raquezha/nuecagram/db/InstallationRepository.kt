@@ -243,6 +243,27 @@ class InstallationRepository(
 
     suspend fun softDeleteInstallation(id: UUID): Boolean = lifecycleRepository.softDeleteInstallation(id)
 
+    suspend fun softDeleteInstallation(
+        id: UUID,
+        actorType: String,
+        actorId: String?,
+        action: String,
+        metadataPatch: AuditMetadataPatch = AuditMetadataPatch(),
+    ): Boolean = databaseFactory.dbTransaction {
+        val deleted = lifecycleRepository.softDeleteInstallationInTx(id)
+        if (!deleted) return@dbTransaction false
+
+        val auditRecorded = authSessionRepository.writeAuditEventInTx(
+            installationId = id,
+            actorType = actorType,
+            actorId = actorId,
+            action = action,
+            metadataPatch = metadataPatch,
+        )
+        check(auditRecorded) { "Failed to record audit event for installation $id" }
+        true
+    }
+
     suspend fun cleanupStaleMrAndPushStates(now: Instant = Instant.now(), maxAgeDays: Long = 30): Int =
         webhookStateRepository.cleanupStaleMrAndPushStates(now, maxAgeDays)
 
