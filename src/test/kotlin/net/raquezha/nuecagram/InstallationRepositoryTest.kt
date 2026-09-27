@@ -3,6 +3,7 @@ package net.raquezha.nuecagram
 import com.google.common.truth.Truth.assertThat
 import de.infix.testBalloon.framework.core.testSuite
 import java.sql.DriverManager
+import java.sql.SQLException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -575,13 +576,18 @@ val InstallationRepositoryTests by testSuite {
             assertThat(repository.softDeleteInstallation(deleted.id)).isTrue()
 
             val recreated = repository.createInstallation(baseUrl, projectId, -100221L, 17L)
-            assertThat(recreated.telegramChatId).isEqualTo(-100221L)
-            assertThat(recreated.telegramTopicId).isEqualTo(17L)
+            val persisted = repository.installationAdminContext(recreated.id)
+            assertThat(persisted).isNotNull()
+            assertThat(persisted!!.telegramChatId).isEqualTo(-100221L)
+            assertThat(persisted.telegramTopicId).isEqualTo(17L)
 
             val duplicateError = runCatching {
                 repository.createInstallation(baseUrl, projectId, -100222L, null)
             }.exceptionOrNull()
             assertThat(duplicateError).isNotNull()
+            assertThat(generateSequence(duplicateError) { it.cause }
+                .filterIsInstance<SQLException>()
+                .any { it.sqlState == "23505" }).isTrue()
         } finally {
             DatabaseFactory.close()
         }
