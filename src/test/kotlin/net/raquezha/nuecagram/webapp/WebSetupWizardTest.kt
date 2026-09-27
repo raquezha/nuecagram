@@ -495,6 +495,69 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun groupAdminCheckFailsUnavailableWhenBotIdentityCannotBeLoaded() = testApplication {
+        configureTestApplication()
+        val (session, _) = sessionFor(client, 7019L)
+        mockTelegram.failGetMe()
+
+        val response = client.get("/nuecagram/api/webapp/installations") {
+            header("Cookie", "nuecagram_webapp_session=$session")
+        }
+
+        assertThat(response.status).isEqualTo(HttpStatusCode.ServiceUnavailable)
+    }
+
+    @Test
+    fun destinationLookupFailsUnavailableWhenBotIdentityCannotBeLoaded() = testApplication {
+        configureTestApplication()
+        val userId = 7029L
+        runBlocking { installationRepository.upsertTelegramPrivateChat(userId, userId) }
+        val initData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResponse = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val token = json.decodeFromString<WizardAuthPayload>(authResponse.bodyAsText()).sessionToken!!
+        mockTelegram.failGetMe()
+
+        val response = client.get("/nuecagram/api/webapp/destinations") {
+            header("X-Session-Token", token)
+        }
+
+        assertThat(response.status).isEqualTo(HttpStatusCode.ServiceUnavailable)
+    }
+
+    @Test
+    fun destinationMembershipLookupsAreBoundedAndStillReturnResults() = testApplication {
+        configureTestApplication()
+        val userId = 7031L
+        val chatIds = (1L..10L).map { -10070310L - it }
+        chatIds.forEach { chatId ->
+            mockTelegram.setChatMemberStatus(chatId, userId, "administrator")
+            runBlocking {
+                installationRepository.upsertKnownTelegramDestination(chatId, null, "Group $chatId")
+            }
+        }
+        runBlocking { installationRepository.upsertTelegramPrivateChat(userId, userId) }
+        val initData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authResponse = client.post("/nuecagram/api/webapp/auth") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"initData":"$initData"}""")
+        }
+        val token = json.decodeFromString<WizardAuthPayload>(authResponse.bodyAsText()).sessionToken!!
+        mockTelegram.setMemberLookupDelay(10)
+
+        val response = client.get("/nuecagram/api/webapp/destinations") {
+            header("X-Session-Token", token)
+        }
+
+        assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+        assertThat(response.bodyAsText()).contains(chatIds.first().toString())
+        assertThat(mockTelegram.maxConcurrentMemberLookups()).isAtMost(8)
+        assertThat(mockTelegram.maxConcurrentMemberLookups()).isGreaterThan(1)
+    }
+
+    @Test
     fun getDestinationsReturnsKnownGroupDestinationsForMember() = testApplication {
         configureTestApplication()
         val userId = 7020L

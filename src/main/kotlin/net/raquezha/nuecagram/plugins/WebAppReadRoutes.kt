@@ -15,6 +15,8 @@ import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.isTelegramAdmin
 import net.raquezha.nuecagram.telegram.isTelegramMember
 
+private const val MAX_DESTINATION_LOOKUPS_IN_FLIGHT = 8
+
 internal suspend fun ApplicationCall.handleGetInstallations(
     installationRepository: InstallationRepository,
     telegramService: TelegramService,
@@ -106,21 +108,7 @@ internal suspend fun ApplicationCall.handleGetDestinations(
     val knownList = installationRepository.knownTelegramDestinations()
     val allChatIds = (installedList.map { it.telegramChatId } + knownList.map { it.telegramChatId }).distinct()
 
-    val activeAdminMap = coroutineScope {
-        allChatIds.map { chatId ->
-            async {
-                val userIsMember = telegramApiCall { telegramService.chatMemberStatus(chatId, userId) }
-                    .map(::isTelegramMember)
-                    .getOrDefault(false)
-
-                val isActive = userIsMember && telegramApiCall {
-                    telegramService.chatMemberStatus(chatId, botUserId)
-                }.map(::isTelegramAdmin).getOrDefault(false)
-
-                chatId to isActive
-            }
-        }.awaitAll().toMap()
-    }
+    val activeAdminMap = activeDestinationAdminMap(allChatIds, userId, botUserId, telegramService)
 
     fun isActiveAdmin(chatId: Long): Boolean = activeAdminMap[chatId] == true
 
@@ -158,6 +146,27 @@ internal suspend fun ApplicationCall.handleGetDestinations(
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, combined)
 }
+
+private suspend fun activeDestinationAdminMap(
+    chatIds: List<Long>,
+    userId: Long,
+    botUserId: Long,
+    telegramService: TelegramService,
+): Map<Long, Boolean> = chatIds.chunked(MAX_DESTINATION_LOOKUPS_IN_FLIGHT).flatMap { batch ->
+    coroutineScope {
+        batch.map { chatId ->
+            async {
+                val userIsMember = telegramApiCall {
+                    telegramService.chatMemberStatus(chatId, userId)
+                }.getOrNull().let(::isTelegramMember)
+                val botIsAdmin = userIsMember && telegramApiCall {
+                    telegramService.chatMemberStatus(chatId, botUserId)
+                }.getOrNull().let(::isTelegramAdmin)
+                chatId to (userIsMember && botIsAdmin)
+            }
+        }.awaitAll()
+    }
+}.toMap()
 
 @Serializable
 private data class DestinationPayload(
