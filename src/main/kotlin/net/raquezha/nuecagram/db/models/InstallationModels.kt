@@ -13,6 +13,12 @@ data class InstallationRecord(
     val telegramTopicId: Long?,
 )
 
+enum class DestinationUpdateResult {
+    UPDATED,
+    UNCHANGED,
+    NOT_FOUND,
+}
+
 data class ProvisionedInstallation(
     val installation: InstallationRecord,
     val credential: IssuedCredential,

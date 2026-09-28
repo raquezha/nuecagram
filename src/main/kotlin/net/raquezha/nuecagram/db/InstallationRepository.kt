@@ -160,6 +160,49 @@ class InstallationRepository(
         topicId: Long? = null,
     ): InstallationAdminContext? = adminRepository.findInstallationByQuery(rawQuery, chatId, topicId)
 
+    suspend fun updateDestination(
+        installationId: UUID,
+        telegramChatId: Long,
+        telegramTopicId: Long?,
+        actorId: String,
+        metadataPatch: AuditMetadataPatch,
+    ): DestinationUpdateResult = try {
+        databaseFactory.dbTransaction {
+            val oldDestination = lifecycleRepository.updateDestinationInTx(
+                installationId,
+                telegramChatId,
+                telegramTopicId,
+            ) ?: return@dbTransaction DestinationUpdateResult.NOT_FOUND
+            if (oldDestination == (telegramChatId to telegramTopicId)) {
+                return@dbTransaction DestinationUpdateResult.UNCHANGED
+            }
+            val auditRecorded = authSessionRepository.writeAuditEventInTx(
+                installationId = installationId,
+                actorType = ActorType.WEBAPP_SESSION,
+                actorId = actorId,
+                action = "webapp_destination_update",
+                metadataPatch = metadataPatch.copy(
+                    destinationDelta = AuditDestinationDelta(
+                        oldChatId = oldDestination.first,
+                        oldTopicId = oldDestination.second,
+                        newChatId = telegramChatId,
+                        newTopicId = telegramTopicId,
+                    ),
+                ),
+            )
+            check(auditRecorded) { "Failed to record destination change audit for installation $installationId" }
+            DestinationUpdateResult.UPDATED
+        }
+    } catch (e: Exception) {
+        val isDuplicate = generateSequence(e as Throwable) { it.cause }
+            .filterIsInstance<java.sql.SQLException>()
+            .any { it.sqlState == "23505" }
+        if (isDuplicate) {
+            throw DuplicateInstallationException("Installation already exists for this destination", e)
+        }
+        throw e
+    }
+
     suspend fun updateIdentity(
         installationId: UUID,
         repoName: String,

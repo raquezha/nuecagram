@@ -133,7 +133,11 @@ class PlatformAdminReadRepository(
                    metadata ->> 'old_repo_name' AS old_repo_name,
                    metadata ->> 'new_repo_name' AS new_repo_name,
                    metadata ->> 'old_nickname' AS old_nickname,
-                   metadata ->> 'new_nickname' AS new_nickname
+                   metadata ->> 'new_nickname' AS new_nickname,
+                   metadata ->> 'old_chat_id' AS old_chat_id,
+                   metadata ->> 'old_topic_id' AS old_topic_id,
+                   metadata ->> 'new_chat_id' AS new_chat_id,
+                   metadata ->> 'new_topic_id' AS new_topic_id
             $fromSql
             ORDER BY created_at DESC, id DESC
             LIMIT ? OFFSET ?
@@ -267,6 +271,10 @@ private fun java.sql.ResultSet.toPlatformAdminAuditRecord(): PlatformAdminAuditR
     val newRepoName = getString("new_repo_name")
     val oldNickname = getString("old_nickname")
     val newNickname = getString("new_nickname")
+    val oldChatId = getString("old_chat_id")
+    val oldTopicId = getString("old_topic_id")
+    val newChatId = getString("new_chat_id")
+    val newTopicId = getString("new_topic_id")
 
     return PlatformAdminAuditRecord(
         installationId = installationId,
@@ -279,6 +287,7 @@ private fun java.sql.ResultSet.toPlatformAdminAuditRecord(): PlatformAdminAuditR
             nickname?.takeIf(String::isNotBlank)?.let { add("nickname: $it") }
             aliasDeltaLine("repo", oldRepoName, newRepoName)?.let(::add)
             aliasDeltaLine("chat", oldNickname, newNickname)?.let(::add)
+            destinationDeltaLine(oldChatId, oldTopicId, newChatId, newTopicId)?.let(::add)
         },
     )
 }
@@ -298,6 +307,19 @@ private fun chatLabel(chatId: String?, topicId: String?): String =
     chatId?.takeIf(String::isNotBlank)?.let {
         topicId?.takeIf(String::isNotBlank)?.let { topic -> "$it / topic $topic" } ?: it
     } ?: "Unknown Chat"
+
+private fun destinationDeltaLine(
+    oldChatId: String?,
+    oldTopicId: String?,
+    newChatId: String?,
+    newTopicId: String?,
+): String? {
+    if (oldChatId == null || newChatId == null) return null
+    fun label(chatId: String, topicId: String?) = "$chatId / topic ${topicId ?: "(none)"}"
+    val oldDestination = label(oldChatId, oldTopicId)
+    val newDestination = label(newChatId, newTopicId)
+    return if (oldDestination == newDestination) null else "destination: $oldDestination -> $newDestination"
+}
 
 private fun aliasDeltaLine(label: String, oldValue: String?, newValue: String?): String? {
     if (oldValue == null && newValue == null) return null

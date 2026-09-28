@@ -123,6 +123,25 @@ class InstallationLifecycleRepository(
         }
     }
 
+    internal fun updateDestinationInTx(
+        installationId: UUID,
+        telegramChatId: Long,
+        telegramTopicId: Long?,
+    ): Pair<Long, Long?>? {
+        val current = installationWithMuteQuery(installationId).firstOrNull() ?: return null
+        val oldChatId = current[Installations.telegramChatId]
+        val oldTopicId = current[Installations.telegramTopicId]
+        if (oldChatId == telegramChatId && oldTopicId == telegramTopicId) return oldChatId to oldTopicId
+
+        val updated = Installations.update({
+            (Installations.id eq installationId) and Installations.deletedAt.isNull()
+        }) {
+            it[Installations.telegramChatId] = telegramChatId
+            it[Installations.telegramTopicId] = telegramTopicId
+        }
+        return if (updated == 1) oldChatId to oldTopicId else null
+    }
+
     suspend fun updateIdentity(
         installationId: UUID,
         repoName: String,
