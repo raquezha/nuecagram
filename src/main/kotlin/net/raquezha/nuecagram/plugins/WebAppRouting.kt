@@ -74,6 +74,12 @@ internal data class InstallationResponsePayload(
 )
 
 @Serializable
+internal data class DestinationUpdateRequestPayload(
+    val telegramChatId: Long,
+    val telegramTopicId: Long? = null,
+)
+
+@Serializable
 internal data class MuteRequestPayload(
     val muted: Boolean,
 )
@@ -171,6 +177,10 @@ fun Route.webAppRouting(basePath: String) {
 
     post("$basePath/api/webapp/installations/{id}/identity") {
         call.handleUpdateIdentity(installationRepository, telegramService, json)
+    }
+
+    post("$basePath/api/webapp/installations/{id}/destination") {
+        call.handleUpdateDestination(installationRepository, telegramService, json)
     }
 
     post("$basePath/api/webapp/installations/{id}/test") {

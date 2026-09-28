@@ -475,6 +475,28 @@
         </div>
       </section>
 
+      <section id="screen-destination-edit" class="panel">
+        <button class="link" data-screen="detail">‹ Back to details</button>
+        <h1>Edit Telegram destination</h1>
+        <p>
+          Future notifications for this installation will go to the selected
+          group or topic.
+        </p>
+        <div class="field">
+          <label for="destinationSelect">Telegram group or topic</label>
+          <select id="destinationSelect" disabled>
+            <option value="">Loading destinations...</option>
+          </select>
+        </div>
+        <div id="destinationEditErr" class="helper err" role="alert"></div>
+        <div class="split">
+          <button data-screen="detail">Cancel</button>
+          <button id="btnSaveDestination" class="primary" disabled>
+            Save destination
+          </button>
+        </div>
+      </section>
+
       <section id="screen-wizard" class="panel">
         <button class="link" data-screen="list">‹ Back to repositories</button>
         <h1>Add repository</h1>

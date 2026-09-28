@@ -24,6 +24,7 @@ import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.BaseEventTestHelper
 import net.raquezha.nuecagram.ConfigWithSecrets
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
+import net.raquezha.nuecagram.db.models.WebhookInstallationResult
 import net.raquezha.nuecagram.testing.TelegramWebAppTestUtils.buildTestInitData
 import net.raquezha.nuecagram.telegram.MockTelegramService
 import org.junit.Test
@@ -329,6 +330,131 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun destinationEndpointRejectsMissingCsrfUnauthorizedInstallationAndNonmember() = testApplication {
+        configureTestApplication()
+        val targetChatId = -100987654321L
+        runBlocking { installationRepository.upsertKnownTelegramDestination(targetChatId, 23, "New group") }
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+        val body = """{"telegramChatId":$targetChatId,"telegramTopicId":23}"""
+
+        val missingCsrf = client.post("/nuecagram/api/webapp/installations/${installation.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            setBody(body)
+        }
+        assertThat(missingCsrf.status).isEqualTo(HttpStatusCode.Forbidden)
+
+        val unrelated = runBlocking {
+            installationRepository.createInstallation(
+                gitlabBaseUrl = "https://unrelated.example.com/project",
+                gitlabProjectId = 998877,
+                telegramChatId = -100000998877,
+                telegramTopicId = null,
+            )
+        }
+        val unauthorized = client.post("/nuecagram/api/webapp/installations/${unrelated.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody(body)
+        }
+        assertThat(unauthorized.status).isEqualTo(HttpStatusCode.NotFound)
+
+        val nonmember = client.post("/nuecagram/api/webapp/installations/${installation.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody(body)
+        }
+        assertThat(nonmember.status).isEqualTo(HttpStatusCode.Forbidden)
+        assertThat(runBlocking { installationRepository.installationAdminContext(installation.id) }?.telegramChatId)
+            .isEqualTo(installation.telegramChatId)
+    }
+
+    @Test
+    fun destinationEndpointRequiresBotAccessAndChangesWebhookDestination() = testApplication {
+        configureTestApplication()
+        val targetChatId = -100987654321L
+        runBlocking { installationRepository.upsertKnownTelegramDestination(targetChatId, 23, "New group") }
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+        val body = """{"telegramChatId":$targetChatId,"telegramTopicId":23}"""
+        mockTelegramService.setChatMemberStatus(targetChatId, 9999L, "member")
+        mockTelegramService.setChatMemberStatus(targetChatId, 10001L, "member")
+
+        val botDenied = client.post("/nuecagram/api/webapp/installations/${installation.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody(body)
+        }
+        assertThat(botDenied.status).isEqualTo(HttpStatusCode.Forbidden)
+        mockTelegramService.setChatMemberStatus(targetChatId, 10001L, "administrator")
+
+        val updated = client.post("/nuecagram/api/webapp/installations/${installation.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody(body)
+        }
+        assertThat(updated.status).isEqualTo(HttpStatusCode.OK)
+        val response = json.decodeFromString<TestInstallationPayload>(updated.bodyAsText())
+        assertThat(response.telegramChatId).isEqualTo(targetChatId)
+        assertThat(response.telegramTopicId).isEqualTo(23)
+        assertThat(runBlocking { installationRepository.installationAdminContext(installation.id) }?.gitlabProjectId)
+            .isEqualTo(installation.gitlabProjectId)
+        assertThat(mockTelegramService.sentMessages()).isEmpty()
+
+        val webhook = runBlocking { installationRepository.resolveWebhookInstallation(webhookToken) }
+        assertThat(webhook).isInstanceOf(WebhookInstallationResult.Active::class.java)
+        val chatDetails = (webhook as WebhookInstallationResult.Active).context.chatDetails
+        assertThat(chatDetails.chatId).isEqualTo(targetChatId.toString())
+        assertThat(chatDetails.topicId).isEqualTo("23")
+        val audit = platformAdminReadRepository.auditEventsPage(limit = 10).items
+            .first { it.action == "webapp_destination_update" }
+        assertThat(audit.actor).isEqualTo("Test")
+        assertThat(audit.details).contains(
+            "destination: ${installation.telegramChatId} / topic ${installation.telegramTopicId} -> " +
+                "$targetChatId / topic 23",
+        )
+    }
+
+    @Test
+    fun destinationEndpointSupportsGroupLevelDestinationWithoutTopic() = testApplication {
+        configureTestApplication()
+        val targetChatId = -100987654322L
+        runBlocking { installationRepository.upsertKnownTelegramDestination(targetChatId, null, "Whole group") }
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+        mockTelegramService.setChatMemberStatus(targetChatId, 9999L, "member")
+
+        val response = client.post("/nuecagram/api/webapp/installations/${installation.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"telegramChatId":$targetChatId,"telegramTopicId":null}""")
+        }
+
+        assertThat(response.status).isEqualTo(HttpStatusCode.OK)
+        val updated = json.decodeFromString<TestInstallationPayload>(response.bodyAsText())
+        assertThat(updated.telegramChatId).isEqualTo(targetChatId)
+        assertThat(updated.telegramTopicId).isNull()
+    }
+
+    @Test
     fun identityEndpointHandlesEmojiUnicodeAndLongStringsGracefully() = testApplication {
         configureTestApplication()
         val (sessionCookie, csrf) = issueSessionWithNonce(
@@ -441,6 +567,11 @@ class WebDashboardTest : BaseEventTestHelper() {
             .toSet()
 
         assertThat(referencedIds).isNotEmpty()
+        assertThat(html).contains("id=\"screen-destination-edit\"")
+        assertThat(html).contains("id=\"destinationSelect\"")
+        assertThat(js).contains("/destination\"")
+        assertThat(js).contains("window.confirm(")
+        assertThat(js).contains("Future notifications will go to the selected Telegram destination.")
 
         for (id in referencedIds) {
             val existsInHtml = html.contains("id=\"$id\"")

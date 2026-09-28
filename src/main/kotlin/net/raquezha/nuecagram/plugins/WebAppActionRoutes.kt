@@ -5,13 +5,18 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import net.raquezha.nuecagram.db.DuplicateInstallationException
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.models.ActorType
 import net.raquezha.nuecagram.db.models.AuditIdentityDelta
+import net.raquezha.nuecagram.db.models.DestinationUpdateResult
 import net.raquezha.nuecagram.db.models.AuditMetadataPatch
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
+import net.raquezha.nuecagram.telegram.isTelegramAdmin
+import net.raquezha.nuecagram.telegram.isTelegramMember
 
 internal suspend fun ApplicationCall.handleMuteInstallation(
     installationRepository: InstallationRepository,
@@ -113,6 +118,134 @@ private fun String?.escapeTelegramHtml(): String =
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
+
+internal suspend fun ApplicationCall.handleUpdateDestination(
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    json: Json,
+) {
+    processUpdateDestination(this, installationRepository, telegramService, json)?.let { result ->
+        appendWebAppSecurityHeaders()
+        respond(result.status, result.payload)
+    }
+}
+
+private suspend fun processUpdateDestination(
+    call: ApplicationCall,
+    installationRepository: InstallationRepository,
+    telegramService: TelegramService,
+    json: Json,
+): WebAppResponseSpec? {
+    val session = call.authenticateWebAppSession(installationRepository) ?: return null
+    if (!call.verifyAdminStatus(session, telegramService) ||
+        !call.verifyCsrfHeader(installationRepository, session)
+    ) return null
+
+    val id = call.parameters["id"]?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+        ?: return destinationError(HttpStatusCode.BadRequest, "Invalid installation ID")
+    val item = installationRepository.installationAdminContext(id)
+        ?.takeIf { canAccess(session, it, telegramService) }
+        ?: return destinationError(HttpStatusCode.NotFound, "Installation not found")
+    val payload = runCatching {
+        json.decodeFromString<DestinationUpdateRequestPayload>(call.receiveText())
+    }.getOrNull()
+        ?: return destinationError(HttpStatusCode.BadRequest, "Missing or invalid destination payload")
+    if (payload.telegramChatId >= 0 || payload.telegramTopicId?.let { it <= 0 } == true) {
+        return destinationError(HttpStatusCode.BadRequest, "Select a valid Telegram group and topic")
+    }
+
+    return validateDestinationAccess(installationRepository, telegramService, session.telegramUserId, item, payload)
+        ?: saveDestination(installationRepository, session, item, payload)
+}
+
+private suspend fun validateDestinationAccess(
+    repository: InstallationRepository,
+    telegramService: TelegramService,
+    userId: Long,
+    item: net.raquezha.nuecagram.db.models.InstallationAdminContext,
+    payload: DestinationUpdateRequestPayload,
+): WebAppResponseSpec? {
+    val allowed = repository.knownTelegramDestinations().any {
+        it.telegramChatId == payload.telegramChatId && it.telegramTopicId == payload.telegramTopicId
+    } || repository.installationsForAdmin(userId).any {
+        it.telegramChatId == payload.telegramChatId && it.telegramTopicId == payload.telegramTopicId
+    } || (item.telegramChatId == payload.telegramChatId && item.telegramTopicId == payload.telegramTopicId)
+    if (!allowed) return destinationError(HttpStatusCode.BadRequest, "Selected Telegram destination is unavailable")
+
+    val botId = telegramApiCall { telegramService.getMe()?.id }.getOrNull()
+        ?: return destinationError(HttpStatusCode.ServiceUnavailable, "Telegram bot identity is unavailable")
+    return validateDestinationUserMembership(telegramService, payload.telegramChatId, userId)
+        ?: validateDestinationBotAccess(telegramService, payload.telegramChatId, botId)
+}
+
+private suspend fun validateDestinationUserMembership(
+    telegramService: TelegramService,
+    chatId: Long,
+    userId: Long,
+): WebAppResponseSpec? = telegramApiCall {
+    telegramService.chatMemberStatus(chatId, userId)
+}.fold(
+    onSuccess = { status ->
+        if (isTelegramMember(status)) null else destinationError(
+            HttpStatusCode.Forbidden,
+            "You must be a member of the selected Telegram group",
+        )
+    },
+    onFailure = {
+        destinationError(HttpStatusCode.ServiceUnavailable, "Telegram membership could not be verified")
+    },
+)
+
+private suspend fun validateDestinationBotAccess(
+    telegramService: TelegramService,
+    chatId: Long,
+    botId: Long,
+): WebAppResponseSpec? = telegramApiCall {
+    telegramService.chatMemberStatus(chatId, botId)
+}.fold(
+    onSuccess = { status ->
+        if (isTelegramAdmin(status)) null else destinationError(
+            HttpStatusCode.Forbidden,
+            "Nuecagram must be an administrator in the selected group",
+        )
+    },
+    onFailure = {
+        destinationError(HttpStatusCode.ServiceUnavailable, "Bot access could not be verified")
+    },
+)
+
+private suspend fun saveDestination(
+    repository: InstallationRepository,
+    session: net.raquezha.nuecagram.db.models.WebAppSessionContext,
+    item: net.raquezha.nuecagram.db.models.InstallationAdminContext,
+    payload: DestinationUpdateRequestPayload,
+): WebAppResponseSpec = try {
+    when (repository.updateDestination(
+        installationId = item.id,
+        telegramChatId = payload.telegramChatId,
+        telegramTopicId = payload.telegramTopicId,
+        actorId = session.telegramUserId.toString(),
+        metadataPatch = AuditMetadataPatch(
+            actorUsername = session.username,
+            actorFirstName = session.firstName,
+        ),
+    )) {
+        DestinationUpdateResult.NOT_FOUND -> destinationError(HttpStatusCode.NotFound, "Installation not found")
+        DestinationUpdateResult.UPDATED, DestinationUpdateResult.UNCHANGED ->
+            repository.installationAdminContext(item.id)?.let {
+                WebAppResponseSpec(HttpStatusCode.OK, it.toResponsePayload())
+            } ?: destinationError(HttpStatusCode.NotFound, "Installation not found")
+    }
+} catch (_: DuplicateInstallationException) {
+    destinationError(HttpStatusCode.Conflict, "This repository is already connected to that destination")
+} catch (cancellation: CancellationException) {
+    throw cancellation
+} catch (_: Exception) {
+    destinationError(HttpStatusCode.InternalServerError, "Could not save the Telegram destination")
+}
+
+private fun destinationError(status: HttpStatusCode, message: String) =
+    WebAppResponseSpec(status, ErrorResponsePayload(message))
 
 internal suspend fun ApplicationCall.handleTestInstallation(
     installationRepository: InstallationRepository,

@@ -504,10 +504,13 @@ function renderDetail() {
     '<div class="section"><div class="section-title">Actions</div><div class="split"><button id="btnTest">Test notification</button><button id="btnMute">' +
     (item.muted ? "Unmute notifications" : "Mute notifications") +
     '</button></div><div id="actionHelp" class="helper"></div></div>' +
-    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button></div><div class="section"><div class="section-title">Danger zone</div><div style="display:flex;flex-direction:column;gap:10px;"><button id="btnRotate" class="danger">Rotate webhook token ›</button><button id="btnDelete" class="danger">Delete repository ›</button></div></div>';
+    '<div class="section"><div class="section-title">Settings</div><button id="btnEdit">Edit names ›</button><button id="btnEditDestination" style="margin-top:8px">Edit destination ›</button></div><div class="section"><div class="section-title">Danger zone</div><div style="display:flex;flex-direction:column;gap:10px;"><button id="btnRotate" class="danger">Rotate webhook token ›</button><button id="btnDelete" class="danger">Delete repository ›</button></div></div>';
   document.getElementById("btnTest").addEventListener("click", testDelivery);
   document.getElementById("btnMute").addEventListener("click", toggleMute);
   document.getElementById("btnEdit").addEventListener("click", openEdit);
+  document
+    .getElementById("btnEditDestination")
+    .addEventListener("click", openDestinationEdit);
   document
     .getElementById("btnRotate")
     .addEventListener("click", openRotateConfirm);
@@ -523,6 +526,119 @@ function setAction(text, ok) {
   setTimeout(function () {
     el.innerText = "";
   }, 2500);
+}
+
+async function openDestinationEdit() {
+  const select = document.getElementById("destinationSelect");
+  const error = document.getElementById("destinationEditErr");
+  const save = document.getElementById("btnSaveDestination");
+  error.innerText = "";
+  select.disabled = true;
+  save.disabled = true;
+  select.innerHTML = '<option value="">Loading destinations...</option>';
+  showScreen("destination-edit");
+  try {
+    const res = await fetch("{{BASE_PATH}}/api/webapp/destinations", {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok)
+      throw new Error("Could not load eligible Telegram destinations.");
+    const destinations = await res.json();
+    const currentKey =
+      currentItem.telegramChatId + ":" + (currentItem.telegramTopicId || 0);
+    if (
+      !destinations.some(function (d) {
+        return (
+          d.telegramChatId === currentItem.telegramChatId &&
+          d.telegramTopicId === currentItem.telegramTopicId
+        );
+      })
+    ) {
+      destinations.push({
+        id: currentKey,
+        name: destinationLabel(currentItem),
+        telegramChatId: currentItem.telegramChatId,
+        telegramTopicId: currentItem.telegramTopicId,
+      });
+    }
+    select.innerHTML = destinations
+      .map(function (d) {
+        const key = d.telegramChatId + ":" + (d.telegramTopicId || 0);
+        return (
+          '<option value="' +
+          escapeHtml(key) +
+          '">' +
+          escapeHtml(d.name) +
+          (d.telegramTopicId == null ? " (entire group)" : "") +
+          "</option>"
+        );
+      })
+      .join("");
+    select.value = currentKey;
+    select.disabled = destinations.length === 0;
+    save.disabled = destinations.length === 0;
+  } catch (e) {
+    error.innerText =
+      e.message || "Could not load eligible Telegram destinations.";
+    select.innerHTML = '<option value="">No eligible destinations</option>';
+  }
+}
+
+async function saveDestination() {
+  const error = document.getElementById("destinationEditErr");
+  const save = document.getElementById("btnSaveDestination");
+  const parts = document.getElementById("destinationSelect").value.split(":");
+  const telegramChatId = Number(parts[0]);
+  const topicValue = Number(parts[1]);
+  if (!telegramChatId || telegramChatId >= 0 || parts.length !== 2) {
+    error.innerText = "Select a valid Telegram group or topic.";
+    return;
+  }
+  if (
+    !window.confirm(
+      "Future notifications will go to the selected Telegram destination. Continue?",
+    )
+  )
+    return;
+  error.innerText = "";
+  save.disabled = true;
+  try {
+    const res = await fetch(
+      "{{BASE_PATH}}/api/webapp/installations/" +
+        currentItem.id +
+        "/destination",
+      {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          telegramChatId: telegramChatId,
+          telegramTopicId: topicValue === 0 ? null : topicValue,
+        }),
+      },
+    );
+    const response = await res.json().catch(function () {
+      return null;
+    });
+    if (!res.ok) {
+      error.innerText =
+        response && response.error
+          ? response.error
+          : "Could not save the Telegram destination.";
+      save.disabled = false;
+      return;
+    }
+    currentItem = response;
+    items = items.map(function (item) {
+      return item.id === currentItem.id ? currentItem : item;
+    });
+    renderDetail();
+    showScreen("detail");
+    setAction("Telegram destination updated.", true);
+  } catch (e) {
+    error.innerText =
+      "Could not save the Telegram destination. Check your connection and try again.";
+    save.disabled = false;
+  }
 }
 
 function openEdit() {
@@ -953,6 +1069,9 @@ function setupHandlers() {
   document
     .getElementById("btnSaveIdentity")
     .addEventListener("click", saveIdentity);
+  document
+    .getElementById("btnSaveDestination")
+    .addEventListener("click", saveDestination);
   document
     .getElementById("btnCreate")
     .addEventListener("click", createInstallation);
