@@ -57,3 +57,10 @@ This document records the key architectural choices behind Nuecagram's design.
 - **Context**: Dumping hundreds of data rows onto a single `/admin` dashboard degrades server rendering speed and creates visual clutter as the system scales to thousands of installations and audit events.
 - **Decision**: Structure the platform administration interface into a high-signal Command Center (`/admin`) presenting metrics and 5 recent preview items, supported by dedicated server-paginated workstations (`/admin/installations` and `/admin/audit`) powered by URL query parameters (`search`, `status`, `action`, `page`).
 - **Consequences**: Sub-50ms server rendering, sub-5ms database queries (`LIMIT/OFFSET`), zero-JS CSP security compliance (`default-src 'none'`), native URL shareability, and infinite database scalability.
+
+## 9. Destination-Scoped Installation Uniqueness
+
+- **Status**: Accepted
+- **Context**: A global uniqueness constraint on `(gitlab_base_url, gitlab_project_id)` blocked multiple Telegram groups, topics, or teams from connecting to the same GitLab repository, and caused incomplete setups to permanently lock the repository from being configured elsewhere.
+- **Decision**: Scope active installation uniqueness to `(gitlab_base_url, gitlab_project_id, telegram_chat_id, COALESCE(telegram_topic_id, 0)) WHERE deleted_at IS NULL` via Flyway migration V15. Incoming webhooks are routed by secret token (`X-Gitlab-Token`), remaining fully decoupled from project ID lookups.
+- **Consequences**: Distinct Telegram chats or forum topics can independently subscribe to the same GitLab repository with dedicated webhook credentials, while duplicate alerts within the same chat and topic are prevented.

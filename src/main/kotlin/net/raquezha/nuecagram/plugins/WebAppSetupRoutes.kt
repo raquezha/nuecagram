@@ -6,9 +6,11 @@ import io.ktor.server.request.receiveText
 import io.ktor.server.response.respond
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
+import net.raquezha.nuecagram.db.DuplicateInstallationException
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.models.ActorType
 import net.raquezha.nuecagram.db.models.AuditMetadataPatch
+import net.raquezha.nuecagram.db.models.ProvisionInstallationRequest
 import net.raquezha.nuecagram.db.models.WebAppSessionContext
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.telegram.isTelegramAdmin
@@ -164,31 +166,38 @@ private suspend fun createAndRespond(
     session: WebAppSessionContext,
     targetAccess: TargetAccess,
 ): WebAppResponseSpec {
-    val installation = installationRepository.createInstallation(
+    val request = ProvisionInstallationRequest(
         repoName = parsed.repoName,
         chatName = parsed.chatName,
         gitlabBaseUrl = parsed.gitlabBaseUrl.trimEnd('/'),
         gitlabProjectId = parsed.gitlabProjectId,
         telegramChatId = target.chatId!!,
         telegramTopicId = target.topicId,
-    )
-    if (targetAccess == TargetAccess.ADMIN_ALLOWED) {
-        installationRepository.recordInstallationAdmin(installation.id, session.telegramUserId)
-    }
-    val tok = installationRepository.issueWebhookSecret(installation.id)
-    installationRepository.writeAuditEvent(
-        installationId = installation.id,
+        adminTelegramUserId = if (targetAccess == TargetAccess.ADMIN_ALLOWED) session.telegramUserId else null,
         actorType = ActorType.WEBAPP_SESSION,
         actorId = session.telegramUserId.toString(),
-        action = "webapp_setup",
-        metadataPatch = AuditMetadataPatch(
+        auditAction = "webapp_setup",
+        auditMetadataPatch = AuditMetadataPatch(
             actorUsername = session.username,
             actorFirstName = session.firstName,
         ),
     )
+    val provisioned = try {
+        installationRepository.provisionInstallation(request)
+    } catch (_: DuplicateInstallationException) {
+        return WebAppResponseSpec(
+            HttpStatusCode.Conflict,
+            ErrorResponsePayload("This repository is already connected to this Telegram chat or topic"),
+        )
+    } catch (e: Exception) {
+        return WebAppResponseSpec(
+            HttpStatusCode.InternalServerError,
+            ErrorResponsePayload("Failed to create installation: ${e.message ?: "Internal error"}"),
+        )
+    }
     return WebAppResponseSpec(
         HttpStatusCode.Created,
-        toCreateResponse(installation, tok, config.webhookEndpointUrl()),
+        toCreateResponse(provisioned.installation, provisioned.credential, config.webhookEndpointUrl()),
     )
 }
 

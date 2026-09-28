@@ -5,7 +5,7 @@ import java.util.UUID
 import net.raquezha.nuecagram.db.models.*
 
 @Suppress("TooManyFunctions")
-class AuthSessionRepository(
+open class AuthSessionRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
     private val managementSessionRepository: ManagementSessionRepository = ManagementSessionRepository(databaseFactory),
     private val platformAdminSessionRepository: PlatformAdminSessionRepository =
@@ -128,7 +128,7 @@ class AuthSessionRepository(
      * Writes an audit event within an active database transaction (Tx).
      * Must be called inside a [DatabaseFactory.dbTransaction] block.
      */
-    internal fun writeAuditEventInTx(
+    open internal fun writeAuditEventInTx(
         installationId: UUID?,
         actorType: String,
         actorId: String?,

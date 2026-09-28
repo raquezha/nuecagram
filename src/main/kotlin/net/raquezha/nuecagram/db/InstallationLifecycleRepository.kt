@@ -35,6 +35,24 @@ class InstallationLifecycleRepository(
         gitlabProjectId: Long?,
         telegramChatId: Long,
         telegramTopicId: Long?,
+    ): InstallationRecord = databaseFactory.dbTransaction {
+        createInstallationInTx(
+            repoName = repoName,
+            chatName = chatName,
+            gitlabBaseUrl = gitlabBaseUrl,
+            gitlabProjectId = gitlabProjectId,
+            telegramChatId = telegramChatId,
+            telegramTopicId = telegramTopicId,
+        )
+    }
+
+    internal fun createInstallationInTx(
+        repoName: String,
+        chatName: String? = null,
+        gitlabBaseUrl: String,
+        gitlabProjectId: Long?,
+        telegramChatId: Long,
+        telegramTopicId: Long?,
     ): InstallationRecord {
         val normalizedRepoName = repoName.trim().take(MAX_COLUMN_LENGTH)
         require(normalizedRepoName.isNotBlank() && normalizedRepoName != UNKNOWN_REPOSITORY_NAME) {
@@ -51,16 +69,14 @@ class InstallationLifecycleRepository(
             telegramChatId = telegramChatId,
             telegramTopicId = telegramTopicId,
         )
-        databaseFactory.dbTransaction {
-            Installations.insert {
-                it[id] = installation.id
-                it[Installations.repoName] = installation.repoName
-                it[Installations.chatName] = installation.chatName
-                it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
-                it[Installations.gitlabProjectId] = installation.gitlabProjectId
-                it[Installations.telegramChatId] = installation.telegramChatId
-                it[Installations.telegramTopicId] = installation.telegramTopicId
-            }
+        Installations.insert {
+            it[id] = installation.id
+            it[Installations.repoName] = installation.repoName
+            it[Installations.chatName] = installation.chatName
+            it[Installations.gitlabBaseUrl] = installation.gitlabBaseUrl
+            it[Installations.gitlabProjectId] = installation.gitlabProjectId
+            it[Installations.telegramChatId] = installation.telegramChatId
+            it[Installations.telegramTopicId] = installation.telegramTopicId
         }
         return installation
     }

@@ -6,7 +6,6 @@ import java.time.ZoneOffset
 import java.util.UUID
 import net.raquezha.nuecagram.db.models.IssuedCredential
 import net.raquezha.nuecagram.db.models.VerifiedSecret
-import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greater
@@ -20,7 +19,7 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 
-class WebhookSecretRepository(
+open class WebhookSecretRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
 ) {
     private data class StoredSecretCandidate(
@@ -34,7 +33,7 @@ class WebhookSecretRepository(
         installationId: UUID,
         expiresAt: Instant? = null,
     ): IssuedCredential = databaseFactory.dbTransaction {
-        issueWebhookSecret(installationId, expiresAt)
+        issueWebhookSecretInTx(installationId, expiresAt)
     }
 
     suspend fun rotateWebhookSecret(
@@ -42,7 +41,7 @@ class WebhookSecretRepository(
         graceUntil: Instant,
         expiresAt: Instant? = null,
     ): IssuedCredential = databaseFactory.dbTransaction {
-        val issued = issueWebhookSecret(installationId, expiresAt)
+        val issued = issueWebhookSecretInTx(installationId, expiresAt)
         WebhookSecrets.update({
             (WebhookSecrets.installationId eq installationId) and
                 (WebhookSecrets.id neq issued.id) and WebhookSecrets.revokedAt.isNull()
@@ -92,9 +91,9 @@ class WebhookSecretRepository(
         }
     }
 
-    private fun Transaction.issueWebhookSecret(
+    open internal fun issueWebhookSecretInTx(
         installationId: UUID,
-        expiresAt: Instant?,
+        expiresAt: Instant? = null,
     ): IssuedCredential {
         val id = UUID.randomUUID()
         val (raw, stored) = CredentialCodec.issueCredential()
