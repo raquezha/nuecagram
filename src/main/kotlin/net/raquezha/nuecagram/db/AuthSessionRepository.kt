@@ -93,6 +93,16 @@ open class AuthSessionRepository(
     fun verifyWebAppCsrf(session: WebAppSessionContext, raw: String): Boolean =
         webAppSessionRepository.verifyWebAppCsrf(session, raw)
 
+    suspend fun updateWebAppSessionDestination(
+        sessionId: UUID,
+        telegramChatId: Long?,
+        telegramTopicId: Long?,
+    ): Boolean = webAppSessionRepository.updateWebAppSessionDestination(
+        sessionId = sessionId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
+
     suspend fun deleteWebAppSession(id: UUID): Boolean =
         webAppSessionRepository.deleteWebAppSession(id)
 

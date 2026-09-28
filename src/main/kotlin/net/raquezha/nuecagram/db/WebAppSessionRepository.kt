@@ -122,6 +122,17 @@ class WebAppSessionRepository(
     fun verifyWebAppCsrf(session: WebAppSessionContext, raw: String): Boolean =
         CredentialCodec.matches(raw, session.csrfDigest, session.csrfHash)
 
+    suspend fun updateWebAppSessionDestination(
+        sessionId: UUID,
+        telegramChatId: Long?,
+        telegramTopicId: Long?,
+    ): Boolean = databaseFactory.dbTransaction {
+        WebAppSessions.update({ WebAppSessions.id eq sessionId }) {
+            it[WebAppSessions.telegramChatId] = telegramChatId
+            it[WebAppSessions.telegramTopicId] = telegramTopicId
+        } == 1
+    }
+
     suspend fun deleteWebAppSession(id: UUID): Boolean = databaseFactory.dbTransaction {
         WebAppSessions.deleteWhere { WebAppSessions.id eq id } == 1
     }

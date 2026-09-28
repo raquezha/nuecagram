@@ -22,6 +22,13 @@ data class PlatformAdminAuditPage(
     val totalCount: Long,
 )
 
+data class AuditDestinationDelta(
+    val oldChatId: Long,
+    val oldTopicId: Long?,
+    val newChatId: Long,
+    val newTopicId: Long?,
+)
+
 data class AuditIdentityDelta(
     val oldRepoName: String? = null,
     val newRepoName: String? = null,
@@ -37,6 +44,7 @@ data class AuditMetadataPatch(
     val chatId: Long? = null,
     val topicId: Long? = null,
     val identityDelta: AuditIdentityDelta? = null,
+    val destinationDelta: AuditDestinationDelta? = null,
 )
 
 object AuditMetadataKeys {
@@ -52,6 +60,10 @@ object AuditMetadataKeys {
     const val NEW_REPO_NAME = "new_repo_name"
     const val OLD_NICKNAME = "old_nickname"
     const val NEW_NICKNAME = "new_nickname"
+    const val OLD_CHAT_ID = "old_chat_id"
+    const val OLD_TOPIC_ID = "old_topic_id"
+    const val NEW_CHAT_ID = "new_chat_id"
+    const val NEW_TOPIC_ID = "new_topic_id"
 }
 
 object ActorType {

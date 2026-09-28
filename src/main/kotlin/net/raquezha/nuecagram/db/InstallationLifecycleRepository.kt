@@ -12,12 +12,14 @@ import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.vendors.ForUpdateOption
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.upsert
+import net.raquezha.nuecagram.db.models.DestinationUpdateSnapshot
 
 class InstallationLifecycleRepository(
     private val databaseFactory: DatabaseFactory = DatabaseFactory,
@@ -120,6 +122,48 @@ class InstallationLifecycleRepository(
                     row.getOrNull(MuteStates.muted) ?: false,
                 ),
             )
+        }
+    }
+
+    internal fun updateDestinationInTx(
+        installationId: UUID,
+        telegramChatId: Long,
+        telegramTopicId: Long?,
+    ): DestinationUpdateSnapshot? {
+        val current = Installations.selectAll()
+            .where { (Installations.id eq installationId) and Installations.deletedAt.isNull() }
+            .forUpdate(ForUpdateOption.ForUpdate)
+            .firstOrNull()
+            ?: return null
+        val oldChatId = current[Installations.telegramChatId]
+        val oldTopicId = current[Installations.telegramTopicId]
+        val oldChatName = current[Installations.chatName]
+        if (oldChatId == telegramChatId && oldTopicId == telegramTopicId) {
+            return DestinationUpdateSnapshot(
+                oldChatId = oldChatId,
+                oldTopicId = oldTopicId,
+                oldChatName = oldChatName,
+                changed = false,
+            )
+        }
+
+        val updated = Installations.update({
+            (Installations.id eq installationId) and Installations.deletedAt.isNull()
+        }) {
+            it[Installations.telegramChatId] = telegramChatId
+            it[Installations.telegramTopicId] = telegramTopicId
+            // Nickname described the previous destination; clear it so UI labels regenerate.
+            it[Installations.chatName] = null
+        }
+        return if (updated == 1) {
+            DestinationUpdateSnapshot(
+                oldChatId = oldChatId,
+                oldTopicId = oldTopicId,
+                oldChatName = oldChatName,
+                changed = true,
+            )
+        } else {
+            null
         }
     }
 

@@ -125,6 +125,66 @@ val InstallationRepositoryTests by testSuite {
         }
     }
 
+    postgresTest("updates destination and audit atomically while preserving installation identity") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val repository = repository()
+            val first = repository.createInstallation(
+                repoName = "group/project",
+                chatName = "alerts",
+                gitlabBaseUrl = "https://gitlab.example.com/group/project",
+                gitlabProjectId = 47,
+                telegramChatId = -1001,
+                telegramTopicId = 12,
+            )
+            val duplicateDestination = repository.createInstallation(
+                repoName = "group/project",
+                gitlabBaseUrl = "https://gitlab.example.com/group/project",
+                gitlabProjectId = 47,
+                telegramChatId = -1002,
+                telegramTopicId = null,
+            )
+            val readRepository = platformAdminReadRepository()
+            val metadata = net.raquezha.nuecagram.db.models.AuditMetadataPatch(
+                actorUsername = "admin",
+                actorFirstName = "Admin",
+            )
+
+            assertThat(
+                repository.updateDestination(first.id, -1003, null, "42", metadata),
+            ).isEqualTo(net.raquezha.nuecagram.db.models.DestinationUpdateResult.UPDATED)
+            val updated = repository.installationAdminContext(first.id)!!
+            assertThat(updated.telegramChatId).isEqualTo(-1003)
+            assertThat(updated.telegramTopicId).isNull()
+            assertThat(updated.gitlabBaseUrl).isEqualTo("https://gitlab.example.com/group/project")
+            assertThat(updated.gitlabProjectId).isEqualTo(47)
+            assertThat(updated.repoName).isEqualTo("group/project")
+            assertThat(updated.chatName).isNull()
+            val updatedEvent = readRepository.auditEventsPage(limit = 10).items
+                .first { it.action == "webapp_destination_update" }
+            assertThat(updatedEvent.actor).isEqualTo("@admin")
+            assertThat(updatedEvent.chatDetails).isEqualTo("-1003")
+            assertThat(updatedEvent.details).containsExactly(
+                "destination: -1001 / topic 12 -> -1003 / topic (none)",
+            )
+
+            assertThat(
+                repository.updateDestination(first.id, -1003, null, "42", metadata),
+            ).isEqualTo(net.raquezha.nuecagram.db.models.DestinationUpdateResult.UNCHANGED)
+            val conflict = runCatching {
+                repository.updateDestination(first.id, -1002, null, "42", metadata)
+            }.exceptionOrNull()
+            assertThat(conflict).isInstanceOf(DuplicateInstallationException::class.java)
+            assertThat(repository.installationAdminContext(first.id)!!.telegramChatId).isEqualTo(-1003)
+            assertThat(repository.installationAdminContext(duplicateDestination.id)!!.telegramChatId).isEqualTo(-1002)
+            assertThat(readRepository.auditEventsPage(limit = 20).items.count {
+                it.action == "webapp_destination_update"
+            }).isEqualTo(1)
+        } finally {
+            // Pool cleaned up automatically on re-initialization
+        }
+    }
+
     postgresTest("rejects invalid repo names for new installations") { config ->
         try {
             DatabaseFactory.initialize(config)

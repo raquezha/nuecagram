@@ -160,6 +160,53 @@ class InstallationRepository(
         topicId: Long? = null,
     ): InstallationAdminContext? = adminRepository.findInstallationByQuery(rawQuery, chatId, topicId)
 
+    suspend fun updateDestination(
+        installationId: UUID,
+        telegramChatId: Long,
+        telegramTopicId: Long?,
+        actorId: String,
+        metadataPatch: AuditMetadataPatch,
+    ): DestinationUpdateResult = try {
+        databaseFactory.dbTransaction {
+            val snapshot = lifecycleRepository.updateDestinationInTx(
+                installationId,
+                telegramChatId,
+                telegramTopicId,
+            ) ?: return@dbTransaction DestinationUpdateResult.NOT_FOUND
+            if (!snapshot.changed) {
+                return@dbTransaction DestinationUpdateResult.UNCHANGED
+            }
+            val auditRecorded = authSessionRepository.writeAuditEventInTx(
+                installationId = installationId,
+                actorType = ActorType.WEBAPP_SESSION,
+                actorId = actorId,
+                action = "webapp_destination_update",
+                metadataPatch = metadataPatch.copy(
+                    // Snapshot chat fields as the destination after change; nickname was cleared.
+                    chatId = telegramChatId,
+                    topicId = telegramTopicId,
+                    nickname = null,
+                    destinationDelta = AuditDestinationDelta(
+                        oldChatId = snapshot.oldChatId,
+                        oldTopicId = snapshot.oldTopicId,
+                        newChatId = telegramChatId,
+                        newTopicId = telegramTopicId,
+                    ),
+                ),
+            )
+            check(auditRecorded) { "Failed to record destination change audit for installation $installationId" }
+            DestinationUpdateResult.UPDATED
+        }
+    } catch (e: Exception) {
+        val isDuplicate = generateSequence(e as Throwable) { it.cause }
+            .filterIsInstance<java.sql.SQLException>()
+            .any { it.sqlState == "23505" }
+        if (isDuplicate) {
+            throw DuplicateInstallationException("Installation already exists for this destination", e)
+        }
+        throw e
+    }
+
     suspend fun updateIdentity(
         installationId: UUID,
         repoName: String,
@@ -250,6 +297,16 @@ class InstallationRepository(
 
     fun verifyWebAppCsrf(session: WebAppSessionContext, raw: String): Boolean =
         authSessionRepository.verifyWebAppCsrf(session, raw)
+
+    suspend fun updateWebAppSessionDestination(
+        sessionId: UUID,
+        telegramChatId: Long?,
+        telegramTopicId: Long?,
+    ): Boolean = authSessionRepository.updateWebAppSessionDestination(
+        sessionId = sessionId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
 
     suspend fun deleteWebAppSession(id: UUID): Boolean = authSessionRepository.deleteWebAppSession(id)
 

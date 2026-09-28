@@ -4,6 +4,7 @@ import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import net.raquezha.nuecagram.db.models.ActorType
@@ -110,6 +111,12 @@ class AuditEventRepository(
         fields.putString(AuditMetadataKeys.NEW_REPO_NAME, metadataPatch.identityDelta?.newRepoName)
         fields.putString(AuditMetadataKeys.OLD_NICKNAME, metadataPatch.identityDelta?.oldNickname)
         fields.putString(AuditMetadataKeys.NEW_NICKNAME, metadataPatch.identityDelta?.newNickname)
+        metadataPatch.destinationDelta?.let { delta ->
+            fields.putLong(AuditMetadataKeys.OLD_CHAT_ID, delta.oldChatId)
+            fields.putNullableLong(AuditMetadataKeys.OLD_TOPIC_ID, delta.oldTopicId)
+            fields.putLong(AuditMetadataKeys.NEW_CHAT_ID, delta.newChatId)
+            fields.putNullableLong(AuditMetadataKeys.NEW_TOPIC_ID, delta.newTopicId)
+        }
         return auditJson.encodeToString(JsonObject.serializer(), JsonObject(fields))
     }
 
@@ -120,6 +127,10 @@ class AuditEventRepository(
 
 private fun MutableMap<String, JsonElement>.putString(key: String, value: String?) {
     value?.takeIf(String::isNotBlank)?.let { put(key, JsonPrimitive(it)) }
+}
+
+private fun MutableMap<String, JsonElement>.putNullableLong(key: String, value: Long?) {
+    put(key, value?.let(::JsonPrimitive) ?: JsonNull)
 }
 
 private fun MutableMap<String, JsonElement>.putLong(key: String, value: Long?) {

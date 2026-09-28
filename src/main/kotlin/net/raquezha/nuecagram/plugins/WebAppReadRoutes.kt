@@ -107,44 +107,88 @@ internal suspend fun ApplicationCall.handleGetDestinations(
     val installedList = installationRepository.installationsForAdmin(userId)
     val knownList = installationRepository.knownTelegramDestinations()
     val allChatIds = (installedList.map { it.telegramChatId } + knownList.map { it.telegramChatId }).distinct()
-
     val activeAdminMap = activeDestinationAdminMap(allChatIds, userId, botUserId, telegramService)
-
-    fun isActiveAdmin(chatId: Long): Boolean = activeAdminMap[chatId] == true
-
-    val installed = installedList
-        .filter { inst -> isActiveAdmin(inst.telegramChatId) }
-        .map { inst ->
-            val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
-            val label = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix"
-            DestinationPayload(
-                id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
-                name = label,
-                telegramChatId = inst.telegramChatId,
-                telegramTopicId = inst.telegramTopicId,
-            )
-        }
-
-    val known = knownList.mapNotNull { dest ->
-        val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
-        val baseTitle = dest.chatTitle?.takeIf(String::isNotBlank) ?: "Chat #${dest.telegramChatId}"
-        val label = "$baseTitle$topicSuffix"
-        if (isActiveAdmin(dest.telegramChatId)) {
-            DestinationPayload(
-                id = dest.id,
-                name = label,
-                telegramChatId = dest.telegramChatId,
-                telegramTopicId = dest.telegramTopicId,
-            )
-        } else {
-            null
-        }
-    }
-
-    val combined = (installed + known).distinctBy { it.id }
+    val combined = buildDestinationPayloads(installedList, knownList, allChatIds, activeAdminMap)
         .sortedByDescending { it.telegramChatId == session.telegramChatId }
     appendWebAppSecurityHeaders()
     respond(HttpStatusCode.OK, combined)
+}
+
+private fun buildDestinationPayloads(
+    installedList: List<net.raquezha.nuecagram.db.models.InstallationAdminContext>,
+    knownList: List<net.raquezha.nuecagram.db.models.KnownTelegramDestination>,
+    allChatIds: List<Long>,
+    activeAdminMap: Map<Long, Boolean>,
+): List<DestinationPayload> {
+    fun isActiveAdmin(chatId: Long): Boolean = activeAdminMap[chatId] == true
+    val installed = installedList.filter { isActiveAdmin(it.telegramChatId) }.map { inst ->
+        val topicSuffix = inst.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+        DestinationPayload(
+            id = "${inst.telegramChatId}:${inst.telegramTopicId ?: 0}",
+            name = inst.chatName ?: "Chat #${inst.telegramChatId}$topicSuffix",
+            telegramChatId = inst.telegramChatId,
+            telegramTopicId = inst.telegramTopicId,
+        )
+    }
+    val known = knownList.mapNotNull { dest ->
+        if (!isActiveAdmin(dest.telegramChatId)) return@mapNotNull null
+        val topicSuffix = dest.telegramTopicId?.let { " / Topic $it" }.orEmpty()
+        val baseTitle = dest.chatTitle?.takeIf(String::isNotBlank) ?: "Chat #${dest.telegramChatId}"
+        DestinationPayload(
+            id = dest.id,
+            name = "$baseTitle$topicSuffix",
+            telegramChatId = dest.telegramChatId,
+            telegramTopicId = dest.telegramTopicId,
+        )
+    }
+    val combinedBase = (installed + known).distinctBy { it.id }
+    val groupLevel = synthesizeGroupLevelDestinations(
+        allChatIds = allChatIds,
+        existing = combinedBase,
+        knownList = knownList,
+        installedList = installedList,
+        activeAdminMap = activeAdminMap,
+    )
+    return (combinedBase + groupLevel).distinctBy { it.id }
+}
+
+private fun synthesizeGroupLevelDestinations(
+    allChatIds: List<Long>,
+    existing: List<DestinationPayload>,
+    knownList: List<net.raquezha.nuecagram.db.models.KnownTelegramDestination>,
+    installedList: List<net.raquezha.nuecagram.db.models.InstallationAdminContext>,
+    activeAdminMap: Map<Long, Boolean>,
+): List<DestinationPayload> {
+    val existingIds = existing.map { it.id }.toSet()
+    val titlesByChat = destinationTitlesByChat(knownList, installedList)
+    return allChatIds.mapNotNull { chatId ->
+        if (activeAdminMap[chatId] != true) return@mapNotNull null
+        val groupId = "$chatId:0"
+        if (groupId in existingIds) return@mapNotNull null
+        DestinationPayload(
+            id = groupId,
+            name = titlesByChat[chatId] ?: "Chat #$chatId",
+            telegramChatId = chatId,
+            telegramTopicId = null,
+        )
+    }
+}
+
+private fun destinationTitlesByChat(
+    knownList: List<net.raquezha.nuecagram.db.models.KnownTelegramDestination>,
+    installedList: List<net.raquezha.nuecagram.db.models.InstallationAdminContext>,
+): Map<Long, String> = buildMap {
+    knownList.forEach { dest ->
+        dest.chatTitle?.takeIf(String::isNotBlank)?.let { putIfAbsent(dest.telegramChatId, it) }
+    }
+    installedList.forEach { inst ->
+        inst.chatName?.takeIf(String::isNotBlank)?.let { title ->
+            putIfAbsent(
+                inst.telegramChatId,
+                title.substringBefore(" / Topic ").substringBefore(" ("),
+            )
+        }
+    }
 }
 
 private suspend fun activeDestinationAdminMap(
