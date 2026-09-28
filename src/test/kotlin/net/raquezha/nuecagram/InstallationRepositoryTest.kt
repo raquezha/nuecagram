@@ -159,12 +159,12 @@ val InstallationRepositoryTests by testSuite {
             assertThat(updated.gitlabBaseUrl).isEqualTo("https://gitlab.example.com/group/project")
             assertThat(updated.gitlabProjectId).isEqualTo(47)
             assertThat(updated.repoName).isEqualTo("group/project")
-            assertThat(updated.chatName).isEqualTo("alerts")
+            assertThat(updated.chatName).isNull()
             val updatedEvent = readRepository.auditEventsPage(limit = 10).items
                 .first { it.action == "webapp_destination_update" }
             assertThat(updatedEvent.actor).isEqualTo("@admin")
-            assertThat(updatedEvent.details).containsAtLeast(
-                "nickname: alerts",
+            assertThat(updatedEvent.chatDetails).isEqualTo("-1003")
+            assertThat(updatedEvent.details).containsExactly(
                 "destination: -1001 / topic 12 -> -1003 / topic (none)",
             )
 

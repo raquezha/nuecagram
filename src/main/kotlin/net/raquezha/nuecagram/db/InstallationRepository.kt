@@ -168,12 +168,12 @@ class InstallationRepository(
         metadataPatch: AuditMetadataPatch,
     ): DestinationUpdateResult = try {
         databaseFactory.dbTransaction {
-            val oldDestination = lifecycleRepository.updateDestinationInTx(
+            val snapshot = lifecycleRepository.updateDestinationInTx(
                 installationId,
                 telegramChatId,
                 telegramTopicId,
             ) ?: return@dbTransaction DestinationUpdateResult.NOT_FOUND
-            if (oldDestination == (telegramChatId to telegramTopicId)) {
+            if (!snapshot.changed) {
                 return@dbTransaction DestinationUpdateResult.UNCHANGED
             }
             val auditRecorded = authSessionRepository.writeAuditEventInTx(
@@ -182,9 +182,13 @@ class InstallationRepository(
                 actorId = actorId,
                 action = "webapp_destination_update",
                 metadataPatch = metadataPatch.copy(
+                    // Snapshot chat fields as the destination after change; nickname was cleared.
+                    chatId = telegramChatId,
+                    topicId = telegramTopicId,
+                    nickname = null,
                     destinationDelta = AuditDestinationDelta(
-                        oldChatId = oldDestination.first,
-                        oldTopicId = oldDestination.second,
+                        oldChatId = snapshot.oldChatId,
+                        oldTopicId = snapshot.oldTopicId,
                         newChatId = telegramChatId,
                         newTopicId = telegramTopicId,
                     ),
@@ -293,6 +297,16 @@ class InstallationRepository(
 
     fun verifyWebAppCsrf(session: WebAppSessionContext, raw: String): Boolean =
         authSessionRepository.verifyWebAppCsrf(session, raw)
+
+    suspend fun updateWebAppSessionDestination(
+        sessionId: UUID,
+        telegramChatId: Long?,
+        telegramTopicId: Long?,
+    ): Boolean = authSessionRepository.updateWebAppSessionDestination(
+        sessionId = sessionId,
+        telegramChatId = telegramChatId,
+        telegramTopicId = telegramTopicId,
+    )
 
     suspend fun deleteWebAppSession(id: UUID): Boolean = authSessionRepository.deleteWebAppSession(id)
 

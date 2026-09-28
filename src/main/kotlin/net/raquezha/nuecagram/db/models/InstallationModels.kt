@@ -19,6 +19,13 @@ enum class DestinationUpdateResult {
     NOT_FOUND,
 }
 
+data class DestinationUpdateSnapshot(
+    val oldChatId: Long,
+    val oldTopicId: Long?,
+    val oldChatName: String?,
+    val changed: Boolean,
+)
+
 data class ProvisionedInstallation(
     val installation: InstallationRecord,
     val credential: IssuedCredential,

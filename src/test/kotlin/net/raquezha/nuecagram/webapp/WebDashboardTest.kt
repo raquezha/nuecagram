@@ -455,6 +455,73 @@ class WebDashboardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun destinationChangeKeepsManagementAccessForScopedSessionOnNewChat() = testApplication {
+        configureTestApplication()
+        val targetChatId = -100987654323L
+        runBlocking {
+            installationRepository.updateIdentity(installation.id, installation.repoName, "Old room")
+            installationRepository.upsertKnownTelegramDestination(targetChatId, null, "Moved group")
+        }
+        val (sessionCookie, csrf) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+        mockTelegramService.setChatMemberStatus(targetChatId, 9999L, "administrator")
+        mockTelegramService.setChatMemberStatus(targetChatId, 10001L, "administrator")
+
+        val updated = client.post("/nuecagram/api/webapp/installations/${installation.id}/destination") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"telegramChatId":$targetChatId,"telegramTopicId":null}""")
+        }
+        assertThat(updated.status).isEqualTo(HttpStatusCode.OK)
+        val payload = json.decodeFromString<TestInstallationPayload>(updated.bodyAsText())
+        assertThat(payload.telegramChatId).isEqualTo(targetChatId)
+        assertThat(payload.chatName).isNull()
+
+        val muteResp = client.post("/nuecagram/api/webapp/installations/${installation.id}/mute") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"muted":true}""")
+        }
+        assertThat(muteResp.status).isEqualTo(HttpStatusCode.OK)
+
+        val detailResp = client.get("/nuecagram/api/webapp/installations/${installation.id}") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(detailResp.status).isEqualTo(HttpStatusCode.OK)
+    }
+
+    @Test
+    fun destinationsEndpointSynthesizesEntireGroupOptionWhenOnlyTopicsExist() = testApplication {
+        configureTestApplication()
+        val topicOnlyChat = -100987654324L
+        runBlocking {
+            installationRepository.upsertKnownTelegramDestination(topicOnlyChat, 9, "Topic Only Chat")
+        }
+        val (sessionCookie, _) = issueSessionWithNonce(
+            client,
+            userId = 9999L,
+            chatId = installation.telegramChatId,
+            topicId = installation.telegramTopicId,
+        )
+        mockTelegramService.setChatMemberStatus(topicOnlyChat, 9999L, "member")
+        mockTelegramService.setChatMemberStatus(topicOnlyChat, 10001L, "administrator")
+
+        val destResp = client.get("/nuecagram/api/webapp/destinations") {
+            header("Cookie", "nuecagram_webapp_session=$sessionCookie")
+        }
+        assertThat(destResp.status).isEqualTo(HttpStatusCode.OK)
+        val destinations = json.decodeFromString<List<TestDestinationPayload>>(destResp.bodyAsText())
+        assertThat(destinations.any { it.telegramChatId == topicOnlyChat && it.telegramTopicId == 9L }).isTrue()
+        assertThat(destinations.any { it.telegramChatId == topicOnlyChat && it.telegramTopicId == null }).isTrue()
+    }
+
+    @Test
     fun identityEndpointHandlesEmojiUnicodeAndLongStringsGracefully() = testApplication {
         configureTestApplication()
         val (sessionCookie, csrf) = issueSessionWithNonce(

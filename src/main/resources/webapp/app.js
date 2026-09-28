@@ -537,15 +537,9 @@ async function openDestinationEdit() {
   save.disabled = true;
   select.innerHTML = '<option value="">Loading destinations...</option>';
   showScreen("destination-edit");
-  try {
-    const res = await fetch("{{BASE_PATH}}/api/webapp/destinations", {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok)
-      throw new Error("Could not load eligible Telegram destinations.");
-    const destinations = await res.json();
-    const currentKey =
-      currentItem.telegramChatId + ":" + (currentItem.telegramTopicId || 0);
+  const currentKey =
+    currentItem.telegramChatId + ":" + (currentItem.telegramTopicId || 0);
+  function ensureCurrentDestination(destinations) {
     if (
       !destinations.some(function (d) {
         return (
@@ -561,15 +555,22 @@ async function openDestinationEdit() {
         telegramTopicId: currentItem.telegramTopicId,
       });
     }
+    return destinations;
+  }
+  function renderDestinationSelect(destinations) {
     select.innerHTML = destinations
       .map(function (d) {
         const key = d.telegramChatId + ":" + (d.telegramTopicId || 0);
+        const entireGroup =
+          d.telegramTopicId == null && d.name.indexOf("(entire group)") === -1
+            ? " (entire group)"
+            : "";
         return (
           '<option value="' +
           escapeHtml(key) +
           '">' +
           escapeHtml(d.name) +
-          (d.telegramTopicId == null ? " (entire group)" : "") +
+          entireGroup +
           "</option>"
         );
       })
@@ -577,10 +578,28 @@ async function openDestinationEdit() {
     select.value = currentKey;
     select.disabled = destinations.length === 0;
     save.disabled = destinations.length === 0;
+  }
+  try {
+    const res = await fetch("{{BASE_PATH}}/api/webapp/destinations", {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok)
+      throw new Error("Could not load eligible Telegram destinations.");
+    const destinations = ensureCurrentDestination(await res.json());
+    renderDestinationSelect(destinations);
   } catch (e) {
     error.innerText =
       e.message || "Could not load eligible Telegram destinations.";
-    select.innerHTML = '<option value="">No eligible destinations</option>';
+    renderDestinationSelect(
+      ensureCurrentDestination([
+        {
+          id: currentKey,
+          name: destinationLabel(currentItem),
+          telegramChatId: currentItem.telegramChatId,
+          telegramTopicId: currentItem.telegramTopicId,
+        },
+      ]),
+    );
   }
 }
 
@@ -602,6 +621,8 @@ async function saveDestination() {
     return;
   error.innerText = "";
   save.disabled = true;
+  const previousChatId = currentItem.telegramChatId;
+  const previousTopicId = currentItem.telegramTopicId;
   try {
     const res = await fetch(
       "{{BASE_PATH}}/api/webapp/installations/" +
@@ -631,9 +652,21 @@ async function saveDestination() {
     items = items.map(function (item) {
       return item.id === currentItem.id ? currentItem : item;
     });
+    const changed =
+      previousChatId !== currentItem.telegramChatId ||
+      previousTopicId !== currentItem.telegramTopicId;
+    if (changed) {
+      currentContext = {
+        chatId: currentItem.telegramChatId,
+        topicId: currentItem.telegramTopicId,
+      };
+    }
     renderDetail();
     showScreen("detail");
-    setAction("Telegram destination updated.", true);
+    setAction(
+      changed ? "Telegram destination updated." : "Destination unchanged.",
+      true,
+    );
   } catch (e) {
     error.innerText =
       "Could not save the Telegram destination. Check your connection and try again.";

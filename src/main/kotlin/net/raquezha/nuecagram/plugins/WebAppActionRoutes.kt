@@ -220,21 +220,36 @@ private suspend fun saveDestination(
     item: net.raquezha.nuecagram.db.models.InstallationAdminContext,
     payload: DestinationUpdateRequestPayload,
 ): WebAppResponseSpec = try {
-    when (repository.updateDestination(
-        installationId = item.id,
-        telegramChatId = payload.telegramChatId,
-        telegramTopicId = payload.telegramTopicId,
-        actorId = session.telegramUserId.toString(),
-        metadataPatch = AuditMetadataPatch(
-            actorUsername = session.username,
-            actorFirstName = session.firstName,
-        ),
-    )) {
+    when (
+        val result = repository.updateDestination(
+            installationId = item.id,
+            telegramChatId = payload.telegramChatId,
+            telegramTopicId = payload.telegramTopicId,
+            actorId = session.telegramUserId.toString(),
+            metadataPatch = AuditMetadataPatch(
+                actorUsername = session.username,
+                actorFirstName = session.firstName,
+            ),
+        )
+    ) {
         DestinationUpdateResult.NOT_FOUND -> destinationError(HttpStatusCode.NotFound, "Installation not found")
-        DestinationUpdateResult.UPDATED, DestinationUpdateResult.UNCHANGED ->
+        DestinationUpdateResult.UPDATED, DestinationUpdateResult.UNCHANGED -> {
+            if (result == DestinationUpdateResult.UPDATED &&
+                session.telegramChatId != null &&
+                session.telegramChatId < 0
+            ) {
+                // Keep group-scoped sessions aligned with the installation so follow-up
+                // mute/test/rotate/delete calls still pass canAccess after a move.
+                repository.updateWebAppSessionDestination(
+                    sessionId = session.sessionId,
+                    telegramChatId = payload.telegramChatId,
+                    telegramTopicId = payload.telegramTopicId,
+                )
+            }
             repository.installationAdminContext(item.id)?.let {
                 WebAppResponseSpec(HttpStatusCode.OK, it.toResponsePayload())
             } ?: destinationError(HttpStatusCode.NotFound, "Installation not found")
+        }
     }
 } catch (_: DuplicateInstallationException) {
     destinationError(HttpStatusCode.Conflict, "This repository is already connected to that destination")
