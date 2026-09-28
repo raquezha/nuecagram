@@ -13,6 +13,25 @@ data class InstallationRecord(
     val telegramTopicId: Long?,
 )
 
+data class ProvisionedInstallation(
+    val installation: InstallationRecord,
+    val credential: IssuedCredential,
+)
+
+data class ProvisionInstallationRequest(
+    val repoName: String,
+    val chatName: String? = null,
+    val gitlabBaseUrl: String,
+    val gitlabProjectId: Long?,
+    val telegramChatId: Long,
+    val telegramTopicId: Long? = null,
+    val adminTelegramUserId: Long? = null,
+    val actorType: String,
+    val actorId: String?,
+    val auditAction: String,
+    val auditMetadataPatch: AuditMetadataPatch = AuditMetadataPatch(),
+)
+
 data class KnownTelegramDestination(
     val id: String,
     val telegramChatId: Long,

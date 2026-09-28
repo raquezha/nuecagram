@@ -17,6 +17,49 @@ class InstallationRepository(
     private val adminRepository: InstallationAdminRepository =
         InstallationAdminRepository(databaseFactory, lifecycleRepository),
 ) {
+    suspend fun provisionInstallation(
+        request: ProvisionInstallationRequest,
+    ): ProvisionedInstallation = try {
+        databaseFactory.dbTransaction {
+            val installation = lifecycleRepository.createInstallationInTx(
+                repoName = request.repoName,
+                chatName = request.chatName,
+                gitlabBaseUrl = request.gitlabBaseUrl,
+                gitlabProjectId = request.gitlabProjectId,
+                telegramChatId = request.telegramChatId,
+                telegramTopicId = request.telegramTopicId,
+            )
+            if (request.adminTelegramUserId != null) {
+                adminRepository.recordInstallationAdminInTx(installation.id, request.adminTelegramUserId)
+            }
+            val credential = webhookSecretRepository.issueWebhookSecretInTx(installation.id)
+            val auditRecorded = authSessionRepository.writeAuditEventInTx(
+                installationId = installation.id,
+                actorType = request.actorType,
+                actorId = request.actorId,
+                action = request.auditAction,
+                metadataPatch = request.auditMetadataPatch,
+            )
+            check(auditRecorded) { "Failed to record audit event for installation ${installation.id}" }
+            ProvisionedInstallation(installation, credential)
+        }
+    } catch (e: Exception) {
+        val isDuplicate = generateSequence(e as Throwable) { it.cause }
+            .filterIsInstance<java.sql.SQLException>()
+            .any {
+                it.sqlState == "23505" ||
+                    it.message?.contains("installations_gitlab_project") == true
+            }
+        if (isDuplicate) {
+            throw DuplicateInstallationException(
+                "A webhook installation for GitLab project ${request.gitlabProjectId} on " +
+                    "${request.gitlabBaseUrl} already exists for this destination",
+                e,
+            )
+        }
+        throw e
+    }
+
     suspend fun createInstallation(
         repoName: String,
         chatName: String? = null,

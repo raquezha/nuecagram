@@ -696,13 +696,24 @@ async function openAdd() {
 }
 
 async function createInstallation() {
+  document.getElementById("wizErr").innerText = "";
   const url = document.getElementById("inUrl").value.trim();
   const pid = parseInt(document.getElementById("inPid").value.trim(), 10);
   const repoName = document.getElementById("inRepoName").value.trim();
   const chatName = document.getElementById("inChatName").value.trim();
-  if (!url.startsWith("https://") || !pid || !repoName) {
+  if (!url.startsWith("https://")) {
     document.getElementById("wizErr").innerText =
-      "Could not create repository. Check the GitLab project ID.";
+      "GitLab URL must start with https://";
+    return;
+  }
+  if (!pid || isNaN(pid)) {
+    document.getElementById("wizErr").innerText =
+      "Valid GitLab project ID is required.";
+    return;
+  }
+  if (!repoName) {
+    document.getElementById("wizErr").innerText =
+      "Repository name is required.";
     return;
   }
   const payload = {
@@ -746,7 +757,7 @@ async function createInstallation() {
       document.getElementById("wizErr").innerText =
         error && error.error
           ? error.error
-          : "Could not create repository. Check the GitLab project ID.";
+          : "Failed to create repository. Please try again.";
       return;
     }
     const data = await res.json();
@@ -763,7 +774,7 @@ async function createInstallation() {
     );
   } catch (e) {
     document.getElementById("wizErr").innerText =
-      "Could not create repository. Check the GitLab project ID.";
+      "Failed to connect to server. Please check your connection.";
   }
 }
 

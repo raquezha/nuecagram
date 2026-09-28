@@ -45,11 +45,19 @@ class InstallationAdminRepository(
         confirmedAt: Instant = Instant.now(),
     ) {
         databaseFactory.dbTransaction {
-            InstallationAdmins.upsert(InstallationAdmins.installationId, InstallationAdmins.telegramUserId) {
-                it[InstallationAdmins.installationId] = installationId
-                it[InstallationAdmins.telegramUserId] = telegramUserId
-                it[InstallationAdmins.confirmedAt] = confirmedAt.databaseTime()
-            }
+            recordInstallationAdminInTx(installationId, telegramUserId, confirmedAt)
+        }
+    }
+
+    internal fun recordInstallationAdminInTx(
+        installationId: UUID,
+        telegramUserId: Long,
+        confirmedAt: Instant = Instant.now(),
+    ) {
+        InstallationAdmins.upsert(InstallationAdmins.installationId, InstallationAdmins.telegramUserId) {
+            it[InstallationAdmins.installationId] = installationId
+            it[InstallationAdmins.telegramUserId] = telegramUserId
+            it[InstallationAdmins.confirmedAt] = confirmedAt.databaseTime()
         }
     }
 

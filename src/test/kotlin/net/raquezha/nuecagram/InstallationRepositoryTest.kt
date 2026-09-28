@@ -12,9 +12,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import net.raquezha.nuecagram.db.DatabaseFactory
+import net.raquezha.nuecagram.db.DuplicateInstallationException
 import net.raquezha.nuecagram.db.InstallationRepository
 import net.raquezha.nuecagram.db.PlatformAdminReadRepository
 import net.raquezha.nuecagram.db.models.ActorType
+import net.raquezha.nuecagram.db.models.ProvisionInstallationRequest
 import net.raquezha.nuecagram.db.models.WebhookInstallationResult
 import net.raquezha.nuecagram.testing.postgresTest
 
@@ -582,8 +584,13 @@ val InstallationRepositoryTests by testSuite {
             assertThat(persisted!!.telegramChatId).isEqualTo(-100221L)
             assertThat(persisted.telegramTopicId).isEqualTo(17L)
 
+            // V15 allows connecting the same project to a different destination
+            val differentDest = repository.createInstallation(baseUrl, projectId, -100222L, null)
+            assertThat(differentDest.telegramChatId).isEqualTo(-100222L)
+
+            // But rejects duplicate connection to the exact same destination
             val duplicateError = runCatching {
-                repository.createInstallation(baseUrl, projectId, -100222L, null)
+                repository.createInstallation(baseUrl, projectId, -100221L, 17L)
             }.exceptionOrNull()
             assertThat(duplicateError).isNotNull()
             assertThat(generateSequence(duplicateError) { it.cause }
@@ -726,6 +733,71 @@ val InstallationRepositoryTests by testSuite {
             }
         } finally {
             // Pool cleaned up automatically on re-initialization
+        }
+    }
+
+    postgresTest("provisions installation atomically and rolls back completely on injected failure") { config ->
+        try {
+            DatabaseFactory.initialize(config)
+            val failingRepo = InstallationRepository(
+                databaseFactory = DatabaseFactory,
+                authSessionRepository = object : net.raquezha.nuecagram.db.AuthSessionRepository(DatabaseFactory) {
+                    override fun writeAuditEventInTx(
+                        installationId: UUID?,
+                        actorType: String,
+                        actorId: String?,
+                        action: String,
+                        metadataJson: String,
+                        metadataPatch: net.raquezha.nuecagram.db.models.AuditMetadataPatch,
+                    ): Boolean = error("simulated audit failure after installation row created")
+                },
+            )
+
+            val baseUrl = "https://gitlab.example.com/atomic/test"
+            val projectId = 8888L
+
+            val request = ProvisionInstallationRequest(
+                repoName = "atomic/test",
+                chatName = "Atomic Room",
+                gitlabBaseUrl = baseUrl,
+                gitlabProjectId = projectId,
+                telegramChatId = -100999L,
+                telegramTopicId = 12L,
+                adminTelegramUserId = 9999L,
+                actorType = ActorType.WEBAPP_SESSION,
+                actorId = "9999",
+                auditAction = "webapp_setup",
+            )
+
+            val failure = runCatching {
+                failingRepo.provisionInstallation(request)
+            }.exceptionOrNull()
+
+            assertThat(failure).isInstanceOf(IllegalStateException::class.java)
+            assertThat(failure?.message).isEqualTo("simulated audit failure after installation row created")
+
+            // Verify that rollback occurred: no installation exists in repository
+            val standardRepo = repository()
+            val notFound = standardRepo.findInstallationByQuery("atomic/test", -100999L, 12L)
+            assertThat(notFound).isNull()
+
+            // Retry with standard repository succeeds without unique constraint conflict
+            val provisioned = standardRepo.provisionInstallation(request)
+            assertThat(provisioned.installation.gitlabProjectId).isEqualTo(projectId)
+
+            // Provisioning the same project to a DIFFERENT chat succeeds (V15 multi-destination)
+            val differentChatRequest = request.copy(telegramChatId = -100888L, telegramTopicId = null)
+            val differentChatProvisioned = standardRepo.provisionInstallation(differentChatRequest)
+            assertThat(differentChatProvisioned.installation.telegramChatId).isEqualTo(-100888L)
+
+            // Subsequent duplicate provision to the SAME destination fails with DuplicateInstallationException
+            val duplicateFailure = runCatching {
+                standardRepo.provisionInstallation(request)
+            }.exceptionOrNull()
+
+            assertThat(duplicateFailure).isInstanceOf(DuplicateInstallationException::class.java)
+        } finally {
+            DatabaseFactory.close()
         }
     }
 }

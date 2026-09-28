@@ -288,6 +288,89 @@ class WebSetupWizardTest : BaseEventTestHelper() {
     }
 
     @Test
+    fun createInstallationEndpointReturnsConflictOnDuplicateDestination() = testApplication {
+        configureTestApplication()
+        val (sess, csrf) = sessionFor(client, 7030L)
+
+        val firstResp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sess")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"repoName":"Project #70030","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70030}""")
+        }
+        assertThat(firstResp.status).isEqualTo(HttpStatusCode.Created)
+
+        val duplicateResp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sess")
+            header("X-CSRF-Token", csrf)
+            setBody("""{"repoName":"Project #70030","gitlabBaseUrl":"https://gitlab.com","gitlabProjectId":70030}""")
+        }
+        assertThat(duplicateResp.status).isEqualTo(HttpStatusCode.Conflict)
+        val err = json.decodeFromString<WizardErrPayload>(duplicateResp.bodyAsText())
+        assertThat(err.error).contains("already connected")
+    }
+
+    @Test
+    fun createInstallationEndpointAllowsSameProjectForDifferentDestination() = testApplication {
+        configureTestApplication()
+        val userId = 7031L
+        val (sess, csrf) = dmSessionFor(client, userId)
+
+        val firstChatId = -100551L
+        val secondChatId = -100552L
+        mockTelegram.setChatMemberStatus(firstChatId, userId, "administrator")
+        mockTelegram.setChatMemberStatus(secondChatId, userId, "administrator")
+        installationRepository.upsertKnownTelegramDestination(firstChatId, null, "First Team")
+        installationRepository.upsertKnownTelegramDestination(secondChatId, null, "Second Team")
+
+        val firstResp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sess")
+            header("X-CSRF-Token", csrf)
+            setBody(
+                """{"repoName":"Project #70031","gitlabBaseUrl":"https://gitlab.com",""" +
+                    """"gitlabProjectId":70031,"telegramChatId":$firstChatId}""",
+            )
+        }
+        assertThat(firstResp.status).isEqualTo(HttpStatusCode.Created)
+
+        val secondResp = client.post("/nuecagram/api/webapp/installations") {
+            contentType(ContentType.Application.Json)
+            header("Cookie", "nuecagram_webapp_session=$sess")
+            header("X-CSRF-Token", csrf)
+            setBody(
+                """{"repoName":"Project #70031","gitlabBaseUrl":"https://gitlab.com",""" +
+                    """"gitlabProjectId":70031,"telegramChatId":$secondChatId}""",
+            )
+        }
+        assertThat(secondResp.status).isEqualTo(HttpStatusCode.Created)
+    }
+
+    private fun dmSessionFor(client: io.ktor.client.HttpClient, userId: Long): Pair<String, String> {
+        runBlocking { installationRepository.upsertTelegramPrivateChat(userId, userId) }
+        val nonce = runBlocking {
+            installationRepository.issueLaunchNonce(
+                telegramChatId = userId,
+                telegramTopicId = null,
+                telegramUserId = userId,
+                expiresAt = Instant.now().plus(10, ChronoUnit.MINUTES),
+            )
+        }
+        val iData = buildTestInitData(testConfig.botApi, userId = userId)
+        val authBody = """{"initData":"$iData","startParam":"nonce_${nonce.raw}"}"""
+        val authResp = runBlocking {
+            client.post("/nuecagram/api/webapp/auth") {
+                contentType(ContentType.Application.Json)
+                setBody(authBody)
+            }
+        }
+        val sess = extractCookie(authResp.headers.getAll("Set-Cookie").orEmpty(), "nuecagram_webapp_session")!!
+        val csrf = json.decodeFromString<WizardAuthPayload>(runBlocking { authResp.bodyAsText() }).csrf
+        return sess to csrf
+    }
+
+    @Test
     fun rotateEndpointRequiresDmBootstrapAndCsrf() = testApplication {
         configureTestApplication()
         // Session without DM
