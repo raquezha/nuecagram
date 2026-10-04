@@ -428,33 +428,48 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
-        val lastStatus = ctx.webhookService.getPipelineLastTerminalStatus(installationId, pipelineId)
-        if (lastStatus == status) {
-            ctx.logger.debug { "Pipeline #$pipelineId already notified status $status, skipping duplicate reply" }
+        val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
+        if (targets.usernames.isEmpty()) {
             return
         }
 
-        val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
-        if (targets.usernames.isNotEmpty()) {
-            val isRecovery = status == "success" && lastStatus == "failed"
-            val replyText = formatPipelineCompletionReply(status, targets, isRecovery)
+        val finishedAtSeconds = event.objectAttributes?.finishedAt?.toInstant()?.epochSecond
+        val claim = ctx.webhookService.tryClaimPipelineTerminalStatus(
+            installationId = installationId,
+            pipelineId = pipelineId,
+            status = status,
+            finishedAtEpochSeconds = finishedAtSeconds,
+        )
 
-            val isSilent = status in listOf("canceled", "skipped")
-            sendPipelineReply(
-                text = replyText,
-                chatDetails = chatDetails,
-                messageId = messageId,
-                disableNotification = isSilent,
-                ctx = ctx,
-            )
-            val finishedAtSeconds = event.objectAttributes?.finishedAt?.toInstant()?.epochSecond
-            ctx.webhookService.setPipelineLastTerminalStatus(
-                installationId = installationId,
-                pipelineId = pipelineId,
-                status = status,
-                finishedAtEpochSeconds = finishedAtSeconds,
-            )
-            ctx.logger.debug { "Pipeline #$pipelineId: sent completion reply ($status) tagging ${targets.usernames}" }
+        when (claim) {
+            is WebHookService.TerminalStatusClaim.AlreadyNotified -> {
+                ctx.logger.debug { "Pipeline #$pipelineId already notified status $status, skipping duplicate reply" }
+            }
+            is WebHookService.TerminalStatusClaim.Claimed -> {
+                val lastStatus = claim.previousStatus
+                val isRecovery = status == "success" && lastStatus == "failed"
+                val replyText = formatPipelineCompletionReply(status, targets, isRecovery)
+                val isSilent = status in listOf("canceled", "skipped")
+
+                try {
+                    sendPipelineReply(
+                        text = replyText,
+                        chatDetails = chatDetails,
+                        messageId = messageId,
+                        disableNotification = isSilent,
+                        ctx = ctx,
+                    )
+                    ctx.logger.debug {
+                        "Pipeline #$pipelineId: sent completion reply ($status) tagging ${targets.usernames}"
+                    }
+                } catch (cancellation: java.util.concurrent.CancellationException) {
+                    ctx.webhookService.rollbackPipelineTerminalStatus(installationId, pipelineId, lastStatus)
+                    throw cancellation
+                } catch (exception: Exception) {
+                    ctx.webhookService.rollbackPipelineTerminalStatus(installationId, pipelineId, lastStatus)
+                    throw exception
+                }
+            }
         }
     }
 
