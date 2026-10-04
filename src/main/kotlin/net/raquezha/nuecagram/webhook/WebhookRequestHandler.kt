@@ -377,6 +377,12 @@ class WebhookRequestHandler(
         event: PipelineEvent,
         ctx: EventProcessingContext,
     ): PipelineTargets {
+        val scheduledRenovate = event.objectAttributes?.source == "schedule" &&
+            event.builds.orEmpty().any { it.name == "maintain:renovate" }
+        if (scheduledRenovate || event.user?.username?.isGitLabBotUser() == true) {
+            return PipelineTargets(emptyList())
+        }
+
         val (mrIid, cachedParticipants) = findCachedMrParticipants(installationId, event, ctx)
         val projectWebUrl = event.project?.webUrl
         val mrUrl = event.mergeRequest?.url
