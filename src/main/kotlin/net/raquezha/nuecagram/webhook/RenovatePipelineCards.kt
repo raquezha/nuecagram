@@ -107,6 +107,49 @@ internal class RenovatePipelineCards(
         }
     }
 
+    suspend fun findExistingMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = DatabaseFactory.dbQuery { connection ->
+        connection.prepareStatement(
+            """
+            SELECT message_id FROM renovate_pipeline_cards
+            WHERE installation_id = ? AND project_id = ? AND branch = ? AND message_id IS NOT NULL
+            ORDER BY updated_at DESC LIMIT 1
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setObject(1, installationId)
+            statement.setLong(2, projectId)
+            statement.setString(3, branch)
+            statement.executeQuery().use { rows ->
+                if (rows.next()) rows.getString(1) else null
+            }
+        }
+    }
+
+    suspend fun cancelPending(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+        messageId: String,
+    ): Unit = DatabaseFactory.dbQuery { connection ->
+        connection.prepareStatement(
+            """
+            UPDATE renovate_pipeline_cards
+            SET message_id = ?, updated_at = ?
+            WHERE installation_id = ? AND project_id = ? AND branch = ? AND message_id IS NULL
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, messageId)
+            statement.setObject(2, clock.instant().atOffset(ZoneOffset.UTC))
+            statement.setObject(3, installationId)
+            statement.setLong(4, projectId)
+            statement.setString(5, branch)
+            statement.executeUpdate()
+        }
+    }
+
     suspend fun cleanupStale(): Int = DatabaseFactory.dbQuery { connection ->
         connection.prepareStatement("DELETE FROM renovate_pipeline_cards WHERE updated_at < ?").use { statement ->
             statement.setObject(1, clock.instant().minus(30, ChronoUnit.DAYS).atOffset(ZoneOffset.UTC))

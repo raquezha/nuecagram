@@ -35,6 +35,9 @@ class RenovatePipelineCardsTest : BaseEventTestHelper() {
 
     @Test
     fun testWorkerDeliversFallbackAfterTimeout() = runBlocking {
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement("DELETE FROM renovate_pipeline_cards").use { it.executeUpdate() }
+        }
         val clock = AdjustableClock(Instant.now())
         val logger = KotlinLogging.logger {}
         val handler = WebhookRequestHandler(
@@ -92,6 +95,122 @@ class RenovatePipelineCardsTest : BaseEventTestHelper() {
         postWebhook(EVENT_PIPELINE, payload)
         delay(200)
         assertThat(sentMessages()).isEmpty()
+    }
+
+    @Test
+    fun testRenovateBotPushDoesNotSendStandaloneBubble() = testApplication {
+        configureTestApplication()
+        val payload = """
+{
+  "object_kind": "push",
+  "event_name": "push",
+  "before": "00000000",
+  "after": "abc1234",
+  "ref": "refs/heads/renovate/gradle-and-kotlin-dependencies",
+  "user_name": "RENOVATE",
+  "user_username": "project_599_bot_token",
+  "project_id": ${installation.gitlabProjectId},
+  "project": { "id": ${installation.gitlabProjectId}, "name": "customer-app", "web_url": "https://gitlab.com/android-team/customer-app" },
+  "commits": [
+    { "id": "abc1234", "title": "Update dependencies", "url": "https://gitlab.com/android-team/customer-app/-/commit/abc1234" }
+  ],
+  "total_commits_count": 1
+}
+        """.trimIndent()
+        postWebhook(EVENT_PUSH, payload)
+        delay(200)
+        assertThat(sentMessages()).isEmpty()
+    }
+
+    @Test
+    fun testRenovateMrAdoptsExistingStandaloneCard() = testApplication {
+        configureTestApplication()
+        val branch = "renovate/gradle-and-kotlin-dependencies"
+        val sha = "def5678"
+        val projectId = installation.gitlabProjectId!!
+        val key = RenovatePipelineCards.Key(installation.id, projectId, branch, sha)
+        val destination = ChatDetails(installation.telegramChatId.toString(), installation.telegramTopicId.toString())
+        val cards = RenovatePipelineCards()
+
+        // Simulate a standalone card previously delivered for this Renovate branch
+        cards.record(key, 101172, destination, "Standalone card")
+        val dueCards = RenovatePipelineCards(Clock.fixed(Instant.now().plusSeconds(125), ZoneOffset.UTC))
+        val due = dueCards.claimDue(100).single { it.key == key }
+        cards.markSent(due, "999")
+
+        // Now post a Merge Request event for the same branch
+        val mrPayload = """
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": { "id": 1, "name": "RENOVATE", "username": "project_599_bot_token" },
+  "project": { "id": ${installation.gitlabProjectId}, "name": "customer-app", "web_url": "https://gitlab.com/android-team/customer-app" },
+  "object_attributes": {
+    "id": 99,
+    "iid": 12,
+    "title": "Update dependencies",
+    "source_branch": "$branch",
+    "target_branch": "main",
+    "action": "open",
+    "last_commit": { "id": "$sha", "message": "Update dependencies" }
+  }
+}
+        """.trimIndent()
+
+        postWebhook(EVENT_MERGE, mrPayload)
+        delay(200)
+
+        // It should edit the existing message 999 rather than create a new message bubble
+        val messages = sentMessages()
+        assertThat(messages).hasSize(1)
+        assertThat(messages.single().messageId).isEqualTo("999")
+    }
+
+    @Test
+    fun testRenovateMrPipelineUpdatesSameMrCard() = testApplication {
+        configureTestApplication()
+        val branch = "renovate/gradle-and-kotlin-dependencies"
+        val sha = "def5678"
+        val projectId = installation.gitlabProjectId!!
+
+        // Post Merge Request event
+        val mrPayload = """
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": { "id": 1, "name": "RENOVATE", "username": "project_599_bot_token" },
+  "project": { "id": $projectId, "name": "customer-app", "web_url": "https://gitlab.com/android-team/customer-app" },
+  "object_attributes": {
+    "id": 99,
+    "iid": 12,
+    "title": "Update dependencies",
+    "source_branch": "$branch",
+    "target_branch": "main",
+    "action": "open",
+    "last_commit": { "id": "$sha", "message": "Update dependencies" }
+  }
+}
+        """.trimIndent()
+        postWebhook(EVENT_MERGE, mrPayload)
+        delay(200)
+
+        val mrMessages = sentMessages()
+        assertThat(mrMessages).hasSize(1)
+        assertThat(mrMessages.first().text).contains("Merge Request")
+
+        // Post MR Pipeline event
+        val pipelinePayload = PipelineEventWebhookTest.SAMPLE_PAYLOAD_MR_SUCCESS
+            .replace("\"id\": 105", "\"id\": $projectId")
+            .replace("\"target_project_id\": 105", "\"target_project_id\": $projectId")
+            .replace("\"iid\": 2923", "\"iid\": 12")
+            .replace("\"username\": \"alice\"", "\"username\": \"project_599_bot_token\"")
+
+        postWebhook(EVENT_PIPELINE, pipelinePayload)
+        delay(200)
+
+        // The pipeline event should update message "1" (the initial MR card)
+        val finalMessages = sentMessages()
+        assertThat(finalMessages.mapNotNull { it.messageId }).contains("1")
     }
 
     @Test
