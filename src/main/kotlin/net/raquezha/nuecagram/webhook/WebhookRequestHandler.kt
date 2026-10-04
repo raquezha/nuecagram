@@ -3,6 +3,7 @@ package net.raquezha.nuecagram.webhook
 import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.server.application.Application
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.db.InstallationRepository
@@ -70,8 +71,10 @@ class WebhookRequestHandler(
     private val telegramService: TelegramService? = null,
     private val formatter: WebhookMessageFormatter? = null,
     private val logger: KLogger? = null,
+    renovateClock: java.time.Clock = java.time.Clock.systemUTC(),
 ) {
     private val eventFilter = WebhookEventFilter()
+    private val renovateCards = RenovatePipelineCards(renovateClock)
 
     /** Buffered channel with capacity limit to prevent memory exhaustion */
     private val queue = Channel<EventData>(capacity = QUEUE_CAPACITY)
@@ -132,8 +135,31 @@ class WebhookRequestHandler(
         )
 
         ctx.logger.debug { MESSAGE_PROCESSING }
-        for (data in queue) {
-            processEventWithRetry(data, ctx)
+        kotlinx.coroutines.coroutineScope {
+            val fallbackWorker = launch {
+                var nextCleanupAt = 0L
+                while (true) {
+                    if (System.currentTimeMillis() >= nextCleanupAt) {
+                        try {
+                            renovateCards.cleanupStale()
+                            nextCleanupAt = System.currentTimeMillis() + java.time.Duration.ofDays(1).toMillis()
+                        } catch (cancellation: java.util.concurrent.CancellationException) {
+                            throw cancellation
+                        } catch (exception: Exception) {
+                            ctx.logger.error(exception) { "Failed to clean stale Renovate CI cards" }
+                        }
+                    }
+                    deliverPendingRenovateCards(ctx)
+                    kotlinx.coroutines.delay(1000)
+                }
+            }
+            try {
+                for (data in queue) {
+                    processEventWithRetry(data, ctx)
+                }
+            } finally {
+                fallbackWorker.cancel()
+            }
         }
         ctx.logger.debug { MESSAGE_STOPPED }
     }
@@ -259,6 +285,7 @@ class WebhookRequestHandler(
         ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
 
         val (mrIid, _) = findCachedMrParticipants(installationId, event, ctx)
+        if (handleRenovateBranchPipeline(installationId, event, chatDetails, mrIid, ctx)) return
         val existingMessageId = ctx.webhookService.getPipelineMessageId(installationId, pipelineId)
 
         val messageId =
@@ -300,6 +327,82 @@ class WebhookRequestHandler(
             }
         }
         ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
+    }
+
+    private suspend fun handleRenovateBranchPipeline(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        mrIid: Long?,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val attrs = event.objectAttributes ?: return false
+        val branch = attrs.ref?.removePrefix("refs/heads/")?.takeIf { it.startsWith("renovate/") } ?: return false
+        val projectId = event.project?.id ?: return false
+        val sha = event.commit?.id?.takeIf(String::isNotBlank) ?: return false
+        if (
+            attrs.source != "push" ||
+            event.user?.username?.matches(Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE)) != true
+        ) return false
+
+        val key = RenovatePipelineCards.Key(installationId, projectId, branch, sha)
+        val text = ctx.formatter.formatEventMessage(event, mrIid)
+        val cardId = renovateCards.record(key, attrs.id, chatDetails, text)
+        if (cardId != null) {
+            ctx.telegramService.sendMessage(
+                Message(
+                    chatId = chatDetails.chatId,
+                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                    messageId = cardId,
+                    text = text,
+                    parseMode = PARSE_MODE,
+                    disableWebPagePreview = true,
+                    disableNotification = true,
+                ),
+            )
+        }
+        return true
+    }
+
+    private suspend fun deliverPendingRenovateCards(ctx: EventProcessingContext) {
+        try {
+            renovateCards.claimDue().forEach { card ->
+                try {
+                    val messageId = ctx.telegramService.sendMessage(
+                        Message(
+                            chatId = card.chatDetails.chatId,
+                            threadId = card.chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                            text = card.text,
+                            parseMode = PARSE_MODE,
+                            disableWebPagePreview = true,
+                            disableNotification = true,
+                        ),
+                    )
+                    val latestText = renovateCards.markSent(card, messageId)
+                    if (latestText != card.text) {
+                        ctx.telegramService.sendMessage(
+                            Message(
+                                chatId = card.chatDetails.chatId,
+                                threadId = card.chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                                messageId = messageId,
+                                text = latestText,
+                                parseMode = PARSE_MODE,
+                                disableWebPagePreview = true,
+                                disableNotification = true,
+                            ),
+                        )
+                    }
+                } catch (cancellation: java.util.concurrent.CancellationException) {
+                    throw cancellation
+                } catch (exception: Exception) {
+                    ctx.logger.error(exception) { "Failed to deliver Renovate CI card ${card.key}" }
+                }
+            }
+        } catch (cancellation: java.util.concurrent.CancellationException) {
+            throw cancellation
+        } catch (exception: Exception) {
+            ctx.logger.error(exception) { "Failed to claim pending Renovate CI cards" }
+        }
     }
 
     private suspend fun handleTerminalPipelineReply(
