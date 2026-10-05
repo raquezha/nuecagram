@@ -353,7 +353,9 @@ class WebhookRequestHandler(
         val attrs = event.objectAttributes ?: return false
         val branch = attrs.ref?.removePrefix("refs/heads/")?.takeIf { it.startsWith("renovate/") } ?: return false
         val projectId = event.project?.id ?: return false
-        val sha = event.commit?.id?.takeIf(String::isNotBlank) ?: return false
+        val sha = attrs.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+            ?: return false
         if (
             attrs.source != "push" ||
             event.user?.username?.matches(Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE)) != true
@@ -361,7 +363,8 @@ class WebhookRequestHandler(
 
         val key = RenovatePipelineCards.Key(installationId, projectId, branch, sha)
         val text = ctx.formatter.formatEventMessage(event, mrIid)
-        val cardId = renovateCards.record(key, attrs.id, chatDetails, text)
+        val existingMrMessageId = mrIid?.let { ctx.webhookService.getMrMessageId(installationId, projectId, it) }
+        val cardId = existingMrMessageId ?: renovateCards.record(key, attrs.id, chatDetails, text)
         if (cardId != null) {
             ctx.telegramService.sendMessage(
                 Message(
@@ -374,6 +377,9 @@ class WebhookRequestHandler(
                     disableNotification = true,
                 ),
             )
+            if (existingMrMessageId != null) {
+                renovateCards.cancelPending(installationId, projectId, branch, existingMrMessageId)
+            }
         }
         return true
     }
