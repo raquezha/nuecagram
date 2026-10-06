@@ -12,6 +12,10 @@ import net.raquezha.nuecagram.db.DatabaseFactory
 internal class RenovatePipelineCards(
     private val clock: Clock = Clock.systemUTC(),
 ) {
+    // ponytail: global Renovate delivery lock; shard by installation/branch if throughput requires it.
+    suspend fun <T> coordinateDelivery(block: suspend () -> T): T =
+        DatabaseFactory.withAdvisoryLock(72419031L, block)
+
     data class Key(val installationId: UUID, val projectId: Long, val branch: String, val sha: String)
 
     data class DueCard(
@@ -20,6 +24,75 @@ internal class RenovatePipelineCards(
         val text: String,
         val claimUntil: Instant,
     )
+
+    suspend fun recordOutcome(key: Key, pipelineId: Long, text: String, eventTime: Instant): Unit =
+        DatabaseFactory.dbQuery { connection ->
+            connection.prepareStatement(
+                """
+                INSERT INTO renovate_pipeline_outcomes
+                    (installation_id, project_id, branch, commit_sha, pipeline_id, card_text, event_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (installation_id, project_id, pipeline_id) DO UPDATE
+                SET card_text = EXCLUDED.card_text, event_time = EXCLUDED.event_time
+                WHERE EXCLUDED.event_time >= renovate_pipeline_outcomes.event_time
+                """.trimIndent(),
+            ).use { statement ->
+                statement.setObject(1, key.installationId)
+                statement.setLong(2, key.projectId)
+                statement.setString(3, key.branch)
+                statement.setString(4, key.sha)
+                statement.setLong(5, pipelineId)
+                statement.setString(6, text)
+                statement.setObject(7, eventTime.atOffset(ZoneOffset.UTC))
+                statement.executeUpdate()
+            }
+        }
+
+    suspend fun recordMr(key: Key, iid: Long, text: String): Unit = DatabaseFactory.dbQuery { connection ->
+        connection.prepareStatement(
+            """
+            INSERT INTO renovate_mr_cards (installation_id, project_id, branch, commit_sha, mr_iid, card_text)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (installation_id, project_id, branch) DO UPDATE
+            SET commit_sha = EXCLUDED.commit_sha, mr_iid = EXCLUDED.mr_iid, card_text = EXCLUDED.card_text,
+                message_id = CASE WHEN renovate_mr_cards.mr_iid = EXCLUDED.mr_iid
+                    THEN renovate_mr_cards.message_id ELSE NULL END
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setObject(1, key.installationId)
+            statement.setLong(2, key.projectId)
+            statement.setString(3, key.branch)
+            statement.setString(4, key.sha)
+            statement.setLong(5, iid)
+            statement.setString(6, text)
+            statement.executeUpdate()
+        }
+    }
+
+    suspend fun render(key: Key): String = DatabaseFactory.dbQuery { connection ->
+        connection.prepareStatement(
+            """
+            SELECT card_text FROM renovate_mr_cards
+            WHERE installation_id = ? AND project_id = ? AND branch = ? AND commit_sha = ?
+            UNION ALL
+            SELECT card_text FROM (
+                SELECT card_text FROM renovate_pipeline_outcomes
+                WHERE installation_id = ? AND project_id = ? AND branch = ? AND commit_sha = ?
+                ORDER BY pipeline_id
+            ) AS outcomes
+            """.trimIndent(),
+        ).use { statement ->
+            for (start in listOf(1, 5)) {
+                statement.setObject(start, key.installationId)
+                statement.setLong(start + 1, key.projectId)
+                statement.setString(start + 2, key.branch)
+                statement.setString(start + 3, key.sha)
+            }
+            statement.executeQuery().use { rows ->
+                buildList { while (rows.next()) add(rows.getString(1)) }.joinToString("\n\n")
+            }
+        }
+    }
 
     suspend fun record(
         key: Key,
@@ -68,13 +141,6 @@ internal class RenovatePipelineCards(
                 FROM renovate_pipeline_cards AS pending
                 WHERE pending.message_id IS NULL AND pending.due_at <= ?
                     AND (pending.claim_until IS NULL OR pending.claim_until <= ?)
-                    AND NOT EXISTS (
-                        SELECT 1 FROM active_merge_requests AS mr
-                        WHERE mr.installation_id = pending.installation_id
-                            AND mr.project_id = pending.project_id
-                            AND mr.source_branch = pending.branch
-                            AND (mr.last_commit_sha IS NULL OR mr.last_commit_sha = pending.commit_sha)
-                    )
                 ORDER BY pending.due_at LIMIT ? FOR UPDATE SKIP LOCKED
             )
             RETURNING installation_id, project_id, branch, commit_sha, chat_id, topic_id, card_text
@@ -114,14 +180,21 @@ internal class RenovatePipelineCards(
     ): String? = DatabaseFactory.dbQuery { connection ->
         connection.prepareStatement(
             """
-            SELECT message_id FROM renovate_pipeline_cards
-            WHERE installation_id = ? AND project_id = ? AND branch = ? AND message_id IS NOT NULL
-            ORDER BY updated_at DESC LIMIT 1
+            SELECT message_id FROM (
+                SELECT message_id, 0 AS priority, CURRENT_TIMESTAMP AS updated_at FROM renovate_mr_cards
+                WHERE installation_id = ? AND project_id = ? AND branch = ? AND message_id IS NOT NULL
+                UNION ALL
+                SELECT message_id, 1 AS priority, updated_at FROM renovate_pipeline_cards
+                WHERE installation_id = ? AND project_id = ? AND branch = ? AND message_id IS NOT NULL
+            ) AS cards ORDER BY priority, updated_at DESC LIMIT 1
             """.trimIndent(),
         ).use { statement ->
             statement.setObject(1, installationId)
             statement.setLong(2, projectId)
             statement.setString(3, branch)
+            statement.setObject(4, installationId)
+            statement.setLong(5, projectId)
+            statement.setString(6, branch)
             statement.executeQuery().use { rows ->
                 if (rows.next()) rows.getString(1) else null
             }
@@ -133,7 +206,35 @@ internal class RenovatePipelineCards(
         projectId: Long,
         branch: String,
         messageId: String,
+    ) {
+        while (true) {
+            try {
+                storeMessageId(installationId, projectId, branch, messageId)
+                return
+            } catch (exception: java.sql.SQLException) {
+                io.github.oshai.kotlinlogging.KotlinLogging.logger {}.error(exception) {
+                    "Retrying persistence of delivered Renovate message $messageId"
+                }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
+    private suspend fun storeMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+        messageId: String,
     ): Unit = DatabaseFactory.dbQuery { connection ->
+        connection.prepareStatement(
+            "UPDATE renovate_mr_cards SET message_id = ? WHERE installation_id = ? AND project_id = ? AND branch = ?",
+        ).use { statement ->
+            statement.setString(1, messageId)
+            statement.setObject(2, installationId)
+            statement.setLong(3, projectId)
+            statement.setString(4, branch)
+            statement.executeUpdate()
+        }
         connection.prepareStatement(
             """
             UPDATE renovate_pipeline_cards
@@ -162,7 +263,7 @@ internal class RenovatePipelineCards(
             """
             UPDATE renovate_pipeline_cards SET message_id = ?, claim_until = NULL, updated_at = ?
             WHERE installation_id = ? AND project_id = ? AND branch = ? AND commit_sha = ?
-                AND message_id IS NULL AND claim_until = ?
+                AND ((message_id IS NULL AND claim_until = ?) OR message_id = ?)
             RETURNING card_text
             """.trimIndent(),
         ).use { statement ->
@@ -173,6 +274,7 @@ internal class RenovatePipelineCards(
             statement.setString(5, card.key.branch)
             statement.setString(6, card.key.sha)
             statement.setObject(7, card.claimUntil.atOffset(ZoneOffset.UTC))
+            statement.setString(8, messageId)
             statement.executeQuery().use { rows ->
                 check(rows.next()) { "Lost claim for Renovate pipeline card ${card.key}" }
                 rows.getString(1)

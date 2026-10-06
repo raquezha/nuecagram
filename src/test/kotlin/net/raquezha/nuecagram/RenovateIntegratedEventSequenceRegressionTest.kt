@@ -49,6 +49,19 @@ class RenovateIntegratedEventSequenceRegressionTest : BaseEventTestHelper() {
 
         postWebhook(EVENT_PIPELINE, branchFail)
         delay(100)
+        postWebhook(
+            EVENT_PIPELINE,
+            pipelineMrPayload(projectId, 101174, 12, "renovate/dep-a", "sha1212", "policy:changeset", "failed"),
+        )
+        for (attempt in 1..50) {
+            if (sentMessages().any { it.text.contains("101174") }) break
+            delay(50)
+        }
+        val finalCard = sentMessages().last { it.messageId == "2" }.text
+        assertThat(finalCard).contains("/pipelines/101172")
+        assertThat(finalCard).contains("/pipelines/101174")
+        assertThat(finalCard).contains("validate")
+        assertThat(finalCard).contains("policy:changeset")
     }
 
     private suspend fun ApplicationTestBuilder.replayRenovateBranch13(projectId: Long) {

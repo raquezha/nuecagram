@@ -235,6 +235,8 @@ class RenovatePipelineCardsTest : BaseEventTestHelper() {
         assertThat(claimed.chatDetails).isEqualTo(destination)
         assertThat(afterRestart.claimDue().none { it.key == key }).isTrue()
         assertThat(afterRestart.markSent(claimed, "42")).isEqualTo("Failed #101172 validate")
+        // A database response can be lost after committing the receipt; persisting it again must be safe.
+        assertThat(afterRestart.markSent(claimed, "42")).isEqualTo("Failed #101172 validate")
 
         assertThat(RenovatePipelineCards(Clock.fixed(now.plusSeconds(122), ZoneOffset.UTC))
             .record(key, 101172, destination, "Passed #101172")).isEqualTo("42")
@@ -242,7 +244,7 @@ class RenovatePipelineCardsTest : BaseEventTestHelper() {
     }
 
     @Test
-    fun testKnownMrKeepsPendingCardForAdoptionInsteadOfSendingStandalone() = runBlocking {
+    fun testKnownMrWithoutMessageIdentityRecoversPendingCard() = runBlocking {
         val now = Instant.now()
         val sha = UUID.randomUUID().toString()
         val key = RenovatePipelineCards.Key(installation.id, 599L, "renovate/has-mr", sha)
@@ -251,7 +253,7 @@ class RenovatePipelineCardsTest : BaseEventTestHelper() {
         installationRepository.upsertActiveMr(installation.id, 599L, key.branch, 12L, lastCommitSha = sha)
 
         val afterDeadline = RenovatePipelineCards(Clock.fixed(now.plusSeconds(121), ZoneOffset.UTC))
-        assertThat(afterDeadline.claimDue().none { it.key == key }).isTrue()
+        assertThat(afterDeadline.claimDue().any { it.key == key }).isTrue()
     }
 
     @Test

@@ -4,6 +4,8 @@ import io.github.oshai.kotlinlogging.KLogger
 import io.ktor.server.application.Application
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.raquezha.nuecagram.telegram.Message
 import net.raquezha.nuecagram.telegram.TelegramService
 import net.raquezha.nuecagram.db.InstallationRepository
@@ -75,6 +77,8 @@ class WebhookRequestHandler(
 ) {
     private val eventFilter = WebhookEventFilter()
     private val renovateCards = RenovatePipelineCards(renovateClock)
+    // ponytail: handler-local serialization; distributed send/adoption needs database coordination.
+    private val deliveryMutex = Mutex()
 
     /** Buffered channel with capacity limit to prevent memory exhaustion */
     private val queue = Channel<EventData>(capacity = QUEUE_CAPACITY)
@@ -149,13 +153,21 @@ class WebhookRequestHandler(
                             ctx.logger.error(exception) { "Failed to clean stale Renovate CI cards" }
                         }
                     }
-                    deliverPendingRenovateCards(ctx)
+                    deliveryMutex.withLock {
+                        try {
+                            renovateCards.coordinateDelivery { deliverPendingRenovateCards(ctx) }
+                        } catch (cancellation: java.util.concurrent.CancellationException) {
+                            throw cancellation
+                        } catch (exception: Exception) {
+                            ctx.logger.error(exception) { "Failed to coordinate Renovate delivery" }
+                        }
+                    }
                     kotlinx.coroutines.delay(1000)
                 }
             }
             try {
                 for (data in queue) {
-                    processEventWithRetry(data, ctx)
+                    deliveryMutex.withLock { processEventWithRetry(data, ctx) }
                 }
             } finally {
                 fallbackWorker.cancel()
@@ -173,7 +185,16 @@ class WebhookRequestHandler(
         while (attempts < MAX_EVENT_RETRIES) {
             attempts++
             try {
-                processEvent(data = data, ctx = ctx)
+                val branch = when (val event = data.event) {
+                    is PipelineEvent -> event.objectAttributes?.ref
+                    is MergeRequestEvent -> event.objectAttributes?.sourceBranch
+                    else -> null
+                }
+                when {
+                    branch?.removePrefix("refs/heads/")?.startsWith("renovate/") == true ->
+                        renovateCards.coordinateDelivery { processEvent(data = data, ctx = ctx) }
+                    else -> processEvent(data = data, ctx = ctx)
+                }
                 return
             } catch (skipEx: SkipEventException) {
                 ctx.logger.debug { MESSAGE_SKIPPED }
@@ -307,7 +328,7 @@ class WebhookRequestHandler(
         ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
     }
 
-    private fun resolvePipelineMessageId(
+    private suspend fun resolvePipelineMessageId(
         installationId: java.util.UUID,
         pipelineId: Long,
         event: PipelineEvent,
@@ -319,6 +340,13 @@ class WebhookRequestHandler(
         val projectId = event.project?.id
         return if (event.objectAttributes?.source == "merge_request_event" && mrIid != null && projectId != null) {
             ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
+                ?: event.objectAttributes?.ref?.removePrefix("refs/heads/")
+                    ?.takeIf {
+                        it.startsWith("renovate/") &&
+                            event.user?.username?.matches(
+                                Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE),
+                            ) == true
+                    }?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
         } else {
             null
         }
@@ -357,14 +385,20 @@ class WebhookRequestHandler(
             ?: event.commit?.id?.takeIf(String::isNotBlank)
             ?: return false
         if (
-            attrs.source != "push" ||
+            attrs.source !in listOf("push", "merge_request_event") ||
             event.user?.username?.matches(Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE)) != true
         ) return false
 
         val key = RenovatePipelineCards.Key(installationId, projectId, branch, sha)
-        val text = ctx.formatter.formatEventMessage(event, mrIid)
+        renovateCards.recordOutcome(
+            key, attrs.id, ctx.formatter.formatEventMessage(event, mrIid),
+            event.pipelineOutcomeTime(),
+        )
+        val text = renovateCards.render(key)
         val existingMrMessageId = mrIid?.let { ctx.webhookService.getMrMessageId(installationId, projectId, it) }
-        val cardId = existingMrMessageId ?: renovateCards.record(key, attrs.id, chatDetails, text)
+        val persistedMessageId = renovateCards.record(key, attrs.id, chatDetails, text)
+        val cardId = existingMrMessageId ?: persistedMessageId
+            ?: renovateCards.findExistingMessageId(installationId, projectId, branch)
         if (cardId != null) {
             ctx.telegramService.sendMessage(
                 Message(
@@ -377,9 +411,7 @@ class WebhookRequestHandler(
                     disableNotification = true,
                 ),
             )
-            if (existingMrMessageId != null) {
-                renovateCards.cancelPending(installationId, projectId, branch, existingMrMessageId)
-            }
+            renovateCards.cancelPending(installationId, projectId, branch, cardId)
         }
         return true
     }
@@ -398,7 +430,8 @@ class WebhookRequestHandler(
                             disableNotification = true,
                         ),
                     )
-                    val latestText = renovateCards.markSent(card, messageId)
+                    val latestText = persistDeliveredRenovateCard(card, messageId, ctx)
+                    renovateCards.cancelPending(card.key.installationId, card.key.projectId, card.key.branch, messageId)
                     if (latestText != card.text) {
                         ctx.telegramService.sendMessage(
                             Message(
@@ -422,6 +455,21 @@ class WebhookRequestHandler(
             throw cancellation
         } catch (exception: Exception) {
             ctx.logger.error(exception) { "Failed to claim pending Renovate CI cards" }
+        }
+    }
+
+    private suspend fun persistDeliveredRenovateCard(
+        card: RenovatePipelineCards.DueCard,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ): String {
+        while (true) {
+            try {
+                return renovateCards.markSent(card, messageId)
+            } catch (exception: java.sql.SQLException) {
+                ctx.logger.error(exception) { "Retrying persistence of delivered Renovate message $messageId" }
+                kotlinx.coroutines.delay(1000)
+            }
         }
     }
 
@@ -830,6 +878,24 @@ class WebhookRequestHandler(
         ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
     }
 
+    private fun PipelineEvent.pipelineOutcomeTime(): java.time.Instant =
+        objectAttributes?.finishedAt?.toInstant() ?: objectAttributes?.createdAt?.toInstant() ?: java.time.Instant.EPOCH
+
+    private fun renovateMrKey(
+        installationId: java.util.UUID,
+        state: MergeRequestState,
+        event: MergeRequestEvent,
+    ): RenovatePipelineCards.Key? {
+        val branch = state.sourceBranch?.takeIf { it.startsWith("renovate/") } ?: return null
+        val projectId = state.projectId ?: return null
+        if (state.mrIid == null) return null
+        val username = event.user?.username ?: return null
+        if (!username.matches(Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE))) return null
+        return RenovatePipelineCards.Key(
+            installationId, projectId, branch, event.objectAttributes?.lastCommit?.id.orEmpty(),
+        )
+    }
+
     private suspend fun handleMergeRequestEvent(
         installationId: java.util.UUID,
         event: MergeRequestEvent,
@@ -844,6 +910,10 @@ class WebhookRequestHandler(
             skipRedundantMergeRequestUpdate(installationId, state, event, ctx)
         }
 
+        val renovateKey = renovateMrKey(installationId, state, event)
+        if (renovateKey != null) {
+            renovateCards.recordMr(renovateKey, requireNotNull(state.mrIid), ctx.formatter.formatEventMessage(event))
+        }
         val existingMessageId = resolveMrMessageId(installationId, state, ctx)
 
         if (
@@ -861,7 +931,7 @@ class WebhookRequestHandler(
                 chatId = chatDetails.chatId,
                 threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                 messageId = existingMessageId,
-                text = ctx.formatter.formatEventMessage(event),
+                text = renovateKey?.let { renovateCards.render(it) } ?: ctx.formatter.formatEventMessage(event),
                 parseMode = PARSE_MODE,
                 disableWebPagePreview = true,
             ),
