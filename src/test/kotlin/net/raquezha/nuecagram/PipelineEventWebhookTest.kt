@@ -10,6 +10,7 @@ import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
 import org.koin.core.context.GlobalContext.stopKoin
 
+@Suppress("TooManyFunctions")
 class PipelineEventWebhookTest : BaseEventTestHelper() {
     @Test
     fun testWebhookPipelineEvents() =
@@ -133,33 +134,91 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun testBotTriggeredPipelineFallsBackToCommitAuthorEmailHandle() =
+    fun testBotTriggeredPipelineDoesNotMentionCommitAuthor() =
         testApplication {
             configureTestApplication()
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
-            val authorJson = "{\"name\": \"Razyl Vidal\", \"email\": \"raquezha@example.com\"}"
-            val botPayloadWithCommitAuthor = SAMPLE_PAYLOAD_SUCCESS
-                .replace("\"username\": \"admin\"", "\"username\": \"group_44_bot_token\"")
-                .replace("\"name\": \"Administrator\"", "\"name\": \"CI_VERSION_WRITEBACK2\"")
-                .replace("\"author\": null", "\"author\": $authorJson")
+            val payload = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"username\": \"raquezha\"", "\"username\": \"project_599_bot_token\"")
+                .replace("\"name\": \"raquezha\"", "\"name\": \"RENOVATE2\"")
+            postWebhook(EVENT_PIPELINE, payload)
 
-            postWebhook(EVENT_PIPELINE, botPayloadWithCommitAuthor)
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
+        }
 
-            val completionReply = kotlinx.coroutines.runBlocking {
-                var found: net.raquezha.nuecagram.telegram.Message? = null
-                for (i in 1..100) {
-                    found = mockTelegramService.sentMessages().find { it.text.contains("@raquezha") }
-                    if (found != null) break
-                    kotlinx.coroutines.delay(50)
-                }
-                found
+    @Test
+    fun testBotTriggeredMrPipelineDoesNotMentionCachedHumanParticipants() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
             }
+            val payload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"username\": \"alice\"", "\"username\": \"project_599_bot_token\"")
+            assertThat(payload).contains("\"username\": \"project_599_bot_token\"")
+            postWebhook(EVENT_PIPELINE, payload)
 
-            assertThat(completionReply).isNotNull()
-            assertThat(completionReply?.text).contains("@raquezha")
-            assertThat(completionReply?.text).doesNotContain("group_44_bot")
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
+        }
+
+    @Test
+    fun testScheduledRenovateMaintenanceDoesNotMentionScheduleOwner() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val payload = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"source\": \"push\"", "\"source\": \"schedule\"")
+                .replace("\"name\": \"prepare\"", "\"name\": \"maintain:renovate\"")
+            postWebhook(EVENT_PIPELINE, payload)
+
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
+        }
+
+    @Test
+    fun testOtherScheduledPipelineStillMentionsHuman() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val payload = SAMPLE_PAYLOAD_SUCCESS.replace("\"source\": \"push\"", "\"source\": \"schedule\"")
+            postWebhook(EVENT_PIPELINE, payload)
+
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages.any { it.text.contains("@raquezha") }).isTrue()
+        }
+
+    @Test
+    fun testHumanNamedR3novateStillReceivesCompletionReply() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val payload = SAMPLE_PAYLOAD_SUCCESS.replace("\"username\": \"raquezha\"", "\"username\": \"r3novate\"")
+            postWebhook(EVENT_PIPELINE, payload)
+
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages.any { it.text.contains("@r3novate") }).isTrue()
         }
 
     @Test

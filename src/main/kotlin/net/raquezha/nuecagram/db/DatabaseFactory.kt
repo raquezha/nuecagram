@@ -93,6 +93,25 @@ object DatabaseFactory {
             source.connection.use(block)
         }
 
+    suspend fun <T> withAdvisoryLock(key: Long, block: suspend () -> T): T =
+        withContext(Dispatchers.IO) {
+            val source = dataSource ?: throw IllegalStateException("DatabaseFactory is not initialized")
+            source.connection.use { connection ->
+                connection.prepareStatement("SELECT pg_advisory_lock(?)").use { statement ->
+                    statement.setLong(1, key)
+                    statement.execute()
+                }
+                try {
+                    block()
+                } finally {
+                    connection.prepareStatement("SELECT pg_advisory_unlock(?)").use { statement ->
+                        statement.setLong(1, key)
+                        statement.execute()
+                    }
+                }
+            }
+        }
+
     suspend fun <T> dbTransaction(block: Transaction.() -> T): T =
         withContext(Dispatchers.IO) {
             val db = database ?: synchronized(this@DatabaseFactory) {

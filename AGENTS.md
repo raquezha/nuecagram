@@ -162,11 +162,17 @@ Pipeline and job events are consolidated into a single updating message per pipe
 ### Pipeline & Notification Delivery Policy
 
 - **Reviewer Tagging**: Successful MR pipelines tag assigned reviewers with randomized review call-to-action prompts.
-- **Bot Token Filtering**: Automated CI service tokens (e.g. `group_*_bot_*`, `project_*_bot_*`, `CI_VERSION_WRITEBACK2`) are detected via `isGitLabBotUser()` and never tagged in Telegram chat; falls back to human commit author.
+- **Bot Token & Automation Filtering**:
+  - Automated CI tokens (e.g. `group_*_bot_*`, `project_*_bot_*`, `service_account_*`, `ci_*`, `*writeback*`) are detected via `isGitLabBotUser()` independent of author display names (e.g. `RENOVATE`, `RENOVATE2`). Bot accounts and commit authors are never tagged in completion replies.
+  - Scheduled maintenance pipelines (`source: schedule`) containing `maintain:renovate` jobs are recognized as automated maintenance and suppress completion replies to the schedule owner.
+- **Renovate MR & CI Card Consolidation**:
+  - Bot pushes on `renovate/*` branches suppress standalone push bubbles.
+  - Branch CI pipeline events for bot activity on `renovate/*` branches are tracked in PostgreSQL (`renovate_pipeline_cards`) with a 2-minute MR wait deadline. When the MR is opened (either before or after the branch pipeline), the card is adopted as the consolidated MR bubble, and subsequent MR pipeline events update the same message, preserving distinct job failure links and suppressing standalone pipeline or reply bubbles.
 - **Smart Notification Delivery (`disable_notification`)**:
   - Feature branch pushes and intermediate pipeline running updates are delivered silently (`disable_notification: true`) to prevent chat noise.
   - Production/main pushes, build failures, manual-waiting actions, and reviewer review requests alert audibly (`disable_notification: false`).
-- **Terminal Deduplication**: Terminal pipeline completion replies are deduplicated via `tryMarkPipelineNotification` to prevent repeat pings on GitLab webhook retries.
+- **Terminal Deduplication & Atomic Claim**:
+  - Pipeline completion replies atomically claim terminal status (`tryClaimPipelineTerminalStatus`) before Telegram dispatch, rolling back on delivery exceptions to prevent repeat pings while remaining retryable. Webhook deliveries are deduplicated across `X-Gitlab-Webhook-UUID`, `X-Gitlab-Event-UUID`, and `Idempotency-Key` headers.
 
 ## Code Style (Kotlinter/ktlint & detekt enforced)
 

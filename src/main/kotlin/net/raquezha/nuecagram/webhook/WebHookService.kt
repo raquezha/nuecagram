@@ -216,6 +216,11 @@ class WebHookService(
         }
     }
 
+    sealed interface TerminalStatusClaim {
+        data class Claimed(val previousStatus: String?) : TerminalStatusClaim
+        data class AlreadyNotified(val lastStatus: String?) : TerminalStatusClaim
+    }
+
     fun getPipelineLastTerminalStatus(
         installationId: UUID,
         pipelineId: Long,
@@ -225,6 +230,60 @@ class WebHookService(
         installationId: UUID,
         pipelineId: Long,
     ): Long? = pipelineMessageIdMap[InstallationPipelineKey(installationId, pipelineId)]?.lastFinishedAtEpochSeconds
+
+    fun tryClaimPipelineTerminalStatus(
+        installationId: UUID,
+        pipelineId: Long,
+        status: String,
+        finishedAtEpochSeconds: Long? = null,
+    ): TerminalStatusClaim {
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        var previousStatus: String? = null
+        var isClaimed = false
+
+        pipelineMessageIdMap.compute(key) { _, existing ->
+            if (existing == null) {
+                null
+            } else {
+                val prev = existing.lastTerminalStatus
+                val prevFinishedAt = existing.lastFinishedAtEpochSeconds
+                previousStatus = prev
+
+                val isNewerFinishedAt =
+                    finishedAtEpochSeconds != null && prevFinishedAt != null && finishedAtEpochSeconds > prevFinishedAt
+                if (prev == status && !isNewerFinishedAt) {
+                    existing
+                } else {
+                    isClaimed = true
+                    existing.copy(
+                        lastTerminalStatus = status,
+                        lastFinishedAtEpochSeconds = finishedAtEpochSeconds ?: existing.lastFinishedAtEpochSeconds,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                }
+            }
+        }
+
+        return if (isClaimed) {
+            TerminalStatusClaim.Claimed(previousStatus)
+        } else {
+            TerminalStatusClaim.AlreadyNotified(previousStatus)
+        }
+    }
+
+    fun rollbackPipelineTerminalStatus(
+        installationId: UUID,
+        pipelineId: Long,
+        previousStatus: String?,
+    ) {
+        val key = InstallationPipelineKey(installationId, pipelineId)
+        pipelineMessageIdMap.computeIfPresent(key) { _, existing ->
+            existing.copy(
+                lastTerminalStatus = previousStatus,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
 
     fun setPipelineLastTerminalStatus(
         installationId: UUID,
@@ -456,7 +515,8 @@ class WebHookService(
                 ?: throw WebhookRequestException(HttpStatusCode.Unauthorized, "missing 'X-Gitlab-Token' header")
         val eventUuid =
             request.headers[NuecagramHeaders.GITLAB_WEBHOOK_UUID]?.trim()
-        println("SERVICE_EVENT_UUID: '$eventUuid'")
+                ?: request.headers[NuecagramHeaders.GITLAB_EVENT_UUID]?.trim()
+                ?: request.headers["Idempotency-Key"]?.trim()
         logger.debug { "Received webhook header eventUuid=$eventUuid" }
         val event =
             runCatching { jacksonJson.unmarshal(Event::class.java, body) }.getOrElse {
