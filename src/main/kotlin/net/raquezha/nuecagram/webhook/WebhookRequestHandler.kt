@@ -100,6 +100,7 @@ class WebhookRequestHandler(
         private val PIPELINE_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
         private val JOB_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
         private val ACCEPTABLE_COMPLETED_BUILD_STATUSES = setOf(BuildStatus.SUCCESS, BuildStatus.SKIPPED)
+        private val PRODUCTION_BRANCHES = setOf("main", "master", "production", "staging")
     }
 
     suspend fun enqueue(eventData: EventData) {
@@ -313,6 +314,14 @@ class WebhookRequestHandler(
             return
         }
 
+        if (!acceptMonotonicBranchPipeline(installationId, pipelineId, event, ctx)) {
+            ctx.logger.debug {
+                "Skipping non-monotonic pipeline #$pipelineId " +
+                    "(older than latest accepted pipeline for branch)"
+            }
+            return
+        }
+
         val (mrIid, _) = findCachedMrParticipants(installationId, event, ctx)
         if (handleRenovateBranchPipeline(installationId, event, chatDetails, mrIid, ctx)) return
         val existingMessageId = resolvePipelineMessageId(installationId, pipelineId, event, mrIid, ctx)
@@ -355,6 +364,35 @@ class WebhookRequestHandler(
             ?: event.commit?.id?.takeIf(String::isNotBlank)
             ?: return false
         return !tipSha.equals(eventSha, ignoreCase = true)
+    }
+
+    private fun acceptMonotonicBranchPipeline(
+        installationId: java.util.UUID,
+        pipelineId: Long,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        // Pipelines that already own a Telegram card may always update in-place (retries),
+        // but first sightings of older pipeline IDs must not overwrite a newer branch result.
+        if (ctx.webhookService.getPipelineMessageId(installationId, pipelineId) != null) {
+            return true
+        }
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return true
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return true
+        val eventEpochMs = event.pipelineOutcomeTime().toEpochMilli()
+        return ctx.webhookService.tryAcceptBranchPipelineOrder(
+            installationId = installationId,
+            projectId = projectId,
+            branch = branch,
+            pipelineId = pipelineId,
+            eventEpochMs = eventEpochMs,
+        )
     }
 
     private fun formatPipelineCardText(
@@ -955,6 +993,7 @@ class WebhookRequestHandler(
         val branch: String?,
         val afterSha: String?,
         val mrIid: Long?,
+        val addedCommitCount: Int = 0,
     )
 
     private suspend fun handlePushEvent(
@@ -973,9 +1012,15 @@ class WebhookRequestHandler(
             return
         }
 
-        val isSilentPush = pushCtx.branch !in listOf("main", "master", "production", "staging")
+        val isProductionBranch = pushCtx.branch in PRODUCTION_BRANCHES
+        val isSilentPush = !isProductionBranch
         val pushText = ctx.formatter.formatPushEventMessage(event, pushCtx.mrIid)
-        val existingMessageId = pushCtx.editableMessageId(installationId, ctx)
+        // Production/main pushes always open a dedicated card (never edit an MR lifecycle card).
+        val existingMessageId = if (isProductionBranch) {
+            null
+        } else {
+            pushCtx.editableMessageId(installationId, ctx)
+        }
         val messageId = ctx.telegramService.sendMessage(
             Message(
                 chatId = chatDetails.chatId,
@@ -1020,7 +1065,11 @@ class WebhookRequestHandler(
                 ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)?.mrIid
             }
         }
-        return PushCardContext(projectId, branch, afterSha, mrIid)
+        val addedCommitCount = when {
+            isBranchDelete -> 0
+            else -> (event.totalCommitsCount ?: event.commits?.size ?: 0).coerceAtLeast(0)
+        }
+        return PushCardContext(projectId, branch, afterSha, mrIid, addedCommitCount)
     }
 
     private fun PushCardContext.editableMessageId(
@@ -1051,6 +1100,7 @@ class WebhookRequestHandler(
                 tipSha = pushCtx.afterSha,
                 pushHeader = pushText,
                 frozen = false,
+                addedCommitCount = pushCtx.addedCommitCount,
             )
         }
         pushCtx.mrIid?.let { mrIid ->
@@ -1091,9 +1141,12 @@ class WebhookRequestHandler(
         }
 
         val renovateKey = renovateMrKey(installationId, state, event)
+        val squashedCommitCount = resolveSquashedCommitCount(installationId, state, ctx)
+        val formattedMr = ctx.formatter.formatMergeRequestEventMessage(event, squashedCommitCount)
         if (renovateKey != null) {
-            renovateCards.recordMr(renovateKey, requireNotNull(state.mrIid), ctx.formatter.formatEventMessage(event))
+            renovateCards.recordMr(renovateKey, requireNotNull(state.mrIid), formattedMr)
         }
+        val mrCardText = renovateKey?.let { renovateCards.render(it) } ?: formattedMr
         val existingMessageId = resolveMrMessageId(installationId, state, ctx)
 
         if (
@@ -1111,15 +1164,35 @@ class WebhookRequestHandler(
                 chatId = chatDetails.chatId,
                 threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                 messageId = existingMessageId,
-                text = renovateKey?.let { renovateCards.render(it) } ?: ctx.formatter.formatEventMessage(event),
+                text = mrCardText,
                 parseMode = PARSE_MODE,
                 disableWebPagePreview = true,
             ),
         )
 
         updateMrMessageTracking(installationId, state, messageId, ctx)
+        if (state.action == "merge") {
+            state.sourceBranch?.takeIf(String::isNotBlank)?.let { branch ->
+                state.projectId?.let { projectId ->
+                    ctx.webhookService.freezeBranchCard(installationId, projectId, branch)
+                }
+            }
+        }
 
         sendReviewerChangeReplies(reviewerChange, chatDetails, messageId, event, ctx)
+    }
+
+    private fun resolveSquashedCommitCount(
+        installationId: java.util.UUID,
+        state: MergeRequestState,
+        ctx: EventProcessingContext,
+    ): Int? {
+        if (state.action != "merge") return null
+        val projectId = state.projectId ?: return 1
+        val branch = state.sourceBranch?.takeIf(String::isNotBlank) ?: return 1
+        return ctx.webhookService.getBranchCycleCommitCount(installationId, projectId, branch)
+            .takeIf { it > 0 }
+            ?: 1
     }
 
     private suspend fun resolveMrMessageId(

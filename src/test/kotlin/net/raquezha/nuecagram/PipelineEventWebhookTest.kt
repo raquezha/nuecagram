@@ -556,7 +556,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
 
             val firstPush = PushEventWebhookTest.SAMPLE_PAYLOAD
                 .replace("282", "105")
-                .replace("refs/heads/nuecalytics", "refs/heads/main")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature/slice4")
             postWebhook(EVENT_PUSH, firstPush)
             waitForMessages(mockTelegramService, 1)
 
@@ -585,7 +585,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val firstPush = PushEventWebhookTest.SAMPLE_PAYLOAD
                 .replace(firstSha, tipSha)
                 .replace("282", "105")
-                .replace("refs/heads/nuecalytics", "refs/heads/main")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature/slice4")
             postWebhook(EVENT_PUSH, firstPush)
             waitForMessages(mockTelegramService, 1)
 
@@ -597,12 +597,91 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val canceledOldTip = SAMPLE_PAYLOAD_SUCCESS
                 .replace("\"status\": \"success\"", "\"status\": \"canceled\"")
                 .replace("\"detailed_status\": \"passed\"", "\"detailed_status\": \"canceled\"")
+                .replace("\"ref\": \"main\"", "\"ref\": \"feature/slice4\"")
             postWebhook(EVENT_PIPELINE, canceledOldTip)
 
             kotlinx.coroutines.delay(150)
             val messages = mockTelegramService.sentMessages()
             assertThat(messages).hasSize(2)
             assertThat(messages.none { it.text.contains("canceled") }).isTrue()
+        }
+
+    @Test
+    fun testOlderPipelineCannotRevertNewerBranchCard() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val newerSuccess = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"ref\": \"main\"", "\"ref\": \"feature/mono\"")
+            postWebhook(EVENT_PIPELINE, newerSuccess)
+            val afterNewer = waitForMessages(mockTelegramService, 1)
+            assertThat(afterNewer).hasSize(1)
+            assertThat(afterNewer[0].text).contains("passed")
+
+            val olderSuccess = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"id\": 53481", "\"id\": 53480")
+                .replace("\"iid\": 2925", "\"iid\": 2924")
+                .replace("\"ref\": \"main\"", "\"ref\": \"feature/mono\"")
+                .replace("\"status\": \"success\"", "\"status\": \"failed\"")
+                .replace("\"detailed_status\": \"passed\"", "\"detailed_status\": \"failed\"")
+            postWebhook(EVENT_PIPELINE, olderSuccess)
+
+            kotlinx.coroutines.delay(150)
+            val messages = mockTelegramService.sentMessages()
+            assertThat(messages).hasSize(1)
+            assertThat(messages[0].text).contains("passed")
+            assertThat(messages[0].text).doesNotContain("failed")
+        }
+
+    @Test
+    fun testRunningBuildShowsRunnerNameAndStage() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val runningWithRunner = SAMPLE_PAYLOAD_RUNNING.replaceFirst(
+                Regex("(\"name\": \"ktlint\",[\\s\\S]*?)\"runner\": null,"),
+                "$1\"runner\": {" +
+                    "\"id\": 202," +
+                    "\"description\": \"Android Team Runner - Mac Shell 6\"," +
+                    "\"runner_type\": \"group_type\"," +
+                    "\"active\": true," +
+                    "\"is_shared\": false," +
+                    "\"tags\": [\"android\"]" +
+                    "},",
+            )
+
+            postWebhook(EVENT_PIPELINE, runningWithRunner)
+            val messages = waitForMessages(mockTelegramService, 1)
+            assertThat(messages[0].text).contains("running on Android Team Runner - Mac Shell 6")
+            assertThat(messages[0].text).contains("(test)")
+        }
+
+    @Test
+    fun testMainPushCreatesDedicatedCardNotEditingFeatureCard() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val featurePush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature/ship")
+            postWebhook(EVENT_PUSH, featurePush)
+            waitForMessages(mockTelegramService, 1)
+
+            val mainPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+            postWebhook(EVENT_PUSH, mainPush)
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages).hasSize(2)
+            assertThat(messages[0].messageId).isNull()
+            assertThat(messages[1].messageId).isNull()
+            assertThat(messages[1].text).contains("main")
         }
 
     private fun waitForMessages(

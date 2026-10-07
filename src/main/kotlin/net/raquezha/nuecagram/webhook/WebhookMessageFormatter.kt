@@ -83,7 +83,7 @@ class WebhookMessageFormatter {
             is ReleaseEvent -> formatReleaseEventMessage(event)
             is IssueEvent -> formatIssueEventMessage(event)
             is BuildEvent -> formatBuildEventMessage(event)
-            is MergeRequestEvent -> formatMergeRequestEventMessage(event)
+            is MergeRequestEvent -> formatMergeRequestEventMessage(event, squashedCommitCount = null)
             is NoteEvent -> formatNoteEvent(event)
             else -> throwUnsupportedEventException(event)
         }
@@ -560,12 +560,25 @@ class WebhookMessageFormatter {
             BuildStatus.FAILED -> {
                 " ${buildUrl.link("View Logs")}"
             }
-            BuildStatus.RUNNING -> " running..."
+            BuildStatus.RUNNING -> formatRunningBuildStatus(build)
             BuildStatus.PENDING -> " pending"
             BuildStatus.CANCELED -> " canceled"
             BuildStatus.SKIPPED -> " skipped"
             BuildStatus.MANUAL -> " manual"
             else -> ""
+        }
+    }
+
+    private fun formatRunningBuildStatus(build: Build): String {
+        val runnerName = build.runner?.description?.takeIf(String::isNotBlank)
+            ?: build.runner?.name?.takeIf(String::isNotBlank)
+        val stage = build.stage?.takeIf(String::isNotBlank)
+        return when {
+            runnerName != null && stage != null ->
+                " running on ${runnerName.escapeHtml()} (${stage.escapeHtml()})"
+            runnerName != null -> " running on ${runnerName.escapeHtml()}"
+            stage != null -> " running (${stage.escapeHtml()})"
+            else -> " running..."
         }
     }
 
@@ -880,9 +893,16 @@ class WebhookMessageFormatter {
             else -> "📦" to action
         }
 
-    private fun formatMergeRequestEventMessage(event: MergeRequestEvent): String {
+    fun formatMergeRequestEventMessage(
+        event: MergeRequestEvent,
+        squashedCommitCount: Int? = null,
+    ): String {
         val data = extractMergeRequestData(event)
-        val (emoji, actionText) = getMergeRequestActionDisplay(data.action, data.isDraft)
+        val (emoji, actionText) = getMergeRequestActionDisplay(
+            action = data.action,
+            isDraft = data.isDraft,
+            squashedCommitCount = squashedCommitCount,
+        )
         val clickableMR = data.url.link("!${data.iid}")
 
         return buildString {
@@ -951,6 +971,7 @@ class WebhookMessageFormatter {
     private fun getMergeRequestActionDisplay(
         action: String,
         isDraft: Boolean,
+        squashedCommitCount: Int? = null,
     ): Pair<String, String> =
         when (action.lowercase()) {
             "open" -> if (isDraft) "📝" to "draft opened" else "🆕" to "opened"
@@ -959,7 +980,10 @@ class WebhookMessageFormatter {
             "update" -> "✏️" to "updated"
             "approved" -> "👍" to "approved"
             "unapproved" -> "👎" to "unapproved"
-            "merge" -> "🎉" to "merged"
+            "merge" -> {
+                val count = (squashedCommitCount ?: 1).coerceAtLeast(1)
+                "🟣" to "Merged (Squashed $count commits)"
+            }
             else -> "🔀" to action
         }
 }

@@ -183,6 +183,26 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             assertThat(allMessages.last().messageId).isEqualTo("1")
         }
 
+    @Test
+    fun testMergeStampsSquashedCommitCountOnMrCard() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = telegramService as net.raquezha.nuecagram.telegram.MockTelegramService
+            mockTelegramService.reset()
+
+            val pushPayload = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "101")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature")
+            postWebhook(EVENT_PUSH, pushPayload)
+            waitForMessages(1)
+
+            postWebhook(EVENT_MERGE, mrPayload(action = "merge", reviewers = listOf("bob")))
+            val messages = waitForMessages(2)
+            assertThat(messages.last().text).contains("🟣")
+            assertThat(messages.last().text).contains("Merged (Squashed")
+            assertThat(messages.last().text).contains("commits)")
+        }
+
     private fun waitForMessages(count: Int) = kotlinx.coroutines.runBlocking {
         val mock = telegramService as net.raquezha.nuecagram.telegram.MockTelegramService
         repeat(100) {
