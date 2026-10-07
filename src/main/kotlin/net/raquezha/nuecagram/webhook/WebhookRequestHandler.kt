@@ -337,19 +337,36 @@ class WebhookRequestHandler(
     ): String? {
         val direct = ctx.webhookService.getPipelineMessageId(installationId, pipelineId)
         if (direct != null) return direct
+
         val projectId = event.project?.id
-        return if (event.objectAttributes?.source == "merge_request_event" && mrIid != null && projectId != null) {
-            ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
-                ?: event.objectAttributes?.ref?.removePrefix("refs/heads/")
-                    ?.takeIf {
-                        it.startsWith("renovate/") &&
-                            event.user?.username?.matches(
-                                Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE),
-                            ) == true
-                    }?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
-        } else {
-            null
-        }
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return null
+
+        val commitSha = event.objectAttributes?.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+
+        return resolveMrPipelineMessageId(installationId, projectId, event, mrIid, ctx)
+            ?: commitSha?.let { ctx.webhookService.getCommitMessageId(installationId, projectId, it) }
+    }
+
+    private suspend fun resolveMrPipelineMessageId(
+        installationId: java.util.UUID,
+        projectId: Long,
+        event: PipelineEvent,
+        mrIid: Long?,
+        ctx: EventProcessingContext,
+    ): String? = if (event.objectAttributes?.source == "merge_request_event" && mrIid != null) {
+        ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
+            ?: event.objectAttributes?.ref?.removePrefix("refs/heads/")
+                ?.takeIf {
+                    it.startsWith("renovate/") &&
+                        event.user?.username?.matches(
+                            Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE),
+                        ) == true
+                }?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
+    } else {
+        null
     }
 
     private suspend fun dispatchPipelineReplies(
@@ -907,6 +924,17 @@ class WebhookRequestHandler(
                     disableNotification = isSilentPush,
                 ),
             )
+        if (projectId != null) {
+            if (!afterSha.isNullOrBlank()) {
+                ctx.webhookService.setCommitMessageId(installationId, projectId, afterSha, messageId)
+            }
+            if (!branch.isNullOrBlank()) {
+                ctx.webhookService.setBranchLatestMessageId(installationId, projectId, branch, messageId)
+            }
+            if (mrIid != null) {
+                ctx.webhookService.setMrMessageId(installationId, projectId, mrIid, messageId)
+            }
+        }
         ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
     }
 
@@ -981,12 +1009,17 @@ class WebhookRequestHandler(
     ): String? {
         val projectId = state.projectId ?: return null
         val mrIid = state.mrIid ?: return null
-        val inMemoryId = ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
-        if (inMemoryId != null) return inMemoryId
-        if (state.sourceBranch?.startsWith("renovate/") == true) {
-            return renovateCards.findExistingMessageId(installationId, projectId, state.sourceBranch)
-        }
-        return null
+        val renovateId = state.sourceBranch?.takeIf { it.startsWith("renovate/") }
+            ?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
+
+        return ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
+            ?: renovateId
+            ?: state.lastCommitSha?.takeIf(String::isNotBlank)?.let {
+                ctx.webhookService.getCommitMessageId(installationId, projectId, it)
+            }
+            ?: state.sourceBranch?.takeIf(String::isNotBlank)?.let {
+                ctx.webhookService.getBranchLatestMessageId(installationId, projectId, it)
+            }
     }
 
     private suspend fun updateMrMessageTracking(

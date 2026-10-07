@@ -9,6 +9,9 @@ import org.junit.Test
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
 import org.koin.core.context.GlobalContext.stopKoin
+import org.gitlab4j.api.utils.JacksonJson
+import org.gitlab4j.api.webhook.PipelineEvent
+import org.gitlab4j.api.webhook.PushEvent
 
 @Suppress("TooManyFunctions")
 class PipelineEventWebhookTest : BaseEventTestHelper() {
@@ -507,6 +510,33 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
 
             val messages = waitForMessages(mockTelegramService, 2)
             assertThat(messages.any { it.text.contains("@alice") }).isTrue()
+        }
+
+    @Test
+    fun testPipelineAdoptsExistingPushMessageByCommitSha() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val successPipeline = JacksonJson().unmarshal(PipelineEvent::class.java, SAMPLE_PAYLOAD_SUCCESS)
+            val pipelineSha = requireNotNull(successPipeline.objectAttributes?.sha)
+            val pushEvent = JacksonJson().unmarshal(PushEvent::class.java, PushEventWebhookTest.SAMPLE_PAYLOAD)
+            val pushSha = requireNotNull(pushEvent.after)
+
+            val pushPayload = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace(pushSha, pipelineSha)
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+
+            postWebhook(EVENT_PUSH, pushPayload)
+            val pushMessages = waitForMessages(mockTelegramService, 1)
+            assertThat(pushMessages).hasSize(1)
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            val allMessages = waitForMessages(mockTelegramService, 2)
+            assertThat(allMessages).hasSize(2)
+            assertThat(allMessages.last().messageId).isEqualTo("1")
         }
 
     private fun waitForMessages(

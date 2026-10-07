@@ -162,6 +162,27 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             assertThat(messages[2].text).contains("@bob @charlie were added to review !42")
         }
 
+    @Test
+    fun testMrOpenAdoptsExistingPushMessageOnMatchingBranch() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = telegramService as net.raquezha.nuecagram.telegram.MockTelegramService
+            mockTelegramService.reset()
+
+            val pushPayload = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "101")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature")
+
+            postWebhook(EVENT_PUSH, pushPayload)
+            val pushMessages = waitForMessages(1)
+            assertThat(pushMessages).hasSize(1)
+
+            postWebhook(EVENT_MERGE, mrPayload(action = "open", reviewers = listOf("bob")))
+            val allMessages = waitForMessages(2)
+            assertThat(allMessages).hasSize(2)
+            assertThat(allMessages.last().messageId).isEqualTo("1")
+        }
+
     private fun waitForMessages(count: Int) = kotlinx.coroutines.runBlocking {
         val mock = telegramService as net.raquezha.nuecagram.telegram.MockTelegramService
         repeat(100) {

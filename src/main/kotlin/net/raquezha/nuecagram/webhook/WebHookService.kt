@@ -106,11 +106,25 @@ class WebHookService(
         val mrIid: Long,
     )
 
+    private data class InstallationCommitKey(
+        val installationId: UUID,
+        val projectId: Long,
+        val commitSha: String,
+    )
+
+    private data class InstallationBranchKey(
+        val installationId: UUID,
+        val projectId: Long,
+        val branch: String,
+    )
+
     private val runningJobsIdMap = ConcurrentHashMap<InstallationJobKey, JobEntry>()
     private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, PipelineEntry>()
     private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
     private val pipelineNotificationMap = ConcurrentHashMap<InstallationPipelineNotificationKey, Long>()
     private val mrMessageIdMap = ConcurrentHashMap<InstallationMrKey, JobEntry>()
+    private val commitMessageIdMap = ConcurrentHashMap<InstallationCommitKey, JobEntry>()
+    private val branchLatestMessageIdMap = ConcurrentHashMap<InstallationBranchKey, JobEntry>()
 
     suspend fun handleRequest(call: ApplicationCall): EventData {
         val clientId = call.clientId()
@@ -425,6 +439,36 @@ class WebHookService(
         mrMessageIdMap.remove(InstallationMrKey(installationId, projectId, mrIid))
     }
 
+    fun getCommitMessageId(
+        installationId: UUID,
+        projectId: Long,
+        commitSha: String,
+    ): String? = commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)]?.messageId
+
+    fun setCommitMessageId(
+        installationId: UUID,
+        projectId: Long,
+        commitSha: String,
+        messageId: String,
+    ) {
+        commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)] = JobEntry(messageId)
+    }
+
+    fun getBranchLatestMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.messageId
+
+    fun setBranchLatestMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+        messageId: String,
+    ) {
+        branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)] = JobEntry(messageId)
+    }
+
     fun resetRuntimeState() {
         requestWindows.clear()
         runningJobsIdMap.clear()
@@ -432,6 +476,8 @@ class WebHookService(
         trackedPipelines.clear()
         pipelineNotificationMap.clear()
         mrMessageIdMap.clear()
+        commitMessageIdMap.clear()
+        branchLatestMessageIdMap.clear()
     }
 
     fun cleanupStaleEntries(
@@ -442,6 +488,14 @@ class WebHookService(
 
         pipelineMessageIdMap.entries.removeIf { entry ->
             entry.value.updatedAt < cutoff
+        }
+
+        commitMessageIdMap.entries.removeIf { entry ->
+            entry.value.createdAt < cutoff
+        }
+
+        branchLatestMessageIdMap.entries.removeIf { entry ->
+            entry.value.createdAt < cutoff
         }
 
         // Cleanup stale tracked pipelines atomically

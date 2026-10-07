@@ -393,12 +393,11 @@ class WebhookMessageFormatter {
         return buildString {
             append("$statusEmoji Pipeline $clickablePipeline $statusText\n")
             append("${projectName.bold()} • ${ref.bold()}$mrBadge • $commitSha\n")
+            appendPipelineFallbackDetails(event)
 
             val builds = event.builds.orEmpty()
             if (builds.isNotEmpty()) {
                 appendBuildRows(builds, event.objectAttributes.stages, projectWebUrl)
-            } else {
-                appendPipelineFallbackDetails(event)
             }
 
             val duration = event.objectAttributes.duration
