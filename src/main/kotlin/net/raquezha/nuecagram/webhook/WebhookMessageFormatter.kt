@@ -69,6 +69,9 @@ class WebhookMessageFormatter {
         /** Maximum commits to display */
         private const val MAX_DISPLAY_COMMITS = 5
 
+        /** Maximum builds to display before collapsing matrix jobs */
+        private const val MAX_DISPLAY_BUILDS = 10
+
         /** Short SHA length */
         private const val SHORT_SHA_LENGTH = 7
     }
@@ -449,6 +452,35 @@ class WebhookMessageFormatter {
         append("Triggered by ${userName.bold()}")
     }
 
+    private data class CollapsedBuildRows(
+        val buildsToShow: List<Build>,
+        val hiddenPassedCount: Int,
+    )
+
+    private fun collapseBuildRows(
+        sortedBuilds: List<Build>,
+        stages: List<String>?,
+    ): CollapsedBuildRows {
+        if (sortedBuilds.size <= MAX_DISPLAY_BUILDS) {
+            return CollapsedBuildRows(sortedBuilds, 0)
+        }
+        val passedBuilds = sortedBuilds.filter { it.status == BuildStatus.SUCCESS }
+        if (passedBuilds.size <= 2) {
+            return CollapsedBuildRows(sortedBuilds, 0)
+        }
+        val nonPassedBuilds = sortedBuilds.filterNot { it.status == BuildStatus.SUCCESS }
+        val maxPassedToShow = (MAX_DISPLAY_BUILDS - nonPassedBuilds.size).coerceAtLeast(0)
+        val passedToShow = passedBuilds.take(maxPassedToShow)
+        val hiddenPassedCount = passedBuilds.size - passedToShow.size
+        val displayed = (nonPassedBuilds + passedToShow).sortedWith(
+            compareBy(
+                { getStageOrder(it.stage, stages) },
+                { it.id },
+            ),
+        )
+        return CollapsedBuildRows(displayed, hiddenPassedCount)
+    }
+
     private fun StringBuilder.appendBuildRows(
         builds: List<Build>,
         stages: List<String>?,
@@ -461,9 +493,10 @@ class WebhookMessageFormatter {
                 { it.id },
             ),
         )
+        val (displayedBuilds, hiddenPassedCount) = collapseBuildRows(sortedBuilds, stages)
 
-        sortedBuilds.forEachIndexed { index, build ->
-            val isLast = index == sortedBuilds.size - 1
+        displayedBuilds.forEachIndexed { index, build ->
+            val isLast = index == displayedBuilds.size - 1 && hiddenPassedCount == 0
             val prefix = if (isLast) "└─" else "├─"
             val buildEmoji = getBuildStatusEmoji(build.status)
             val buildName = build.name.orEmpty().escapeHtml()
@@ -471,6 +504,10 @@ class WebhookMessageFormatter {
 
             val buildStatusText = formatBuildStatus(build, buildUrl)
             append("$prefix $buildEmoji $buildName$buildStatusText\n")
+        }
+
+        if (hiddenPassedCount > 0) {
+            append("└─ +$hiddenPassedCount passed jobs hidden...\n")
         }
         append("\n")
     }

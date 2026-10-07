@@ -684,6 +684,136 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(messages[1].text).contains("main")
         }
 
+    @Test
+    fun testManualDeployOnFrozenCardPingsOnlyTriggerHuman() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+            val initialMessages = waitForMessages(mockTelegramService, 2)
+            assertThat(initialMessages).hasSize(2)
+            assertThat(initialMessages[1].text).contains("@bob")
+
+            val manualDeployPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"id\": 8888", "\"id\": 8889")
+                .replace("\"username\": \"alice\"", "\"username\": \"ralpheufracio\"")
+                .replace(
+                    "\"stages\": [\"test\"],",
+                    "\"stages\": [\"test\", \"deploy\"],",
+                )
+                .replace(
+                    "\"object_attributes\": {",
+                    "\"builds\": [" +
+                        "{" +
+                        "\"id\": 99991," +
+                        "\"stage\": \"deploy\"," +
+                        "\"name\": \"deploy:firebase:review\"," +
+                        "\"status\": \"success\"," +
+                        "\"manual\": true" +
+                        "}]," +
+                        "\"object_attributes\": {",
+                )
+            postWebhook(EVENT_PIPELINE, manualDeployPayload)
+            val allMessages = waitForMessages(mockTelegramService, 4)
+            assertThat(allMessages).hasSize(4)
+            assertThat(allMessages[3].text).contains("↳ 🚀 deploy:firebase:review passed! Ready for you @ralpheufracio")
+            assertThat(allMessages[3].text).doesNotContain("@bob")
+        }
+
+    @Test
+    fun testManualDeployOnFrozenCardByBotEmitsZeroPings() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+            waitForMessages(mockTelegramService, 2)
+
+            val botDeployPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"id\": 8888", "\"id\": 8889")
+                .replace("\"username\": \"alice\"", "\"username\": \"project_105_bot\"")
+                .replace(
+                    "\"stages\": [\"test\"],",
+                    "\"stages\": [\"test\", \"deploy\"],",
+                )
+                .replace(
+                    "\"object_attributes\": {",
+                    "\"builds\": [" +
+                        "{" +
+                        "\"id\": 99991," +
+                        "\"stage\": \"deploy\"," +
+                        "\"name\": \"deploy:firebase:review\"," +
+                        "\"status\": \"success\"," +
+                        "\"manual\": true" +
+                        "}]," +
+                        "\"object_attributes\": {",
+                )
+            postWebhook(EVENT_PIPELINE, botDeployPayload)
+            kotlinx.coroutines.delay(150)
+            val replies = mockTelegramService.sentMessages().filter { it.replyToMessageId != null }
+            assertThat(replies).hasSize(1)
+        }
+
+    @Test
+    fun testMatrixJobsCollapsedWhenOverLimit() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val buildsJson = (1..15).joinToString(",") { i ->
+                """{"id": $i, "stage": "test", "name": "matrix-test-$i", "status": "success"}"""
+            }
+            val matrixPayload = SAMPLE_PAYLOAD_SUCCESS.replace(
+                "\"builds\": [",
+                "\"builds\": [$buildsJson,",
+            )
+            postWebhook(EVENT_PIPELINE, matrixPayload)
+            val messages = waitForMessages(mockTelegramService, 1)
+            assertThat(messages[0].text).contains("passed jobs hidden...")
+        }
+
+    @Test
+    fun testUnmappedUserFormattedAsPlainTextWithoutAtPrefix() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val failedPayload = SAMPLE_PAYLOAD_FAILED
+                .replace("\"id\": 53480", "\"id\": 53499")
+                .replace("\"username\": \"raquezha\"", "\"username\": \"dev.alex\"")
+
+            postWebhook(EVENT_PIPELINE, failedPayload)
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages).hasSize(2)
+            assertThat(messages[1].text).contains("dev.alex")
+            assertThat(messages[1].text).doesNotContain("@dev.alex")
+        }
+
     private fun waitForMessages(
         mockTelegramService: net.raquezha.nuecagram.telegram.MockTelegramService,
         count: Int,

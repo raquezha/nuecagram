@@ -595,6 +595,10 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
+        if (tryHandleFrozenCardDeploy(installationId, pipelineId, status, event, chatDetails, messageId, ctx)) {
+            return
+        }
+
         val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
         if (targets.usernames.isEmpty()) {
             return
@@ -641,6 +645,63 @@ class WebhookRequestHandler(
         }
     }
 
+    private suspend fun tryHandleFrozenCardDeploy(
+        installationId: java.util.UUID,
+        pipelineId: Long,
+        status: String,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return false
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val isRecovery = status == "success" &&
+            ctx.webhookService.getPipelineLastTerminalStatus(installationId, pipelineId) == "failed"
+        if (isRecovery || !ctx.webhookService.isBranchCardFrozen(installationId, projectId, branch)) {
+            return false
+        }
+        return handleFrozenCardTerminalReply(pipelineId, event, chatDetails, messageId, ctx)
+    }
+
+    private suspend fun handleFrozenCardTerminalReply(
+        pipelineId: Long,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val manualDeployBuild = event.builds.orEmpty().firstOrNull { build ->
+            build.status == BuildStatus.SUCCESS && build.manual == true
+        } ?: return false
+
+        val triggerUser = event.user?.username?.takeIf(String::isNotBlank) ?: event.user?.name
+        if (triggerUser == null || triggerUser.isGitLabBotUser()) {
+            ctx.logger.debug { "Manual deploy on frozen card triggered by bot/unspecified user, emitting 0 pings" }
+            return true
+        }
+
+        val userTag = listOf(triggerUser).handles()
+        val jobName = manualDeployBuild.name ?: "deploy"
+        val replyText = "↳ 🚀 $jobName passed! Ready for you $userTag"
+
+        sendPipelineReply(
+            text = replyText,
+            chatDetails = chatDetails,
+            messageId = messageId,
+            disableNotification = false,
+            ctx = ctx,
+        )
+        ctx.logger.debug { "Pipeline #$pipelineId: sent manual deploy reply on frozen card tagging $userTag" }
+        return true
+    }
+
     private fun freezeBranchCardAfterPing(
         installationId: java.util.UUID,
         event: PipelineEvent,
@@ -682,7 +743,6 @@ class WebhookRequestHandler(
                 messageId = messageId,
                 ctx = ctx,
             )
-            freezeBranchCardAfterPing(installationId, event, ctx)
             ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")
             ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging ${targets.usernames}" }
         }
@@ -820,12 +880,15 @@ class WebhookRequestHandler(
             rawReviewers
         }
 
-    private fun extractCommitAuthorHandle(event: PipelineEvent): String? =
-        event.commit?.author?.name?.takeIf {
+    private fun extractCommitAuthorHandle(event: PipelineEvent): String? {
+        val raw = event.commit?.author?.name?.takeIf {
             it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser()
         } ?: event.commit?.author?.email?.takeIf(String::isNotBlank)
             ?.substringBefore("@")
             ?.takeIf { it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser() }
+            ?: return null
+        return if (raw.isValidTelegramHandle()) raw else "Triggered by: $raw"
+    }
 
     private suspend fun sendPipelineReply(
         text: String,
@@ -1344,10 +1407,22 @@ class WebhookRequestHandler(
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
     private fun List<String>.handles(): String =
-        map { it.trim().removePrefix("@") }
+        map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-            .joinToString(" ") { "@$it" }
+            .joinToString(" ") { user ->
+                val clean = user.removePrefix("@")
+                if (clean.isGitLabBotUser() || user.startsWith("Triggered by: ") || !clean.isValidTelegramHandle()) {
+                    user
+                } else if (user.startsWith("@")) {
+                    user
+                } else {
+                    "@$clean"
+                }
+            }
+
+    internal fun String.isValidTelegramHandle(): Boolean =
+        matches(Regex("""^[a-zA-Z][a-zA-Z0-9_]{2,31}$"""))
 
     private fun formatPipelineCompletionReply(
         status: String,

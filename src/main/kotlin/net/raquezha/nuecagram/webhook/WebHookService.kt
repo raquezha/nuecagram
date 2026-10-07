@@ -592,10 +592,16 @@ class WebHookService(
         branch: String,
     ) {
         val key = InstallationBranchKey(installationId, projectId, branch)
-        branchLatestMessageIdMap.computeIfPresent(key) { _, entry ->
-            entry.copy(frozen = true)
+        branchLatestMessageIdMap.compute(key) { _, entry ->
+            (entry ?: BranchCardEntry(messageId = "")).copy(frozen = true)
         }
     }
+
+    fun isBranchCardFrozen(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): Boolean = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.frozen == true
 
     fun resetRuntimeState() {
         requestWindows.clear()
