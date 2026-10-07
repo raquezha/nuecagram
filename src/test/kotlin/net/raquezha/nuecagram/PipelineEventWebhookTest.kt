@@ -458,6 +458,57 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
         }
 
+    @Test
+    fun testDraftMrPipelineSuccessSuppressesReviewerPings() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob", "charlie"),
+                )
+            }
+
+            val draftPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"title\": \"Add feature\"", "\"title\": \"Draft: Add feature\"")
+            postWebhook(EVENT_PIPELINE, draftPayload)
+
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
+        }
+
+    @Test
+    fun testDraftMrPipelineFailureStillPingsAuthor() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2924L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            val draftFailedPayload = SAMPLE_PAYLOAD_MR_FAILED
+                .replace("\"title\": \"Add feature\"", "\"title\": \"Draft: Add feature\"")
+            postWebhook(EVENT_PIPELINE, draftFailedPayload)
+
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages.any { it.text.contains("@alice") }).isTrue()
+        }
+
     private fun waitForMessages(
         mockTelegramService: net.raquezha.nuecagram.telegram.MockTelegramService,
         count: Int,

@@ -600,6 +600,17 @@ class WebhookRequestHandler(
         )
     }
 
+    private fun PipelineEvent.isDraftMr(): Boolean {
+        val title = mergeRequest?.title?.trim() ?: return false
+        val clean = title.lowercase()
+        return clean.startsWith("draft:") ||
+            clean.startsWith("[draft]") ||
+            clean.startsWith("(draft)") ||
+            clean.startsWith("wip:") ||
+            clean.startsWith("[wip]") ||
+            clean.startsWith("(wip)")
+    }
+
     private fun selectPipelineTargets(
         status: String,
         validReviewers: List<String>,
@@ -609,17 +620,18 @@ class WebhookRequestHandler(
         event: PipelineEvent,
         mrIid: Long?,
     ): PipelineTargets {
+        val shouldNotifyReviewers = validReviewers.isNotEmpty() && !event.isDraftMr()
         val recoveryTarget = author ?: fallbackUser
         val projectWebUrl = event.project?.webUrl
         val mrUrl = event.mergeRequest?.url
         return when {
-            status == "success" && validReviewers.isNotEmpty() ->
+            status == "success" && shouldNotifyReviewers ->
                 PipelineTargets(validReviewers, isReviewer = true, mrIid, projectWebUrl, mrUrl)
             status == "success" && isRecovery && recoveryTarget != null ->
                 PipelineTargets(listOf(recoveryTarget), isReviewer = false, mrIid, projectWebUrl, mrUrl)
             status == "success" ->
                 PipelineTargets(emptyList())
-            status == "manual" && validReviewers.isNotEmpty() ->
+            status == "manual" && shouldNotifyReviewers ->
                 PipelineTargets(validReviewers, isReviewer = true, mrIid, projectWebUrl, mrUrl)
             author != null ->
                 PipelineTargets(listOf(author), isReviewer = false, mrIid, projectWebUrl, mrUrl)
@@ -1078,8 +1090,12 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val mr = "!${event.objectAttributes?.iid ?: "?"}"
-        val addedHumans = change.added.filterNot { it.username?.isGitLabBotUser() == true }
-        val removedHumans = change.removed.filterNot { it.username?.isGitLabBotUser() == true }
+        val addedHumans = change.added.filterNot {
+            it.username?.isGitLabBotUser() == true || it.name?.isGitLabBotUser() == true
+        }
+        val removedHumans = change.removed.filterNot {
+            it.username?.isGitLabBotUser() == true || it.name?.isGitLabBotUser() == true
+        }
         listOfNotNull(
             addedHumans.takeIf(List<ReviewerIdentity>::isNotEmpty)
                 ?.let { "${it.labels()} were added to review $mr." },
@@ -1112,15 +1128,21 @@ class WebhookRequestHandler(
         targets: PipelineTargets,
         isRecovery: Boolean = false,
     ): String {
-        return if (targets.isReviewer && status == "success") {
-            val mrRef = targets.mrRef()
-            val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
-            val base = "${targets.usernames.handles()} $reviewerPrompt".trim()
-            if (isRecovery) "$base Pipeline fixed!" else base
-        } else {
-            val message = randomMessageProvider.getMessageForStatus(status)
-            val base = "${targets.usernames.handles()} $message".trim()
-            if (isRecovery) "$base Pipeline fixed!" else base
+        return when {
+            targets.isReviewer && status == "success" -> {
+                val mrRef = targets.mrRef()
+                val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
+                val base = "${targets.usernames.handles()} $reviewerPrompt".trim()
+                if (isRecovery) "$base Pipeline fixed!" else base
+            }
+            isRecovery && status == "success" -> {
+                "${targets.usernames.handles()} Pipeline fixed! ✅".trim()
+            }
+            else -> {
+                val message = randomMessageProvider.getMessageForStatus(status)
+                val base = "${targets.usernames.handles()} $message".trim()
+                if (isRecovery) "$base Pipeline fixed!" else base
+            }
         }
     }
 
