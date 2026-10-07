@@ -62,6 +62,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.disableWebPagePreview).isTrue()
             assertThat(completionReply?.text).contains(
                 "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>"
             )
@@ -106,6 +107,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.disableWebPagePreview).isTrue()
             assertThat(completionReply?.text).contains(
                 "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>",
             )
@@ -194,7 +196,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun testOtherScheduledPipelineStillMentionsHuman() =
+    fun testOtherScheduledPipelineDoesNotMentionHumanOnSuccess() =
         testApplication {
             configureTestApplication()
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
@@ -203,18 +205,33 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val payload = SAMPLE_PAYLOAD_SUCCESS.replace("\"source\": \"push\"", "\"source\": \"schedule\"")
             postWebhook(EVENT_PIPELINE, payload)
 
-            val messages = waitForMessages(mockTelegramService, 2)
-            assertThat(messages.any { it.text.contains("@raquezha") }).isTrue()
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
         }
 
     @Test
-    fun testHumanNamedR3novateStillReceivesCompletionReply() =
+    fun testOtherScheduledPipelineMentionsHumanOnFailure() =
         testApplication {
             configureTestApplication()
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
-            val payload = SAMPLE_PAYLOAD_SUCCESS.replace("\"username\": \"raquezha\"", "\"username\": \"r3novate\"")
+            val payload = SAMPLE_PAYLOAD_FAILED.replace("\"source\": \"push\"", "\"source\": \"schedule\"")
+            postWebhook(EVENT_PIPELINE, payload)
+
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages.any { it.text.contains("@raquezha") }).isTrue()
+        }
+
+    @Test
+    fun testHumanNamedR3novateReceivesFailureReply() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val payload = SAMPLE_PAYLOAD_FAILED.replace("\"username\": \"raquezha\"", "\"username\": \"r3novate\"")
             postWebhook(EVENT_PIPELINE, payload)
 
             val messages = waitForMessages(mockTelegramService, 2)
@@ -298,17 +315,27 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
             // First run: pipeline passes
-            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
             val initialMessages = waitForMessages(mockTelegramService, 2)
             assertThat(initialMessages.size).isEqualTo(2)
             val initialCard = initialMessages[0]
             val initialReply = initialMessages[1]
             assertThat(initialReply.replyToMessageId).isEqualTo(1L)
-            assertThat(initialReply.text).contains("@raquezha")
+            assertThat(initialReply.text).contains("@bob")
 
-            // Second run: retried job finishes and pipeline succeeds again (same pipelineId 53481)
-            val retriedPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"duration\": 178", "\"duration\": 210")
+            // Second run: retried job finishes and pipeline succeeds again (same pipelineId 8888)
+            val retriedPayload = SAMPLE_PAYLOAD_MR_SUCCESS.replace("\"duration\": 300", "\"duration\": 350")
             postWebhook(EVENT_PIPELINE, retriedPayload)
             val updatedMessages = waitForMessages(mockTelegramService, 3)
 
@@ -359,21 +386,30 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
             // Pipeline 1 passes
-            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
             val messages1 = waitForMessages(mockTelegramService, 2)
             assertThat(messages1.size).isEqualTo(2)
 
             // Sibling/distinct Pipeline 2 on same commit also passes and is NOT silenced
-            val siblingPayload = SAMPLE_PAYLOAD_SUCCESS
-                .replace("\"id\": 53481", "\"id\": 53482")
-                .replace("\"source\": \"push\"", "\"source\": \"merge_request_event\"")
+            val siblingPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"id\": 8888", "\"id\": 8889")
             postWebhook(EVENT_PIPELINE, siblingPayload)
             val messages2 = waitForMessages(mockTelegramService, 4)
             assertThat(messages2.size).isEqualTo(4)
 
             // Retrying pipeline 1 edits pipeline 1 in-place and does NOT send another reply
-            val retriedPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"duration\": 178", "\"duration\": 210")
+            val retriedPayload = SAMPLE_PAYLOAD_MR_SUCCESS.replace("\"duration\": 300", "\"duration\": 350")
             postWebhook(EVENT_PIPELINE, retriedPayload)
             val messages3 = waitForMessages(mockTelegramService, 5)
             assertThat(messages3.size).isEqualTo(5)
@@ -402,11 +438,24 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             }
 
             postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
-            val messages = waitForMessages(mockTelegramService, 2)
+            val messages = waitForMessages(mockTelegramService, 1)
             val card = messages[0]
             val expectedMrLink =
                 "<b>main</b> (<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/42\">!42</a>)"
             assertThat(card.text).contains(expectedMrLink)
+        }
+
+    @Test
+    fun testSoloPassingPipelineEmitsZeroReplyBubbles() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
         }
 
     private fun waitForMessages(

@@ -89,6 +89,7 @@ class MergeRequestWebhookTest : BaseEventTestHelper() {
             assertThat(afterAdd[1].messageId).isEqualTo("1")
             assertThat(afterAdd[2].replyToMessageId).isEqualTo(1L)
             assertThat(afterAdd[2].text).contains("@bob were added to review !42")
+            assertThat(afterAdd[2].disableWebPagePreview).isTrue()
 
             postWebhook(
                 EVENT_MERGE,

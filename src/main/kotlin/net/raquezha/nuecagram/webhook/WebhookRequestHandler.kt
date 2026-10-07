@@ -538,7 +538,7 @@ class WebhookRequestHandler(
         if (!event.isWaitingForBlockingManualAction()) return
         if (ctx.webhookService.hasPipelineNotification(installationId, pipelineId, "manual_waiting")) return
 
-        val targets = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
+        val targets = resolvePipelineTargetUsernames(installationId, "manual", event, ctx)
         if (targets.usernames.isNotEmpty()) {
             val mrRef = targets.mrRef()
             val text = if (targets.isReviewer) {
@@ -557,22 +557,25 @@ class WebhookRequestHandler(
         }
     }
 
+    private fun isSuppressedPipelineEvent(event: PipelineEvent): Boolean {
+        val scheduledRenovate = event.objectAttributes?.source == "schedule" &&
+            event.builds.orEmpty().any { it.name == "maintain:renovate" }
+        return scheduledRenovate ||
+            event.user?.username?.isGitLabBotUser() == true ||
+            event.user?.name?.isGitLabBotUser() == true
+    }
+
     private suspend fun resolvePipelineTargetUsernames(
         installationId: java.util.UUID,
         status: String,
         event: PipelineEvent,
         ctx: EventProcessingContext,
     ): PipelineTargets {
-        val scheduledRenovate = event.objectAttributes?.source == "schedule" &&
-            event.builds.orEmpty().any { it.name == "maintain:renovate" }
-        if (scheduledRenovate || event.user?.username?.isGitLabBotUser() == true) {
+        if (isSuppressedPipelineEvent(event)) {
             return PipelineTargets(emptyList())
         }
 
         val (mrIid, cachedParticipants) = findCachedMrParticipants(installationId, event, ctx)
-        val projectWebUrl = event.project?.webUrl
-        val mrUrl = event.mergeRequest?.url
-
         val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty()
             .filter { it.isNotBlank() && !it.isGitLabBotUser() }
             .distinct()
@@ -581,31 +584,47 @@ class WebhookRequestHandler(
         val fallbackUser = event.user?.username?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
             ?: extractCommitAuthorHandle(event)
 
+        val pipelineId = event.objectAttributes?.id
+        val isRecovery = status == "success" &&
+            pipelineId != null &&
+            ctx.webhookService.getPipelineLastTerminalStatus(installationId, pipelineId) == "failed"
+
+        return selectPipelineTargets(
+            status = status,
+            validReviewers = validReviewers,
+            author = author,
+            fallbackUser = fallbackUser,
+            isRecovery = isRecovery,
+            event = event,
+            mrIid = mrIid,
+        )
+    }
+
+    private fun selectPipelineTargets(
+        status: String,
+        validReviewers: List<String>,
+        author: String?,
+        fallbackUser: String?,
+        isRecovery: Boolean,
+        event: PipelineEvent,
+        mrIid: Long?,
+    ): PipelineTargets {
+        val recoveryTarget = author ?: fallbackUser
+        val projectWebUrl = event.project?.webUrl
+        val mrUrl = event.mergeRequest?.url
         return when {
             status == "success" && validReviewers.isNotEmpty() ->
-                PipelineTargets(
-                    validReviewers,
-                    isReviewer = true,
-                    mrIid = mrIid,
-                    projectWebUrl = projectWebUrl,
-                    mrUrl = mrUrl,
-                )
+                PipelineTargets(validReviewers, isReviewer = true, mrIid, projectWebUrl, mrUrl)
+            status == "success" && isRecovery && recoveryTarget != null ->
+                PipelineTargets(listOf(recoveryTarget), isReviewer = false, mrIid, projectWebUrl, mrUrl)
+            status == "success" ->
+                PipelineTargets(emptyList())
+            status == "manual" && validReviewers.isNotEmpty() ->
+                PipelineTargets(validReviewers, isReviewer = true, mrIid, projectWebUrl, mrUrl)
             author != null ->
-                PipelineTargets(
-                    listOf(author),
-                    isReviewer = false,
-                    mrIid = mrIid,
-                    projectWebUrl = projectWebUrl,
-                    mrUrl = mrUrl,
-                )
+                PipelineTargets(listOf(author), isReviewer = false, mrIid, projectWebUrl, mrUrl)
             fallbackUser != null ->
-                PipelineTargets(
-                    listOf(fallbackUser),
-                    isReviewer = false,
-                    mrIid = mrIid,
-                    projectWebUrl = projectWebUrl,
-                    mrUrl = mrUrl,
-                )
+                PipelineTargets(listOf(fallbackUser), isReviewer = false, mrIid, projectWebUrl, mrUrl)
             else ->
                 PipelineTargets(emptyList())
         }
@@ -680,6 +699,7 @@ class WebhookRequestHandler(
                 parseMode = PARSE_MODE,
                 replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
                 disableNotification = disableNotification,
+                disableWebPagePreview = true,
             ),
         )
     }
@@ -853,10 +873,10 @@ class WebhookRequestHandler(
             null
         }
 
-        val isRenovateBotPush = branch?.startsWith("renovate/") == true &&
-            event.userUsername?.matches(Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE)) == true
-        if (isRenovateBotPush) {
-            ctx.logger.debug { "Skipping push notification bubble for Renovate bot push on $branch" }
+        val isBotPush = event.userUsername?.isGitLabBotUser() == true ||
+            event.userName?.isGitLabBotUser() == true
+        if (isBotPush) {
+            ctx.logger.debug { "Skipping push notification bubble for bot push on $branch by ${event.userUsername}" }
             return
         }
 
@@ -1073,6 +1093,7 @@ class WebhookRequestHandler(
                     text = text,
                     parseMode = PARSE_MODE,
                     replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+                    disableWebPagePreview = true,
                 ),
             )
         }

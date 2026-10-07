@@ -67,6 +67,40 @@ class PushEventWebhookTest : BaseEventTestHelper() {
             assertThat(message?.disableNotification).isFalse()
         }
 
+    @Test
+    fun testBotPushEventIsSuppressedForBotTokenAcrossAllBranches() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val botPayload = SAMPLE_PAYLOAD
+                .replace("\"user_username\": \"razylvidal\"", "\"user_username\": \"group_44_bot_token\"")
+
+            val response = postWebhook(EVENT_PUSH, botPayload)
+            assertThat(response).isEqualTo("Webhook received successfully")
+
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages()).isEmpty()
+        }
+
+    @Test
+    fun testBotPushEventIsSuppressedForWritebackNameAcrossAllBranches() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val botPayload = SAMPLE_PAYLOAD
+                .replace("\"user_name\": \"Razyl Vidal\"", "\"user_name\": \"CI_VERSION_WRITEBACK2\"")
+
+            val response = postWebhook(EVENT_PUSH, botPayload)
+            assertThat(response).isEqualTo("Webhook received successfully")
+
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages()).isEmpty()
+        }
+
     companion object {
         val SAMPLE_PAYLOAD =
             """
