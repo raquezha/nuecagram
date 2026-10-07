@@ -537,7 +537,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val allMessages = waitForMessages(mockTelegramService, 2)
             assertThat(allMessages).hasSize(2)
             assertThat(allMessages.last().messageId).isEqualTo("1")
-            assertThat(allMessages.last().text).contains("📤 Push to")
+            assertThat(allMessages.last().text).contains("Push to")
             assertThat(allMessages.last().text).contains("Pipeline")
             assertThat(allMessages.last().text).contains("prepare")
             assertThat(allMessages.last().text).contains("Enable crashlytics collection")
@@ -567,7 +567,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(messages).hasSize(2)
             assertThat(messages[0].messageId).isNull()
             assertThat(messages[1].messageId).isEqualTo("1")
-            assertThat(messages[1].text).contains("📤 Push to")
+            assertThat(messages[1].text).contains("Push to")
         }
 
     @Test
