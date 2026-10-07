@@ -72,6 +72,20 @@ class WebHookService(
         val createdAt: Long = System.currentTimeMillis(),
     )
 
+    private data class CommitCardEntry(
+        val messageId: String,
+        val pushHeader: String? = null,
+        val createdAt: Long = System.currentTimeMillis(),
+    )
+
+    private data class BranchCardEntry(
+        val messageId: String,
+        val tipSha: String? = null,
+        val pushHeader: String? = null,
+        val frozen: Boolean = false,
+        val createdAt: Long = System.currentTimeMillis(),
+    )
+
     private data class PipelineEntry(
         val messageId: String,
         val lastTerminalStatus: String? = null,
@@ -123,8 +137,8 @@ class WebHookService(
     private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
     private val pipelineNotificationMap = ConcurrentHashMap<InstallationPipelineNotificationKey, Long>()
     private val mrMessageIdMap = ConcurrentHashMap<InstallationMrKey, JobEntry>()
-    private val commitMessageIdMap = ConcurrentHashMap<InstallationCommitKey, JobEntry>()
-    private val branchLatestMessageIdMap = ConcurrentHashMap<InstallationBranchKey, JobEntry>()
+    private val commitMessageIdMap = ConcurrentHashMap<InstallationCommitKey, CommitCardEntry>()
+    private val branchLatestMessageIdMap = ConcurrentHashMap<InstallationBranchKey, BranchCardEntry>()
 
     suspend fun handleRequest(call: ApplicationCall): EventData {
         val clientId = call.clientId()
@@ -445,13 +459,21 @@ class WebHookService(
         commitSha: String,
     ): String? = commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)]?.messageId
 
+    fun getCommitPushHeader(
+        installationId: UUID,
+        projectId: Long,
+        commitSha: String,
+    ): String? = commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)]?.pushHeader
+
     fun setCommitMessageId(
         installationId: UUID,
         projectId: Long,
         commitSha: String,
         messageId: String,
+        pushHeader: String? = null,
     ) {
-        commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)] = JobEntry(messageId)
+        commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)] =
+            CommitCardEntry(messageId = messageId, pushHeader = pushHeader)
     }
 
     fun getBranchLatestMessageId(
@@ -460,13 +482,55 @@ class WebHookService(
         branch: String,
     ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.messageId
 
+    fun getEditableBranchMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]
+        ?.takeUnless { it.frozen }
+        ?.messageId
+
+    fun getBranchTipSha(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.tipSha
+
+    fun getBranchPushHeader(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.pushHeader
+
     fun setBranchLatestMessageId(
         installationId: UUID,
         projectId: Long,
         branch: String,
         messageId: String,
+        tipSha: String? = null,
+        pushHeader: String? = null,
+        frozen: Boolean = false,
     ) {
-        branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)] = JobEntry(messageId)
+        val key = InstallationBranchKey(installationId, projectId, branch)
+        val existing = branchLatestMessageIdMap[key]
+        branchLatestMessageIdMap[key] = BranchCardEntry(
+            messageId = messageId,
+            tipSha = tipSha,
+            pushHeader = pushHeader,
+            frozen = frozen,
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+        )
+    }
+
+    fun freezeBranchCard(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ) {
+        val key = InstallationBranchKey(installationId, projectId, branch)
+        branchLatestMessageIdMap.computeIfPresent(key) { _, entry ->
+            entry.copy(frozen = true)
+        }
     }
 
     fun resetRuntimeState() {

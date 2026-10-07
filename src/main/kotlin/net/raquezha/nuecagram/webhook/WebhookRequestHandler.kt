@@ -305,9 +305,18 @@ class WebhookRequestHandler(
         ctx.webhookService.cleanupStaleEntries()
         ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
 
+        if (isSupersededByBranchTip(installationId, event, ctx)) {
+            ctx.logger.debug {
+                "Skipping superseded pipeline #$pipelineId " +
+                    "(sha=${attrs.sha ?: event.commit?.id} behind branch tip)"
+            }
+            return
+        }
+
         val (mrIid, _) = findCachedMrParticipants(installationId, event, ctx)
         if (handleRenovateBranchPipeline(installationId, event, chatDetails, mrIid, ctx)) return
         val existingMessageId = resolvePipelineMessageId(installationId, pipelineId, event, mrIid, ctx)
+        val cardText = formatPipelineCardText(installationId, event, mrIid, ctx)
 
         val messageId =
             ctx.telegramService.sendMessage(
@@ -315,7 +324,7 @@ class WebhookRequestHandler(
                     chatId = chatDetails.chatId,
                     threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                     messageId = existingMessageId,
-                    text = ctx.formatter.formatEventMessage(event, mrIid),
+                    text = cardText,
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
                     disableNotification = true,
@@ -326,6 +335,55 @@ class WebhookRequestHandler(
 
         dispatchPipelineReplies(installationId, pipelineId, status, event, chatDetails, messageId, ctx)
         ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
+    }
+
+    private fun isSupersededByBranchTip(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return false
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val tipSha = ctx.webhookService.getBranchTipSha(installationId, projectId, branch) ?: return false
+        val eventSha = event.objectAttributes?.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+            ?: return false
+        return !tipSha.equals(eventSha, ignoreCase = true)
+    }
+
+    private fun formatPipelineCardText(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        mrIid: Long?,
+        ctx: EventProcessingContext,
+    ): String {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+        val commitSha = event.objectAttributes?.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+        val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.takeIf(String::isNotBlank)
+        val pushHeader = when {
+            projectId != null && commitSha != null ->
+                ctx.webhookService.getCommitPushHeader(installationId, projectId, commitSha)
+            else -> null
+        } ?: when {
+            projectId != null && branch != null ->
+                ctx.webhookService.getBranchPushHeader(installationId, projectId, branch)
+            else -> null
+        }
+
+        return if (pushHeader != null) {
+            ctx.formatter.formatUnifiedPushPipelineMessage(pushHeader, event, mrIid)
+        } else {
+            ctx.formatter.formatEventMessage(event, mrIid)
+        }
     }
 
     private suspend fun resolvePipelineMessageId(
@@ -530,6 +588,7 @@ class WebhookRequestHandler(
                         disableNotification = isSilent,
                         ctx = ctx,
                     )
+                    freezeBranchCardAfterPing(installationId, event, ctx)
                     ctx.logger.debug {
                         "Pipeline #$pipelineId: sent completion reply ($status) tagging ${targets.usernames}"
                     }
@@ -542,6 +601,22 @@ class WebhookRequestHandler(
                 }
             }
         }
+    }
+
+    private fun freezeBranchCardAfterPing(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ) {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return
+        ctx.webhookService.freezeBranchCard(installationId, projectId, branch)
     }
 
     private suspend fun handleManualWaitingPipelineReply(
@@ -569,6 +644,7 @@ class WebhookRequestHandler(
                 messageId = messageId,
                 ctx = ctx,
             )
+            freezeBranchCardAfterPing(installationId, event, ctx)
             ctx.webhookService.tryMarkPipelineNotification(installationId, pipelineId, "manual_waiting")
             ctx.logger.debug { "Pipeline #$pipelineId: sent manual-waiting reply tagging ${targets.usernames}" }
         }
@@ -874,68 +950,112 @@ class WebhookRequestHandler(
         ctx.logger.debug { "Sent message $messageId for ${event.objectKind}" }
     }
 
+    private data class PushCardContext(
+        val projectId: Long?,
+        val branch: String?,
+        val afterSha: String?,
+        val mrIid: Long?,
+    )
+
     private suspend fun handlePushEvent(
         installationId: java.util.UUID,
         event: PushEvent,
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val projectId = event.projectId ?: event.project?.id
-        val branch = if (event.ref?.startsWith("refs/heads/") == true) {
-            event.ref.removePrefix("refs/heads/").trim()
-        } else {
-            null
-        }
-        val afterSha = event.after
-
-        val isBranchDelete = afterSha.isNullOrBlank() || afterSha.startsWith("00000000")
-        val mrIid = if (projectId != null && !branch.isNullOrBlank()) {
-            if (isBranchDelete) {
-                ctx.installationRepository.clearActiveMr(installationId, projectId, branch)
-                null
-            } else {
-                ctx.installationRepository.upsertLatestPushSha(installationId, projectId, branch, afterSha)
-                val activeMr = ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
-                activeMr?.mrIid
-            }
-        } else {
-            null
-        }
-
+        val pushCtx = resolvePushCardContext(installationId, event, ctx)
         val isBotPush = event.userUsername?.isGitLabBotUser() == true ||
             event.userName?.isGitLabBotUser() == true
         if (isBotPush) {
-            ctx.logger.debug { "Skipping push notification bubble for bot push on $branch by ${event.userUsername}" }
+            ctx.logger.debug {
+                "Skipping push notification bubble for bot push on ${pushCtx.branch} by ${event.userUsername}"
+            }
             return
         }
 
-        val isMainBranch = branch in listOf("main", "master", "production", "staging")
-        val isSilentPush = !isMainBranch
-
-        val messageId =
-            ctx.telegramService.sendMessage(
-                Message(
-                    chatId = chatDetails.chatId,
-                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
-                    messageId = null,
-                    text = ctx.formatter.formatPushEventMessage(event, mrIid),
-                    parseMode = PARSE_MODE,
-                    disableWebPagePreview = true,
-                    disableNotification = isSilentPush,
-                ),
-            )
-        if (projectId != null) {
-            if (!afterSha.isNullOrBlank()) {
-                ctx.webhookService.setCommitMessageId(installationId, projectId, afterSha, messageId)
-            }
-            if (!branch.isNullOrBlank()) {
-                ctx.webhookService.setBranchLatestMessageId(installationId, projectId, branch, messageId)
-            }
-            if (mrIid != null) {
-                ctx.webhookService.setMrMessageId(installationId, projectId, mrIid, messageId)
+        val isSilentPush = pushCtx.branch !in listOf("main", "master", "production", "staging")
+        val pushText = ctx.formatter.formatPushEventMessage(event, pushCtx.mrIid)
+        val existingMessageId = pushCtx.editableMessageId(installationId, ctx)
+        val messageId = ctx.telegramService.sendMessage(
+            Message(
+                chatId = chatDetails.chatId,
+                threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                messageId = existingMessageId,
+                text = pushText,
+                parseMode = PARSE_MODE,
+                disableWebPagePreview = true,
+                disableNotification = isSilentPush,
+            ),
+        )
+        trackPushCardAnchors(installationId, pushCtx, messageId, pushText, ctx)
+        ctx.logger.debug {
+            if (existingMessageId != null) {
+                "Updated push card $messageId in-place for branch ${pushCtx.branch}"
+            } else {
+                "Sent message $messageId for push event on branch ${pushCtx.branch}"
             }
         }
-        ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
+    }
+
+    private suspend fun resolvePushCardContext(
+        installationId: java.util.UUID,
+        event: PushEvent,
+        ctx: EventProcessingContext,
+    ): PushCardContext {
+        val projectId = event.projectId ?: event.project?.id
+        val branch = event.ref
+            ?.takeIf { it.startsWith("refs/heads/") }
+            ?.removePrefix("refs/heads/")
+            ?.trim()
+        val afterSha = event.after
+        val isBranchDelete = afterSha.isNullOrBlank() || afterSha.startsWith("00000000")
+        val mrIid = when {
+            projectId == null || branch.isNullOrBlank() -> null
+            isBranchDelete -> {
+                ctx.installationRepository.clearActiveMr(installationId, projectId, branch)
+                null
+            }
+            else -> {
+                ctx.installationRepository.upsertLatestPushSha(installationId, projectId, branch, afterSha)
+                ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)?.mrIid
+            }
+        }
+        return PushCardContext(projectId, branch, afterSha, mrIid)
+    }
+
+    private fun PushCardContext.editableMessageId(
+        installationId: java.util.UUID,
+        ctx: EventProcessingContext,
+    ): String? = when {
+        projectId == null || branch.isNullOrBlank() -> null
+        else -> ctx.webhookService.getEditableBranchMessageId(installationId, projectId, branch)
+    }
+
+    private fun trackPushCardAnchors(
+        installationId: java.util.UUID,
+        pushCtx: PushCardContext,
+        messageId: String,
+        pushText: String,
+        ctx: EventProcessingContext,
+    ) {
+        val projectId = pushCtx.projectId ?: return
+        pushCtx.afterSha?.takeIf(String::isNotBlank)?.let { sha ->
+            ctx.webhookService.setCommitMessageId(installationId, projectId, sha, messageId, pushText)
+        }
+        pushCtx.branch?.takeIf(String::isNotBlank)?.let { branch ->
+            ctx.webhookService.setBranchLatestMessageId(
+                installationId = installationId,
+                projectId = projectId,
+                branch = branch,
+                messageId = messageId,
+                tipSha = pushCtx.afterSha,
+                pushHeader = pushText,
+                frozen = false,
+            )
+        }
+        pushCtx.mrIid?.let { mrIid ->
+            ctx.webhookService.setMrMessageId(installationId, projectId, mrIid, messageId)
+        }
     }
 
     private fun PipelineEvent.pipelineOutcomeTime(): java.time.Instant =

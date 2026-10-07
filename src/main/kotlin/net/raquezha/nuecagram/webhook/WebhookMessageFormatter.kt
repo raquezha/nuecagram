@@ -400,12 +400,53 @@ class WebhookMessageFormatter {
                 appendBuildRows(builds, event.objectAttributes.stages, projectWebUrl)
             }
 
-            val duration = event.objectAttributes.duration
-            if (duration != null && status in listOf("success", "failed", "canceled")) {
-                append("Total: ${formatDuration(duration.toLong())} • ")
-            }
-            append("Triggered by ${userName.bold()}")
+            appendPipelineFooter(event, userName)
         }
+    }
+
+    /**
+     * Unified living card: retained push commits header + live pipeline job tree.
+     */
+    fun formatUnifiedPushPipelineMessage(
+        pushHeader: String,
+        event: PipelineEvent,
+        mrIid: Long? = null,
+    ): String {
+        val status = event.objectAttributes.status
+        val pipelineId = event.objectAttributes.id
+        val userName = event.user?.name ?: "Unknown"
+        val pipelineUrl = event.getPipelineUrl()
+        val projectWebUrl = event.project.webUrl
+        val statusEmoji = getPipelineStatusEmoji(status)
+        val statusText = getPipelineStatusText(status)
+        val clickablePipeline = pipelineUrl.link("#$pipelineId")
+        val mrBadge = formatMrBadge(
+            event.mergeRequest?.iid ?: mrIid,
+            projectWebUrl,
+            event.mergeRequest?.url,
+        )
+
+        return buildString {
+            append(pushHeader.trimEnd())
+            append("\n\n")
+            append("$statusEmoji Pipeline $clickablePipeline $statusText$mrBadge\n")
+
+            val builds = event.builds.orEmpty()
+            if (builds.isNotEmpty()) {
+                appendBuildRows(builds, event.objectAttributes.stages, projectWebUrl)
+            }
+
+            appendPipelineFooter(event, userName)
+        }
+    }
+
+    private fun StringBuilder.appendPipelineFooter(event: PipelineEvent, userName: String) {
+        val status = event.objectAttributes.status
+        val duration = event.objectAttributes.duration
+        if (duration != null && status in listOf("success", "failed", "canceled")) {
+            append("Total: ${formatDuration(duration.toLong())} • ")
+        }
+        append("Triggered by ${userName.bold()}")
     }
 
     private fun StringBuilder.appendBuildRows(
@@ -718,7 +759,7 @@ class WebhookMessageFormatter {
         }
 
         if (commits.size > MAX_DISPLAY_COMMITS) {
-            append("└─ ... and ${commits.size - MAX_DISPLAY_COMMITS} more\n")
+            append("└─ +${commits.size - MAX_DISPLAY_COMMITS} more commits\n")
         }
     }
 

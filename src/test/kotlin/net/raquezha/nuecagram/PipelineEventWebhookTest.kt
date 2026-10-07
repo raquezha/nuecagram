@@ -537,6 +537,72 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val allMessages = waitForMessages(mockTelegramService, 2)
             assertThat(allMessages).hasSize(2)
             assertThat(allMessages.last().messageId).isEqualTo("1")
+            assertThat(allMessages.last().text).contains("📤 Push to")
+            assertThat(allMessages.last().text).contains("Pipeline")
+            assertThat(allMessages.last().text).contains("prepare")
+            assertThat(allMessages.last().text).contains("Enable crashlytics collection")
+        }
+
+    @Test
+    fun testRapidDoublePushEditsSameCardInPlace() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val pushEvent = JacksonJson().unmarshal(PushEvent::class.java, PushEventWebhookTest.SAMPLE_PAYLOAD)
+            val firstSha = requireNotNull(pushEvent.after)
+            val secondSha = firstSha.dropLast(4) + "abcd"
+
+            val firstPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+            postWebhook(EVENT_PUSH, firstPush)
+            waitForMessages(mockTelegramService, 1)
+
+            val secondPush = firstPush
+                .replace(firstSha, secondSha)
+            postWebhook(EVENT_PUSH, secondPush)
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages).hasSize(2)
+            assertThat(messages[0].messageId).isNull()
+            assertThat(messages[1].messageId).isEqualTo("1")
+            assertThat(messages[1].text).contains("📤 Push to")
+        }
+
+    @Test
+    fun testSupersededCanceledPipelineIsIgnoredAfterTipAdvances() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val successPipeline = JacksonJson().unmarshal(PipelineEvent::class.java, SAMPLE_PAYLOAD_SUCCESS)
+            val tipSha = requireNotNull(successPipeline.objectAttributes?.sha)
+            val pushEvent = JacksonJson().unmarshal(PushEvent::class.java, PushEventWebhookTest.SAMPLE_PAYLOAD)
+            val firstSha = requireNotNull(pushEvent.after)
+
+            val firstPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace(firstSha, tipSha)
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+            postWebhook(EVENT_PUSH, firstPush)
+            waitForMessages(mockTelegramService, 1)
+
+            val nextSha = tipSha.dropLast(4) + "abcd"
+            val secondPush = firstPush.replace(tipSha, nextSha)
+            postWebhook(EVENT_PUSH, secondPush)
+            waitForMessages(mockTelegramService, 2)
+
+            val canceledOldTip = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"status\": \"success\"", "\"status\": \"canceled\"")
+                .replace("\"detailed_status\": \"passed\"", "\"detailed_status\": \"canceled\"")
+            postWebhook(EVENT_PIPELINE, canceledOldTip)
+
+            kotlinx.coroutines.delay(150)
+            val messages = mockTelegramService.sentMessages()
+            assertThat(messages).hasSize(2)
+            assertThat(messages.none { it.text.contains("canceled") }).isTrue()
         }
 
     private fun waitForMessages(
