@@ -67,9 +67,9 @@ class MergeRequestMessageFormatter {
         squashedCommitCount: Int? = null,
     ): Pair<String, String> =
         when (action.lowercase()) {
-            "open" -> if (isDraft) "📝" to "draft opened" else "🔓" to "opened"
-            "close" -> "✅" to "closed"
-            "reopen" -> "🔓" to "reopened"
+            "open" -> if (isDraft) "📝" to "draft opened" else "🆕" to "opened"
+            "close" -> "⛔" to "closed"
+            "reopen" -> "🔄" to "reopened"
             "update" -> "✏️" to "updated"
             "approved" -> "👍" to "approved"
             "unapproved" -> "👎" to "unapproved"
@@ -77,6 +77,6 @@ class MergeRequestMessageFormatter {
                 val count = (squashedCommitCount ?: 1).coerceAtLeast(1)
                 "🟣" to "Merged (Squashed $count commits)"
             }
-            else -> "🔷" to action
+            else -> "🔀" to action
         }
 }

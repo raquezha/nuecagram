@@ -218,7 +218,7 @@ class PipelineMessageFormatter {
 
         val source = event.objectAttributes.source
         if (!source.isNullOrBlank() && source != "push") {
-            append("🔗 via ${source.escapeHtml()}\n")
+            append("🚀 via ${source.escapeHtml()}\n")
         }
 
         val mergeRequest = event.mergeRequest
@@ -235,133 +235,133 @@ class PipelineMessageFormatter {
 
 private fun getPipelineStatusEmoji(status: String): String =
     when (status) {
-            "pending" -> "⏳"
-            "running" -> "⚙️"
-            "success" -> "✅"
-            "failed" -> "❌"
-            "canceled" -> "⛔"
-            "skipped" -> "⏭️"
-            "manual" -> "⏸️"
-            "scheduled" -> "🕒"
-            else -> "❓"
-        }
-
-    private fun getPipelineStatusText(status: String): String =
-        when (status) {
-            "pending" -> "pending"
-            "running" -> "running"
-            "success" -> "passed"
-            "failed" -> "failed"
-            "canceled" -> "canceled"
-            "skipped" -> "skipped"
-            "manual" -> "manual"
-            "scheduled" -> "scheduled"
-            else -> status
-        }
-
-    private fun getBuildStatusEmoji(status: BuildStatus?): String =
-        when (status) {
-            BuildStatus.CREATED -> "✨"
-            BuildStatus.PENDING -> "⏳"
-            BuildStatus.RUNNING -> "⚙️"
-            BuildStatus.SUCCESS -> "✅"
-            BuildStatus.FAILED -> "❌"
-            BuildStatus.CANCELED -> "⛔"
-            BuildStatus.SKIPPED -> "⏭️"
-            BuildStatus.MANUAL -> "⏸️"
-            else -> "❓"
-        }
-
-    private fun formatBuildStatus(
-        build: Build,
-        buildUrl: String,
-    ): String {
-        val status = build.status ?: return ""
-        val duration = build.duration
-
-        return when (status) {
-            BuildStatus.SUCCESS -> {
-                if (duration != null) " (${formatDuration(duration.toLong())})" else ""
-            }
-            BuildStatus.FAILED -> {
-                " ${buildUrl.link("View Logs")}"
-            }
-            BuildStatus.RUNNING -> formatRunningBuildStatus(build)
-            BuildStatus.PENDING -> " pending"
-            BuildStatus.CANCELED -> " canceled"
-            BuildStatus.SKIPPED -> " skipped"
-            BuildStatus.MANUAL -> " manual"
-            else -> ""
-        }
+        "pending" -> "⏳"
+        "running" -> "🔄"
+        "success" -> "✅"
+        "failed" -> "❌"
+        "canceled" -> "⛔"
+        "skipped" -> "⏭️"
+        "manual" -> "👆"
+        "scheduled" -> "🕐"
+        else -> "❓"
     }
 
-    private fun formatRunningBuildStatus(build: Build): String {
-        val runnerName = build.runner?.description?.takeIf(String::isNotBlank)
-            ?: build.runner?.name?.takeIf(String::isNotBlank)
-        val stage = build.stage?.takeIf(String::isNotBlank)
-        return when {
-            runnerName != null && stage != null ->
-                " running on ${runnerName.escapeHtml()} (${stage.escapeHtml()})"
-            runnerName != null -> " running on ${runnerName.escapeHtml()}"
-            stage != null -> " running (${stage.escapeHtml()})"
-            else -> " running..."
-        }
+private fun getPipelineStatusText(status: String): String =
+    when (status) {
+        "pending" -> "pending"
+        "running" -> "running"
+        "success" -> "passed"
+        "failed" -> "failed"
+        "canceled" -> "canceled"
+        "skipped" -> "skipped"
+        "manual" -> "manual"
+        "scheduled" -> "scheduled"
+        else -> status
     }
 
-    private fun getStageOrder(
-        stage: String?,
-        stages: List<String>?,
-    ): Int {
-        if (stage == null || stages == null) return Int.MAX_VALUE
-        val index = stages.indexOf(stage)
-        return if (index >= 0) index else Int.MAX_VALUE
+private fun getBuildStatusEmoji(status: BuildStatus?): String =
+    when (status) {
+        BuildStatus.CREATED -> "🆕"
+        BuildStatus.PENDING -> "⏳"
+        BuildStatus.RUNNING -> "🔄"
+        BuildStatus.SUCCESS -> "✅"
+        BuildStatus.FAILED -> "❌"
+        BuildStatus.CANCELED -> "⛔"
+        BuildStatus.SKIPPED -> "⏭️"
+        BuildStatus.MANUAL -> "👆"
+        else -> "❓"
     }
 
-    private fun derivePipelineStatusFromJobs(jobs: Collection<JobInfo>): String =
-        when {
-            jobs.isEmpty() -> "pending"
-            jobs.any { it.status == "failed" && !it.allowFailure } -> "failed"
-            jobs.any { it.status == "running" } -> "running"
-            jobs.any { it.status == "pending" || it.status == "created" } -> "pending"
-            jobs.any { it.status == "canceled" } -> "canceled"
-            jobs.all {
-                it.status == "success" ||
-                    it.status == "skipped" ||
-                    (it.status == "failed" && it.allowFailure)
-            } -> "success"
-            else -> "running"
-        }
+private fun formatBuildStatus(
+    build: Build,
+    buildUrl: String,
+): String {
+    val status = build.status ?: return ""
+    val duration = build.duration
 
-    private fun getJobInfoStatusEmoji(status: String): String =
-        when (status.lowercase()) {
-            "created" -> "✨"
-            "pending" -> "⏳"
-            "running" -> "⚙️"
-            "success" -> "✅"
-            "failed" -> "❌"
-            "canceled" -> "⛔"
-            "skipped" -> "⏭️"
-            "manual" -> "⏸️"
-            else -> "❓"
+    return when (status) {
+        BuildStatus.SUCCESS -> {
+            if (duration != null) " (${formatDuration(duration.toLong())})" else ""
         }
+        BuildStatus.FAILED -> {
+            " ${buildUrl.link("View Logs")}"
+        }
+        BuildStatus.RUNNING -> formatRunningBuildStatus(build)
+        BuildStatus.PENDING -> " pending"
+        BuildStatus.CANCELED -> " canceled"
+        BuildStatus.SKIPPED -> " skipped"
+        BuildStatus.MANUAL -> " manual"
+        else -> ""
+    }
+}
 
-    private fun formatJobInfoStatus(
-        job: JobInfo,
-        jobUrl: String,
-    ): String =
-        when (job.status.lowercase()) {
-            "success" -> if (job.duration != null) " (${formatDuration(job.duration.toLong())})" else ""
-            "failed" -> {
-                val reason = if (!job.failureReason.isNullOrBlank()) " (${job.failureReason})" else ""
-                " ${jobUrl.link("View Logs")}$reason"
-            }
-            "running" -> " running..."
-            "pending" -> " pending"
-            "created" -> " created"
-            "canceled" -> " canceled"
-            "skipped" -> " skipped"
-            "manual" -> " manual"
-            else -> ""
+private fun formatRunningBuildStatus(build: Build): String {
+    val runnerName = build.runner?.description?.takeIf(String::isNotBlank)
+        ?: build.runner?.name?.takeIf(String::isNotBlank)
+    val stage = build.stage?.takeIf(String::isNotBlank)
+    return when {
+        runnerName != null && stage != null ->
+            " running on ${runnerName.escapeHtml()} (${stage.escapeHtml()})"
+        runnerName != null -> " running on ${runnerName.escapeHtml()}"
+        stage != null -> " running (${stage.escapeHtml()})"
+        else -> " running..."
+    }
+}
+
+private fun getStageOrder(
+    stage: String?,
+    stages: List<String>?,
+): Int {
+    if (stage == null || stages == null) return Int.MAX_VALUE
+    val index = stages.indexOf(stage)
+    return if (index >= 0) index else Int.MAX_VALUE
+}
+
+private fun derivePipelineStatusFromJobs(jobs: Collection<JobInfo>): String =
+    when {
+        jobs.isEmpty() -> "pending"
+        jobs.any { it.status == "failed" && !it.allowFailure } -> "failed"
+        jobs.any { it.status == "running" } -> "running"
+        jobs.any { it.status == "pending" || it.status == "created" } -> "pending"
+        jobs.any { it.status == "canceled" } -> "canceled"
+        jobs.all {
+            it.status == "success" ||
+                it.status == "skipped" ||
+                (it.status == "failed" && it.allowFailure)
+        } -> "success"
+        else -> "running"
+    }
+
+private fun getJobInfoStatusEmoji(status: String): String =
+    when (status.lowercase()) {
+        "created" -> "🆕"
+        "pending" -> "⏳"
+        "running" -> "🔄"
+        "success" -> "✅"
+        "failed" -> "❌"
+        "canceled" -> "⛔"
+        "skipped" -> "⏭️"
+        "manual" -> "👆"
+        else -> "❓"
+    }
+
+private fun formatJobInfoStatus(
+    job: JobInfo,
+    jobUrl: String,
+): String =
+    when (job.status.lowercase()) {
+        "success" -> if (job.duration != null) " (${formatDuration(job.duration.toLong())})" else ""
+        "failed" -> {
+            val reason = if (!job.failureReason.isNullOrBlank()) " (${job.failureReason})" else ""
+            " ${jobUrl.link("View Logs")}$reason"
         }
+        "running" -> " running..."
+        "pending" -> " pending"
+        "created" -> " created"
+        "canceled" -> " canceled"
+        "skipped" -> " skipped"
+        "manual" -> " manual"
+        else -> ""
+    }
 
 private fun PipelineEvent.getPipelineUrl(): String = "${project.webUrl}/-/pipelines/${objectAttributes.id}"

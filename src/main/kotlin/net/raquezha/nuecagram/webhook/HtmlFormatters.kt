@@ -1,20 +1,6 @@
 package net.raquezha.nuecagram.webhook
 
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.TimeZone
-
 internal object FormatterConstants {
-    val DEFAULT_TIMEZONE: TimeZone =
-        TimeZone.getTimeZone(
-            System.getProperty("nuecagram.timezone", "Asia/Manila"),
-        )
-
-    val DATE_FORMATTER: DateTimeFormatter =
-        DateTimeFormatter
-            .ofPattern("hh:mm a 'on' MMMM dd, yyyy")
-            .withZone(ZoneId.of(DEFAULT_TIMEZONE.id))
-
     const val SECONDS_PER_HOUR = 3600L
     const val SECONDS_PER_MINUTE = 60L
     const val MAX_COMMIT_TITLE_LENGTH = 50

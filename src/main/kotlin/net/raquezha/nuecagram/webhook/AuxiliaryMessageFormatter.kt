@@ -31,7 +31,7 @@ class AuxiliaryMessageFormatter {
 
             if (commitUrl != null) {
                 val shortSha = commitUrl.substringAfterLast("/").take(FormatterConstants.SHORT_SHA_LENGTH)
-                append("\n🔗 ${commitUrl.link(shortSha)}")
+                append("\n📌 ${commitUrl.link(shortSha)}")
             }
 
             if (deployableUrl != null) {
@@ -45,13 +45,13 @@ class AuxiliaryMessageFormatter {
 
     private fun getDeploymentStatusDisplay(status: String): Pair<String, String> =
         when (status.lowercase()) {
-            "created" -> "✨" to "created"
-            "running" -> "⚙️" to "running"
+            "created" -> "🆕" to "created"
+            "running" -> "🔄" to "running"
             "success" -> "✅" to "succeeded"
             "failed" -> "❌" to "failed"
             "canceled" -> "⛔" to "canceled"
             "canceling" -> "⏳" to "canceling"
-            else -> "🔷" to status
+            else -> "🚀" to status
         }
 
     fun formatReleaseEventMessage(event: ReleaseEvent): String {
@@ -90,10 +90,10 @@ class AuxiliaryMessageFormatter {
 
     private fun getReleaseActionDisplay(action: String): Pair<String, String> =
         when (action.lowercase()) {
-            "create" -> "🚀" to "published"
+            "create" -> "🎉" to "published"
             "update" -> "✏️" to "updated"
             "delete" -> "🗑️" to "deleted"
-            else -> "🔷" to action
+            else -> "📦" to action
         }
 
     fun formatIssueEventMessage(event: IssueEvent): String {
@@ -114,7 +114,7 @@ class AuxiliaryMessageFormatter {
             append("$emoji Issue $clickableIssue $actionText\n")
             append("${projectName.bold()}\n")
             append("\n")
-            append("📌 ${issueTitle.bold()}\n")
+            append("📋 ${issueTitle.bold()}\n")
 
             appendTruncatedDescription(issueDescription, FormatterConstants.MAX_DESC_LENGTH)
             appendLabels(labels)
@@ -133,11 +133,11 @@ class AuxiliaryMessageFormatter {
 
     private fun getIssueActionDisplay(action: String): Pair<String, String> =
         when (action.lowercase()) {
-            "open" -> "🔓" to "opened"
+            "open" -> "🆕" to "opened"
             "close" -> "✅" to "closed"
-            "reopen" -> "🔓" to "reopened"
+            "reopen" -> "🔄" to "reopened"
             "update" -> "✏️" to "updated"
-            else -> "🔷" to action
+            else -> "📝" to action
         }
 
     private fun String.extractIssueNumber(): String? = Regex(""".*/issues/(\d+)""").find(this)?.groupValues?.get(1)
@@ -172,7 +172,7 @@ class AuxiliaryMessageFormatter {
         when {
             beforeSha.isNullHash() -> "🏷️" to "created"
             afterSha.isNullHash() -> "🗑️" to "deleted"
-            else -> "🏷️" to "updated"
+            else -> "🔄" to "updated"
         }
 
     private fun StringBuilder.appendTagCommitInfo(
@@ -228,9 +228,9 @@ class AuxiliaryMessageFormatter {
 
     private fun getWikiActionDisplay(action: String): Pair<String, String> =
         when (action.lowercase()) {
-            "create" -> "📄" to "created"
+            "create" -> "📖" to "created"
             "update" -> "✏️" to "updated"
             "delete" -> "🗑️" to "deleted"
-            else -> "🔷" to action
+            else -> "📄" to action
         }
 }

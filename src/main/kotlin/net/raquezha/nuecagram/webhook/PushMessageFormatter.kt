@@ -28,7 +28,7 @@ class PushMessageFormatter {
         val compareUrl = "$projectWebUrl/-/compare/$beforeSha...$afterSha"
         val mrBadge = formatMrBadge(mrIid, projectWebUrl)
         return buildString {
-            append("🚀 Push to ${ref.bold()}$mrBadge\n")
+            append("📤 Push to ${ref.bold()}$mrBadge\n")
             append("${projectName.bold()} • ${compareUrl.link("$commitCount commit(s)")}\n")
             append("\n")
             appendPushCommits(commits)
