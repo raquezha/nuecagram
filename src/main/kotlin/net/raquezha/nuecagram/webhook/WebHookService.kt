@@ -72,6 +72,27 @@ class WebHookService(
         val createdAt: Long = System.currentTimeMillis(),
     )
 
+    private data class CommitCardEntry(
+        val messageId: String,
+        val pushHeader: String? = null,
+        val createdAt: Long = System.currentTimeMillis(),
+    )
+
+    private data class BranchCardEntry(
+        val messageId: String,
+        val tipSha: String? = null,
+        val pushHeader: String? = null,
+        val frozen: Boolean = false,
+        val cycleCommitCount: Int = 0,
+        val createdAt: Long = System.currentTimeMillis(),
+    )
+
+    private data class BranchPipelineOrder(
+        val latestPipelineId: Long,
+        val latestPipelineEventEpochMs: Long,
+        val updatedAt: Long = System.currentTimeMillis(),
+    )
+
     private data class PipelineEntry(
         val messageId: String,
         val lastTerminalStatus: String? = null,
@@ -106,11 +127,26 @@ class WebHookService(
         val mrIid: Long,
     )
 
+    private data class InstallationCommitKey(
+        val installationId: UUID,
+        val projectId: Long,
+        val commitSha: String,
+    )
+
+    private data class InstallationBranchKey(
+        val installationId: UUID,
+        val projectId: Long,
+        val branch: String,
+    )
+
     private val runningJobsIdMap = ConcurrentHashMap<InstallationJobKey, JobEntry>()
     private val pipelineMessageIdMap = ConcurrentHashMap<InstallationPipelineKey, PipelineEntry>()
     private val trackedPipelines = ConcurrentHashMap<InstallationPipelineKey, TrackedPipeline>()
     private val pipelineNotificationMap = ConcurrentHashMap<InstallationPipelineNotificationKey, Long>()
     private val mrMessageIdMap = ConcurrentHashMap<InstallationMrKey, JobEntry>()
+    private val commitMessageIdMap = ConcurrentHashMap<InstallationCommitKey, CommitCardEntry>()
+    private val branchLatestMessageIdMap = ConcurrentHashMap<InstallationBranchKey, BranchCardEntry>()
+    private val branchPipelineOrderMap = ConcurrentHashMap<InstallationBranchKey, BranchPipelineOrder>()
 
     suspend fun handleRequest(call: ApplicationCall): EventData {
         val clientId = call.clientId()
@@ -425,6 +461,148 @@ class WebHookService(
         mrMessageIdMap.remove(InstallationMrKey(installationId, projectId, mrIid))
     }
 
+    fun getCommitMessageId(
+        installationId: UUID,
+        projectId: Long,
+        commitSha: String,
+    ): String? = commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)]?.messageId
+
+    fun getCommitPushHeader(
+        installationId: UUID,
+        projectId: Long,
+        commitSha: String,
+    ): String? = commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)]?.pushHeader
+
+    fun setCommitMessageId(
+        installationId: UUID,
+        projectId: Long,
+        commitSha: String,
+        messageId: String,
+        pushHeader: String? = null,
+    ) {
+        commitMessageIdMap[InstallationCommitKey(installationId, projectId, commitSha)] =
+            CommitCardEntry(messageId = messageId, pushHeader = pushHeader)
+    }
+
+    fun getBranchLatestMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.messageId
+
+    fun getEditableBranchMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]
+        ?.takeUnless { it.frozen }
+        ?.messageId
+
+    fun getBranchTipSha(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.tipSha
+
+    fun getBranchPushHeader(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): String? = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.pushHeader
+
+    fun setBranchLatestMessageId(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+        messageId: String,
+        tipSha: String? = null,
+        pushHeader: String? = null,
+        frozen: Boolean = false,
+        addedCommitCount: Int = 0,
+    ) {
+        val key = InstallationBranchKey(installationId, projectId, branch)
+        val existing = branchLatestMessageIdMap[key]
+        val sameCard = existing?.messageId == messageId && existing.frozen.not()
+        val cycleCommitCount = when {
+            addedCommitCount <= 0 && sameCard -> existing.cycleCommitCount
+            sameCard -> existing.cycleCommitCount + addedCommitCount
+            addedCommitCount > 0 -> addedCommitCount
+            else -> existing?.cycleCommitCount ?: 0
+        }
+        branchLatestMessageIdMap[key] = BranchCardEntry(
+            messageId = messageId,
+            tipSha = tipSha,
+            pushHeader = pushHeader,
+            frozen = frozen,
+            cycleCommitCount = cycleCommitCount,
+            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+        )
+    }
+
+    fun getBranchCycleCommitCount(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): Int = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]
+        ?.cycleCommitCount
+        ?.takeIf { it > 0 }
+        ?: 0
+
+    /**
+     * Accepts a pipeline update when it is the current branch pipeline or a newer one.
+     * Older/slower pipelines that finish after a newer one are rejected (monotonic ordering).
+     */
+    fun tryAcceptBranchPipelineOrder(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+        pipelineId: Long,
+        eventEpochMs: Long,
+    ): Boolean {
+        val key = InstallationBranchKey(installationId, projectId, branch)
+        var accepted = true
+        branchPipelineOrderMap.compute(key) { _, existing ->
+            val isStale = when {
+                existing == null -> false
+                pipelineId < existing.latestPipelineId -> true
+                pipelineId > existing.latestPipelineId -> false
+                eventEpochMs < existing.latestPipelineEventEpochMs -> true
+                else -> false
+            }
+            if (isStale) {
+                accepted = false
+                existing
+            } else {
+                BranchPipelineOrder(
+                    latestPipelineId = maxOf(existing?.latestPipelineId ?: pipelineId, pipelineId),
+                    latestPipelineEventEpochMs = maxOf(
+                        existing?.latestPipelineEventEpochMs ?: eventEpochMs,
+                        eventEpochMs,
+                    ),
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
+        }
+        return accepted
+    }
+
+    fun freezeBranchCard(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ) {
+        val key = InstallationBranchKey(installationId, projectId, branch)
+        branchLatestMessageIdMap.compute(key) { _, entry ->
+            (entry ?: BranchCardEntry(messageId = "")).copy(frozen = true)
+        }
+    }
+
+    fun isBranchCardFrozen(
+        installationId: UUID,
+        projectId: Long,
+        branch: String,
+    ): Boolean = branchLatestMessageIdMap[InstallationBranchKey(installationId, projectId, branch)]?.frozen == true
+
     fun resetRuntimeState() {
         requestWindows.clear()
         runningJobsIdMap.clear()
@@ -432,6 +610,9 @@ class WebHookService(
         trackedPipelines.clear()
         pipelineNotificationMap.clear()
         mrMessageIdMap.clear()
+        commitMessageIdMap.clear()
+        branchLatestMessageIdMap.clear()
+        branchPipelineOrderMap.clear()
     }
 
     fun cleanupStaleEntries(
@@ -439,53 +620,35 @@ class WebHookService(
         nowMs: Long = System.currentTimeMillis(),
     ) {
         val cutoff = nowMs - maxAgeMs
+        pipelineMessageIdMap.entries.removeIf { it.value.updatedAt < cutoff }
+        commitMessageIdMap.entries.removeIf { it.value.createdAt < cutoff }
+        branchLatestMessageIdMap.entries.removeIf { it.value.createdAt < cutoff }
+        branchPipelineOrderMap.entries.removeIf { it.value.updatedAt < cutoff }
 
-        pipelineMessageIdMap.entries.removeIf { entry ->
-            entry.value.updatedAt < cutoff
-        }
-
-        // Cleanup stale tracked pipelines atomically
         var pipelinesRemoved = 0
         trackedPipelines.entries.removeIf { entry ->
-            if (entry.value.createdAt < cutoff && !pipelineMessageIdMap.containsKey(entry.key)) {
-                pipelinesRemoved++
-                true
-            } else {
-                false
+            (entry.value.createdAt < cutoff && !pipelineMessageIdMap.containsKey(entry.key)).also {
+                if (it) pipelinesRemoved++
             }
         }
 
         var notificationsRemoved = 0
         pipelineNotificationMap.entries.removeIf { entry ->
             val pipelineKey = InstallationPipelineKey(entry.key.installationId, entry.key.pipelineId)
-            if (entry.value < cutoff && !pipelineMessageIdMap.containsKey(pipelineKey)) {
-                notificationsRemoved++
-                true
-            } else {
-                false
+            (entry.value < cutoff && !pipelineMessageIdMap.containsKey(pipelineKey)).also {
+                if (it) notificationsRemoved++
             }
         }
 
-        // Cleanup stale job entries atomically
         var jobsRemoved = 0
         runningJobsIdMap.entries.removeIf { entry ->
-            if (entry.value.createdAt < cutoff) {
-                jobsRemoved++
-                true
-            } else {
-                false
-            }
+            (entry.value.createdAt < cutoff).also { if (it) jobsRemoved++ }
         }
 
         val mrCutoff = nowMs - DEFAULT_MR_MESSAGE_TTL_MS
         var mrsRemoved = 0
         mrMessageIdMap.entries.removeIf { entry ->
-            if (entry.value.createdAt < mrCutoff) {
-                mrsRemoved++
-                true
-            } else {
-                false
-            }
+            (entry.value.createdAt < mrCutoff).also { if (it) mrsRemoved++ }
         }
 
         val totalCleaned = pipelinesRemoved + notificationsRemoved + jobsRemoved + mrsRemoved

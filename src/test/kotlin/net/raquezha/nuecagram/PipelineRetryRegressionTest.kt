@@ -24,6 +24,13 @@ class PipelineRetryRegressionTest {
     private var nextId = 0
     private var rejectReply = false
 
+    init {
+        coEvery { repository.getActiveMrForBranch(installationId, any(), any()) } returns
+            ActiveMergeRequest(2923L, "main", 105L, null)
+        coEvery { repository.getMrParticipants(installationId, any(), any()) } returns
+            MrParticipants("alice", listOf("bob"))
+    }
+
     private fun runEvents(vararg payloads: String) = kotlinx.coroutines.runBlocking {
         coEvery { telegram.sendMessage(any()) } coAnswers {
             val message = firstArg<Message>()
@@ -150,10 +157,11 @@ class PipelineRetryRegressionTest {
 
     @Test
     fun missingRecipientDoesNotMarkAnUnsentReplyAsDelivered() {
-        val mr = PipelineEventWebhookTest.SAMPLE_PAYLOAD_MR_SUCCESS
-        runEvents(mr.replace("\"username\": \"alice\"", "\"username\": \"\""), mr, mr)
+        coEvery { repository.getMrParticipants(installationId, any(), any()) } returns null
+        val failed = PipelineEventWebhookTest.SAMPLE_PAYLOAD_FAILED
+        runEvents(failed.replace("\"username\": \"raquezha\"", "\"username\": \"\""), failed, failed)
         assertThat(delivered.count { it.replyToMessageId != null }).isEqualTo(1)
-        assertThat(delivered.first { it.replyToMessageId != null }.text).contains("@alice")
+        assertThat(delivered.first { it.replyToMessageId != null }.text).contains("@raquezha")
     }
 
     @Test
@@ -190,7 +198,7 @@ class PipelineRetryRegressionTest {
         assertThat(service.getPipelineLastTerminalStatus(installationId, 53481)).isEqualTo("success")
         val totalReplies = delivered.filter { it.replyToMessageId != null }
         assertThat(totalReplies).hasSize(1)
-        assertThat(totalReplies.first().text).contains("✅")
+        assertThat(totalReplies.first().text).contains("@bob")
     }
 
     @Test

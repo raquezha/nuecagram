@@ -17,6 +17,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import net.raquezha.nuecagram.ConfigWithSecrets
 import org.apache.http.HttpException
+import io.github.oshai.kotlinlogging.KotlinLogging
+
+private val logger = KotlinLogging.logger {}
 
 private const val TELEGRAM_API_BASE_URL = "https://api.telegram.org/bot"
 private const val METHOD_GET_ME = "getMe"
@@ -141,6 +144,13 @@ class TelegramServiceImpl(
         val editRejected = method == METHOD_EDIT_MESSAGE_TEXT &&
             response.status == HttpStatusCode.BadRequest && !apiResponse.ok
         return when {
+            isTopicNotFound(response.status, apiResponse.ok, message.threadId, description) -> {
+                logger.warn {
+                    "Telegram thread ${message.threadId} not found for chat ${message.chatId}, " +
+                        "falling back to root chat: $description"
+                }
+                sendMessage(message.copy(threadId = null))
+            }
             editRejected && description.startsWith("Bad Request: message is not modified") ->
                 requireNotNull(message.messageId)
             editRejected && description == "Bad Request: message to edit not found" ->
@@ -151,6 +161,15 @@ class TelegramServiceImpl(
             else -> throw HttpException("Failed to send Telegram message (${response.status})")
         }
     }
+
+    private fun isTopicNotFound(
+        status: HttpStatusCode,
+        ok: Boolean,
+        threadId: Long?,
+        description: String,
+    ): Boolean = status == HttpStatusCode.BadRequest && !ok && threadId != null &&
+        (description.contains("message thread not found", ignoreCase = true) ||
+            description.contains("thread not found", ignoreCase = true))
 
     override suspend fun answerCallbackQuery(
         callbackQueryId: String,

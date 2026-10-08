@@ -100,6 +100,7 @@ class WebhookRequestHandler(
         private val PIPELINE_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
         private val JOB_TERMINAL_STATUSES = listOf("success", "failed", "canceled", "skipped")
         private val ACCEPTABLE_COMPLETED_BUILD_STATUSES = setOf(BuildStatus.SUCCESS, BuildStatus.SKIPPED)
+        private val PRODUCTION_BRANCHES = setOf("main", "master", "production", "staging")
     }
 
     suspend fun enqueue(eventData: EventData) {
@@ -305,9 +306,26 @@ class WebhookRequestHandler(
         ctx.webhookService.cleanupStaleEntries()
         ctx.webhookService.markPipelineEventReceived(installationId, pipelineId)
 
+        if (isSupersededByBranchTip(installationId, event, ctx)) {
+            ctx.logger.debug {
+                "Skipping superseded pipeline #$pipelineId " +
+                    "(sha=${attrs.sha ?: event.commit?.id} behind branch tip)"
+            }
+            return
+        }
+
+        if (!acceptMonotonicBranchPipeline(installationId, pipelineId, event, ctx)) {
+            ctx.logger.debug {
+                "Skipping non-monotonic pipeline #$pipelineId " +
+                    "(older than latest accepted pipeline for branch)"
+            }
+            return
+        }
+
         val (mrIid, _) = findCachedMrParticipants(installationId, event, ctx)
         if (handleRenovateBranchPipeline(installationId, event, chatDetails, mrIid, ctx)) return
         val existingMessageId = resolvePipelineMessageId(installationId, pipelineId, event, mrIid, ctx)
+        val cardText = formatPipelineCardText(installationId, event, mrIid, ctx)
 
         val messageId =
             ctx.telegramService.sendMessage(
@@ -315,7 +333,7 @@ class WebhookRequestHandler(
                     chatId = chatDetails.chatId,
                     threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                     messageId = existingMessageId,
-                    text = ctx.formatter.formatEventMessage(event, mrIid),
+                    text = cardText,
                     parseMode = PARSE_MODE,
                     disableWebPagePreview = true,
                     disableNotification = true,
@@ -328,6 +346,84 @@ class WebhookRequestHandler(
         ctx.logger.debug { "Pipeline #$pipelineId ($status): tracking message $messageId" }
     }
 
+    private fun isSupersededByBranchTip(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return false
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val tipSha = ctx.webhookService.getBranchTipSha(installationId, projectId, branch) ?: return false
+        val eventSha = event.objectAttributes?.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+            ?: return false
+        return !tipSha.equals(eventSha, ignoreCase = true)
+    }
+
+    private fun acceptMonotonicBranchPipeline(
+        installationId: java.util.UUID,
+        pipelineId: Long,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        // Pipelines that already own a Telegram card may always update in-place (retries),
+        // but first sightings of older pipeline IDs must not overwrite a newer branch result.
+        if (ctx.webhookService.getPipelineMessageId(installationId, pipelineId) != null) {
+            return true
+        }
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return true
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return true
+        val eventEpochMs = event.pipelineOutcomeTime().toEpochMilli()
+        return ctx.webhookService.tryAcceptBranchPipelineOrder(
+            installationId = installationId,
+            projectId = projectId,
+            branch = branch,
+            pipelineId = pipelineId,
+            eventEpochMs = eventEpochMs,
+        )
+    }
+
+    private fun formatPipelineCardText(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        mrIid: Long?,
+        ctx: EventProcessingContext,
+    ): String {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+        val commitSha = event.objectAttributes?.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+        val branch = event.objectAttributes?.ref?.removePrefix("refs/heads/")?.takeIf(String::isNotBlank)
+        val pushHeader = when {
+            projectId != null && commitSha != null ->
+                ctx.webhookService.getCommitPushHeader(installationId, projectId, commitSha)
+            else -> null
+        } ?: when {
+            projectId != null && branch != null ->
+                ctx.webhookService.getBranchPushHeader(installationId, projectId, branch)
+            else -> null
+        }
+
+        return if (pushHeader != null) {
+            ctx.formatter.formatUnifiedPushPipelineMessage(pushHeader, event, mrIid)
+        } else {
+            ctx.formatter.formatEventMessage(event, mrIid)
+        }
+    }
+
     private suspend fun resolvePipelineMessageId(
         installationId: java.util.UUID,
         pipelineId: Long,
@@ -337,19 +433,36 @@ class WebhookRequestHandler(
     ): String? {
         val direct = ctx.webhookService.getPipelineMessageId(installationId, pipelineId)
         if (direct != null) return direct
+
         val projectId = event.project?.id
-        return if (event.objectAttributes?.source == "merge_request_event" && mrIid != null && projectId != null) {
-            ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
-                ?: event.objectAttributes?.ref?.removePrefix("refs/heads/")
-                    ?.takeIf {
-                        it.startsWith("renovate/") &&
-                            event.user?.username?.matches(
-                                Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE),
-                            ) == true
-                    }?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
-        } else {
-            null
-        }
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return null
+
+        val commitSha = event.objectAttributes?.sha?.takeIf(String::isNotBlank)
+            ?: event.commit?.id?.takeIf(String::isNotBlank)
+
+        return resolveMrPipelineMessageId(installationId, projectId, event, mrIid, ctx)
+            ?: commitSha?.let { ctx.webhookService.getCommitMessageId(installationId, projectId, it) }
+    }
+
+    private suspend fun resolveMrPipelineMessageId(
+        installationId: java.util.UUID,
+        projectId: Long,
+        event: PipelineEvent,
+        mrIid: Long?,
+        ctx: EventProcessingContext,
+    ): String? = if (event.objectAttributes?.source == "merge_request_event" && mrIid != null) {
+        ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
+            ?: event.objectAttributes?.ref?.removePrefix("refs/heads/")
+                ?.takeIf {
+                    it.startsWith("renovate/") &&
+                        event.user?.username?.matches(
+                            Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE),
+                        ) == true
+                }?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
+    } else {
+        null
     }
 
     private suspend fun dispatchPipelineReplies(
@@ -482,6 +595,10 @@ class WebhookRequestHandler(
         messageId: String,
         ctx: EventProcessingContext,
     ) {
+        if (tryHandleFrozenCardDeploy(installationId, pipelineId, status, event, chatDetails, messageId, ctx)) {
+            return
+        }
+
         val targets = resolvePipelineTargetUsernames(installationId, status, event, ctx)
         if (targets.usernames.isEmpty()) {
             return
@@ -513,6 +630,7 @@ class WebhookRequestHandler(
                         disableNotification = isSilent,
                         ctx = ctx,
                     )
+                    freezeBranchCardAfterPing(installationId, event, ctx)
                     ctx.logger.debug {
                         "Pipeline #$pipelineId: sent completion reply ($status) tagging ${targets.usernames}"
                     }
@@ -527,6 +645,79 @@ class WebhookRequestHandler(
         }
     }
 
+    private suspend fun tryHandleFrozenCardDeploy(
+        installationId: java.util.UUID,
+        pipelineId: Long,
+        status: String,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return false
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val isRecovery = status == "success" &&
+            ctx.webhookService.getPipelineLastTerminalStatus(installationId, pipelineId) == "failed"
+        if (isRecovery || !ctx.webhookService.isBranchCardFrozen(installationId, projectId, branch)) {
+            return false
+        }
+        return handleFrozenCardTerminalReply(pipelineId, event, chatDetails, messageId, ctx)
+    }
+
+    private suspend fun handleFrozenCardTerminalReply(
+        pipelineId: Long,
+        event: PipelineEvent,
+        chatDetails: ChatDetails,
+        messageId: String,
+        ctx: EventProcessingContext,
+    ): Boolean {
+        val manualDeployBuild = event.builds.orEmpty().firstOrNull { build ->
+            build.status == BuildStatus.SUCCESS && build.manual == true
+        } ?: return false
+
+        val triggerUser = event.user?.username?.takeIf(String::isNotBlank) ?: event.user?.name
+        if (triggerUser == null || triggerUser.isGitLabBotUser()) {
+            ctx.logger.debug { "Manual deploy on frozen card triggered by bot/unspecified user, emitting 0 pings" }
+            return true
+        }
+
+        val userTag = listOf(triggerUser).handles()
+        val jobName = manualDeployBuild.name ?: "deploy"
+        val replyText = "↳ 🚀 $jobName passed! Ready for you $userTag"
+
+        sendPipelineReply(
+            text = replyText,
+            chatDetails = chatDetails,
+            messageId = messageId,
+            disableNotification = false,
+            ctx = ctx,
+        )
+        ctx.logger.debug { "Pipeline #$pipelineId: sent manual deploy reply on frozen card tagging $userTag" }
+        return true
+    }
+
+    private fun freezeBranchCardAfterPing(
+        installationId: java.util.UUID,
+        event: PipelineEvent,
+        ctx: EventProcessingContext,
+    ) {
+        val projectId = event.project?.id
+            ?: event.mergeRequest?.targetProjectId
+            ?: event.mergeRequest?.sourceProjectId
+            ?: return
+        val branch = event.objectAttributes?.ref
+            ?.removePrefix("refs/heads/")
+            ?.takeIf(String::isNotBlank)
+            ?: return
+        ctx.webhookService.freezeBranchCard(installationId, projectId, branch)
+    }
+
     private suspend fun handleManualWaitingPipelineReply(
         installationId: java.util.UUID,
         pipelineId: Long,
@@ -538,7 +729,7 @@ class WebhookRequestHandler(
         if (!event.isWaitingForBlockingManualAction()) return
         if (ctx.webhookService.hasPipelineNotification(installationId, pipelineId, "manual_waiting")) return
 
-        val targets = resolvePipelineTargetUsernames(installationId, "success", event, ctx)
+        val targets = resolvePipelineTargetUsernames(installationId, "manual", event, ctx)
         if (targets.usernames.isNotEmpty()) {
             val mrRef = targets.mrRef()
             val text = if (targets.isReviewer) {
@@ -557,22 +748,25 @@ class WebhookRequestHandler(
         }
     }
 
+    private fun isSuppressedPipelineEvent(event: PipelineEvent): Boolean {
+        val scheduledRenovate = event.objectAttributes?.source == "schedule" &&
+            event.builds.orEmpty().any { it.name == "maintain:renovate" }
+        return scheduledRenovate ||
+            event.user?.username?.isGitLabBotUser() == true ||
+            event.user?.name?.isGitLabBotUser() == true
+    }
+
     private suspend fun resolvePipelineTargetUsernames(
         installationId: java.util.UUID,
         status: String,
         event: PipelineEvent,
         ctx: EventProcessingContext,
     ): PipelineTargets {
-        val scheduledRenovate = event.objectAttributes?.source == "schedule" &&
-            event.builds.orEmpty().any { it.name == "maintain:renovate" }
-        if (scheduledRenovate || event.user?.username?.isGitLabBotUser() == true) {
+        if (isSuppressedPipelineEvent(event)) {
             return PipelineTargets(emptyList())
         }
 
         val (mrIid, cachedParticipants) = findCachedMrParticipants(installationId, event, ctx)
-        val projectWebUrl = event.project?.webUrl
-        val mrUrl = event.mergeRequest?.url
-
         val rawReviewers = cachedParticipants?.reviewerUsernames.orEmpty()
             .filter { it.isNotBlank() && !it.isGitLabBotUser() }
             .distinct()
@@ -581,31 +775,59 @@ class WebhookRequestHandler(
         val fallbackUser = event.user?.username?.takeIf { it.isNotBlank() && !it.isGitLabBotUser() }
             ?: extractCommitAuthorHandle(event)
 
+        val pipelineId = event.objectAttributes?.id
+        val isRecovery = status == "success" &&
+            pipelineId != null &&
+            ctx.webhookService.getPipelineLastTerminalStatus(installationId, pipelineId) == "failed"
+
+        return selectPipelineTargets(
+            status = status,
+            validReviewers = validReviewers,
+            author = author,
+            fallbackUser = fallbackUser,
+            isRecovery = isRecovery,
+            event = event,
+            mrIid = mrIid,
+        )
+    }
+
+    private fun PipelineEvent.isDraftMr(): Boolean {
+        val title = mergeRequest?.title?.trim() ?: return false
+        val clean = title.lowercase()
+        return clean.startsWith("draft:") ||
+            clean.startsWith("[draft]") ||
+            clean.startsWith("(draft)") ||
+            clean.startsWith("wip:") ||
+            clean.startsWith("[wip]") ||
+            clean.startsWith("(wip)")
+    }
+
+    private fun selectPipelineTargets(
+        status: String,
+        validReviewers: List<String>,
+        author: String?,
+        fallbackUser: String?,
+        isRecovery: Boolean,
+        event: PipelineEvent,
+        mrIid: Long?,
+    ): PipelineTargets {
+        val shouldNotifyReviewers = validReviewers.isNotEmpty() && !event.isDraftMr()
+        val recoveryTarget = author ?: fallbackUser
+        val projectWebUrl = event.project?.webUrl
+        val mrUrl = event.mergeRequest?.url
         return when {
-            status == "success" && validReviewers.isNotEmpty() ->
-                PipelineTargets(
-                    validReviewers,
-                    isReviewer = true,
-                    mrIid = mrIid,
-                    projectWebUrl = projectWebUrl,
-                    mrUrl = mrUrl,
-                )
+            status == "success" && shouldNotifyReviewers ->
+                PipelineTargets(validReviewers, isReviewer = true, mrIid, projectWebUrl, mrUrl)
+            status == "success" && isRecovery && recoveryTarget != null ->
+                PipelineTargets(listOf(recoveryTarget), isReviewer = false, mrIid, projectWebUrl, mrUrl)
+            status == "success" ->
+                PipelineTargets(emptyList())
+            status == "manual" && shouldNotifyReviewers ->
+                PipelineTargets(validReviewers, isReviewer = true, mrIid, projectWebUrl, mrUrl)
             author != null ->
-                PipelineTargets(
-                    listOf(author),
-                    isReviewer = false,
-                    mrIid = mrIid,
-                    projectWebUrl = projectWebUrl,
-                    mrUrl = mrUrl,
-                )
+                PipelineTargets(listOf(author), isReviewer = false, mrIid, projectWebUrl, mrUrl)
             fallbackUser != null ->
-                PipelineTargets(
-                    listOf(fallbackUser),
-                    isReviewer = false,
-                    mrIid = mrIid,
-                    projectWebUrl = projectWebUrl,
-                    mrUrl = mrUrl,
-                )
+                PipelineTargets(listOf(fallbackUser), isReviewer = false, mrIid, projectWebUrl, mrUrl)
             else ->
                 PipelineTargets(emptyList())
         }
@@ -658,12 +880,15 @@ class WebhookRequestHandler(
             rawReviewers
         }
 
-    private fun extractCommitAuthorHandle(event: PipelineEvent): String? =
-        event.commit?.author?.name?.takeIf {
+    private fun extractCommitAuthorHandle(event: PipelineEvent): String? {
+        val raw = event.commit?.author?.name?.takeIf {
             it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser()
         } ?: event.commit?.author?.email?.takeIf(String::isNotBlank)
             ?.substringBefore("@")
             ?.takeIf { it.isNotBlank() && !it.contains(" ") && !it.isGitLabBotUser() }
+            ?: return null
+        return if (raw.isValidTelegramHandle()) raw else "Triggered by: $raw"
+    }
 
     private suspend fun sendPipelineReply(
         text: String,
@@ -680,6 +905,7 @@ class WebhookRequestHandler(
                 parseMode = PARSE_MODE,
                 replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
                 disableNotification = disableNotification,
+                disableWebPagePreview = true,
             ),
         )
     }
@@ -825,57 +1051,124 @@ class WebhookRequestHandler(
         ctx.logger.debug { "Sent message $messageId for ${event.objectKind}" }
     }
 
+    private data class PushCardContext(
+        val projectId: Long?,
+        val branch: String?,
+        val afterSha: String?,
+        val mrIid: Long?,
+        val addedCommitCount: Int = 0,
+    )
+
     private suspend fun handlePushEvent(
         installationId: java.util.UUID,
         event: PushEvent,
         chatDetails: ChatDetails,
         ctx: EventProcessingContext,
     ) {
-        val projectId = event.projectId ?: event.project?.id
-        val branch = if (event.ref?.startsWith("refs/heads/") == true) {
-            event.ref.removePrefix("refs/heads/").trim()
-        } else {
-            null
-        }
-        val afterSha = event.after
-
-        val isBranchDelete = afterSha.isNullOrBlank() || afterSha.startsWith("00000000")
-        val mrIid = if (projectId != null && !branch.isNullOrBlank()) {
-            if (isBranchDelete) {
-                ctx.installationRepository.clearActiveMr(installationId, projectId, branch)
-                null
-            } else {
-                ctx.installationRepository.upsertLatestPushSha(installationId, projectId, branch, afterSha)
-                val activeMr = ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)
-                activeMr?.mrIid
+        val pushCtx = resolvePushCardContext(installationId, event, ctx)
+        val isBotPush = event.userUsername?.isGitLabBotUser() == true ||
+            event.userName?.isGitLabBotUser() == true
+        if (isBotPush) {
+            ctx.logger.debug {
+                "Skipping push notification bubble for bot push on ${pushCtx.branch} by ${event.userUsername}"
             }
-        } else {
-            null
-        }
-
-        val isRenovateBotPush = branch?.startsWith("renovate/") == true &&
-            event.userUsername?.matches(Regex("""^(project|group)_\d+_bot.*""", RegexOption.IGNORE_CASE)) == true
-        if (isRenovateBotPush) {
-            ctx.logger.debug { "Skipping push notification bubble for Renovate bot push on $branch" }
             return
         }
 
-        val isMainBranch = branch in listOf("main", "master", "production", "staging")
-        val isSilentPush = !isMainBranch
+        val isProductionBranch = pushCtx.branch in PRODUCTION_BRANCHES
+        val isSilentPush = !isProductionBranch
+        val pushText = ctx.formatter.formatPushEventMessage(event, pushCtx.mrIid)
+        // Production/main pushes always open a dedicated card (never edit an MR lifecycle card).
+        val existingMessageId = if (isProductionBranch) {
+            null
+        } else {
+            pushCtx.editableMessageId(installationId, ctx)
+        }
+        val messageId = ctx.telegramService.sendMessage(
+            Message(
+                chatId = chatDetails.chatId,
+                threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
+                messageId = existingMessageId,
+                text = pushText,
+                parseMode = PARSE_MODE,
+                disableWebPagePreview = true,
+                disableNotification = isSilentPush,
+            ),
+        )
+        trackPushCardAnchors(installationId, pushCtx, messageId, pushText, ctx)
+        ctx.logger.debug {
+            if (existingMessageId != null) {
+                "Updated push card $messageId in-place for branch ${pushCtx.branch}"
+            } else {
+                "Sent message $messageId for push event on branch ${pushCtx.branch}"
+            }
+        }
+    }
 
-        val messageId =
-            ctx.telegramService.sendMessage(
-                Message(
-                    chatId = chatDetails.chatId,
-                    threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
-                    messageId = null,
-                    text = ctx.formatter.formatPushEventMessage(event, mrIid),
-                    parseMode = PARSE_MODE,
-                    disableWebPagePreview = true,
-                    disableNotification = isSilentPush,
-                ),
+    private suspend fun resolvePushCardContext(
+        installationId: java.util.UUID,
+        event: PushEvent,
+        ctx: EventProcessingContext,
+    ): PushCardContext {
+        val projectId = event.projectId ?: event.project?.id
+        val branch = event.ref
+            ?.takeIf { it.startsWith("refs/heads/") }
+            ?.removePrefix("refs/heads/")
+            ?.trim()
+        val afterSha = event.after
+        val isBranchDelete = afterSha.isNullOrBlank() || afterSha.startsWith("00000000")
+        val mrIid = when {
+            projectId == null || branch.isNullOrBlank() -> null
+            isBranchDelete -> {
+                ctx.installationRepository.clearActiveMr(installationId, projectId, branch)
+                null
+            }
+            else -> {
+                ctx.installationRepository.upsertLatestPushSha(installationId, projectId, branch, afterSha)
+                ctx.installationRepository.getActiveMrForBranch(installationId, projectId, branch)?.mrIid
+            }
+        }
+        val addedCommitCount = when {
+            isBranchDelete -> 0
+            else -> (event.totalCommitsCount ?: event.commits?.size ?: 0).coerceAtLeast(0)
+        }
+        return PushCardContext(projectId, branch, afterSha, mrIid, addedCommitCount)
+    }
+
+    private fun PushCardContext.editableMessageId(
+        installationId: java.util.UUID,
+        ctx: EventProcessingContext,
+    ): String? = when {
+        projectId == null || branch.isNullOrBlank() -> null
+        else -> ctx.webhookService.getEditableBranchMessageId(installationId, projectId, branch)
+    }
+
+    private fun trackPushCardAnchors(
+        installationId: java.util.UUID,
+        pushCtx: PushCardContext,
+        messageId: String,
+        pushText: String,
+        ctx: EventProcessingContext,
+    ) {
+        val projectId = pushCtx.projectId ?: return
+        pushCtx.afterSha?.takeIf(String::isNotBlank)?.let { sha ->
+            ctx.webhookService.setCommitMessageId(installationId, projectId, sha, messageId, pushText)
+        }
+        pushCtx.branch?.takeIf(String::isNotBlank)?.let { branch ->
+            ctx.webhookService.setBranchLatestMessageId(
+                installationId = installationId,
+                projectId = projectId,
+                branch = branch,
+                messageId = messageId,
+                tipSha = pushCtx.afterSha,
+                pushHeader = pushText,
+                frozen = false,
+                addedCommitCount = pushCtx.addedCommitCount,
             )
-        ctx.logger.debug { "Sent message $messageId for push event on branch $branch" }
+        }
+        pushCtx.mrIid?.let { mrIid ->
+            ctx.webhookService.setMrMessageId(installationId, projectId, mrIid, messageId)
+        }
     }
 
     private fun PipelineEvent.pipelineOutcomeTime(): java.time.Instant =
@@ -911,9 +1204,12 @@ class WebhookRequestHandler(
         }
 
         val renovateKey = renovateMrKey(installationId, state, event)
+        val squashedCommitCount = resolveSquashedCommitCount(installationId, state, ctx)
+        val formattedMr = ctx.formatter.formatMergeRequestEventMessage(event, squashedCommitCount)
         if (renovateKey != null) {
-            renovateCards.recordMr(renovateKey, requireNotNull(state.mrIid), ctx.formatter.formatEventMessage(event))
+            renovateCards.recordMr(renovateKey, requireNotNull(state.mrIid), formattedMr)
         }
+        val mrCardText = renovateKey?.let { renovateCards.render(it) } ?: formattedMr
         val existingMessageId = resolveMrMessageId(installationId, state, ctx)
 
         if (
@@ -931,15 +1227,35 @@ class WebhookRequestHandler(
                 chatId = chatDetails.chatId,
                 threadId = chatDetails.topicId.toMessageIdOrNull("topicId", ctx.logger),
                 messageId = existingMessageId,
-                text = renovateKey?.let { renovateCards.render(it) } ?: ctx.formatter.formatEventMessage(event),
+                text = mrCardText,
                 parseMode = PARSE_MODE,
                 disableWebPagePreview = true,
             ),
         )
 
         updateMrMessageTracking(installationId, state, messageId, ctx)
+        if (state.action == "merge") {
+            state.sourceBranch?.takeIf(String::isNotBlank)?.let { branch ->
+                state.projectId?.let { projectId ->
+                    ctx.webhookService.freezeBranchCard(installationId, projectId, branch)
+                }
+            }
+        }
 
         sendReviewerChangeReplies(reviewerChange, chatDetails, messageId, event, ctx)
+    }
+
+    private fun resolveSquashedCommitCount(
+        installationId: java.util.UUID,
+        state: MergeRequestState,
+        ctx: EventProcessingContext,
+    ): Int? {
+        if (state.action != "merge") return null
+        val projectId = state.projectId ?: return 1
+        val branch = state.sourceBranch?.takeIf(String::isNotBlank) ?: return 1
+        return ctx.webhookService.getBranchCycleCommitCount(installationId, projectId, branch)
+            .takeIf { it > 0 }
+            ?: 1
     }
 
     private suspend fun resolveMrMessageId(
@@ -949,12 +1265,17 @@ class WebhookRequestHandler(
     ): String? {
         val projectId = state.projectId ?: return null
         val mrIid = state.mrIid ?: return null
-        val inMemoryId = ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
-        if (inMemoryId != null) return inMemoryId
-        if (state.sourceBranch?.startsWith("renovate/") == true) {
-            return renovateCards.findExistingMessageId(installationId, projectId, state.sourceBranch)
-        }
-        return null
+        val renovateId = state.sourceBranch?.takeIf { it.startsWith("renovate/") }
+            ?.let { renovateCards.findExistingMessageId(installationId, projectId, it) }
+
+        return ctx.webhookService.getMrMessageId(installationId, projectId, mrIid)
+            ?: renovateId
+            ?: state.lastCommitSha?.takeIf(String::isNotBlank)?.let {
+                ctx.webhookService.getCommitMessageId(installationId, projectId, it)
+            }
+            ?: state.sourceBranch?.takeIf(String::isNotBlank)?.let {
+                ctx.webhookService.getBranchLatestMessageId(installationId, projectId, it)
+            }
     }
 
     private suspend fun updateMrMessageTracking(
@@ -1058,8 +1379,12 @@ class WebhookRequestHandler(
         ctx: EventProcessingContext,
     ) {
         val mr = "!${event.objectAttributes?.iid ?: "?"}"
-        val addedHumans = change.added.filterNot { it.username?.isGitLabBotUser() == true }
-        val removedHumans = change.removed.filterNot { it.username?.isGitLabBotUser() == true }
+        val addedHumans = change.added.filterNot {
+            it.username?.isGitLabBotUser() == true || it.name?.isGitLabBotUser() == true
+        }
+        val removedHumans = change.removed.filterNot {
+            it.username?.isGitLabBotUser() == true || it.name?.isGitLabBotUser() == true
+        }
         listOfNotNull(
             addedHumans.takeIf(List<ReviewerIdentity>::isNotEmpty)
                 ?.let { "${it.labels()} were added to review $mr." },
@@ -1073,6 +1398,7 @@ class WebhookRequestHandler(
                     text = text,
                     parseMode = PARSE_MODE,
                     replyToMessageId = messageId.toMessageIdOrNull("replyToMessageId", ctx.logger),
+                    disableWebPagePreview = true,
                 ),
             )
         }
@@ -1081,25 +1407,43 @@ class WebhookRequestHandler(
     private fun List<ReviewerIdentity>.labels(): String = joinToString(" ") { it.label }
 
     private fun List<String>.handles(): String =
-        map { it.trim().removePrefix("@") }
+        map { it.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-            .joinToString(" ") { "@$it" }
+            .joinToString(" ") { user ->
+                val clean = user.removePrefix("@")
+                if (clean.isGitLabBotUser() || user.startsWith("Triggered by: ") || !clean.isValidTelegramHandle()) {
+                    user
+                } else if (user.startsWith("@")) {
+                    user
+                } else {
+                    "@$clean"
+                }
+            }
+
+    internal fun String.isValidTelegramHandle(): Boolean =
+        matches(Regex("""^[a-zA-Z][a-zA-Z0-9_]{2,31}$"""))
 
     private fun formatPipelineCompletionReply(
         status: String,
         targets: PipelineTargets,
         isRecovery: Boolean = false,
     ): String {
-        return if (targets.isReviewer && status == "success") {
-            val mrRef = targets.mrRef()
-            val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
-            val base = "${targets.usernames.handles()} $reviewerPrompt".trim()
-            if (isRecovery) "$base Pipeline fixed!" else base
-        } else {
-            val message = randomMessageProvider.getMessageForStatus(status)
-            val base = "${targets.usernames.handles()} $message".trim()
-            if (isRecovery) "$base Pipeline fixed!" else base
+        return when {
+            targets.isReviewer && status == "success" -> {
+                val mrRef = targets.mrRef()
+                val reviewerPrompt = randomMessageProvider.getReviewerPrompt(mrRef)
+                val base = "${targets.usernames.handles()} $reviewerPrompt".trim()
+                if (isRecovery) "$base Pipeline fixed!" else base
+            }
+            isRecovery && status == "success" -> {
+                "${targets.usernames.handles()} Pipeline fixed! ✅".trim()
+            }
+            else -> {
+                val message = randomMessageProvider.getMessageForStatus(status)
+                val base = "${targets.usernames.handles()} $message".trim()
+                if (isRecovery) "$base Pipeline fixed!" else base
+            }
         }
     }
 

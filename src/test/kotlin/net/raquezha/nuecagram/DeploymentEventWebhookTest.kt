@@ -13,6 +13,60 @@ class DeploymentEventWebhookTest : BaseEventTestHelper() {
             assertThat(response).isEqualTo("Webhook received successfully")
         }
 
+    @Test
+    fun testMainPushAfterMergeOpensDedicatedDeploymentCard() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = telegramService as net.raquezha.nuecagram.telegram.MockTelegramService
+            mockTelegramService.reset()
+
+            val featurePush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "101")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature")
+            postWebhook(EVENT_PUSH, featurePush)
+
+            val mergePayload = """
+{
+  "object_kind": "merge_request",
+  "event_type": "merge_request",
+  "user": { "id": 1, "name": "Alice Author", "username": "alice" },
+  "project": { "id": 101, "name": "Gitlab Test", "web_url": "http://example.com/gitlabhq/gitlab-test" },
+  "object_attributes": {
+    "id": 99,
+    "iid": 42,
+    "action": "merge",
+    "source_branch": "feature",
+    "target_branch": "main",
+    "source_project_id": 101,
+    "target_project_id": 101,
+    "title": "Feature branch",
+    "url": "http://example.com/gitlabhq/gitlab-test/-/merge_requests/42",
+    "merge_params": { "squash_commit_message": "Feature branch" }
+  },
+  "reviewers": [{ "id": 2, "name": "bob", "username": "bob" }]
+}
+            """.trimIndent()
+            postWebhook(EVENT_MERGE, mergePayload)
+
+            val mainPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "101")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+            postWebhook(EVENT_PUSH, mainPush)
+
+            val messages = kotlinx.coroutines.runBlocking {
+                repeat(100) {
+                    val sent = mockTelegramService.sentMessages()
+                    if (sent.size >= 3) return@runBlocking sent
+                    kotlinx.coroutines.delay(50)
+                }
+                mockTelegramService.sentMessages()
+            }
+            assertThat(messages).hasSize(3)
+            assertThat(messages[1].text).contains("Merged (Squashed")
+            assertThat(messages[2].messageId).isNull()
+            assertThat(messages[2].text).contains("main")
+        }
+
     companion object {
         val SAMPLE_PAYLOAD =
             """

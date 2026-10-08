@@ -9,6 +9,9 @@ import org.junit.Test
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.GlobalContext.startKoin
 import org.koin.core.context.GlobalContext.stopKoin
+import org.gitlab4j.api.utils.JacksonJson
+import org.gitlab4j.api.webhook.PipelineEvent
+import org.gitlab4j.api.webhook.PushEvent
 
 @Suppress("TooManyFunctions")
 class PipelineEventWebhookTest : BaseEventTestHelper() {
@@ -62,6 +65,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.disableWebPagePreview).isTrue()
             assertThat(completionReply?.text).contains(
                 "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>"
             )
@@ -106,6 +110,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             assertThat(completionReply).isNotNull()
             assertThat(completionReply?.text).contains("@bob @charlie")
             assertThat(completionReply?.text).contains("!2923")
+            assertThat(completionReply?.disableWebPagePreview).isTrue()
             assertThat(completionReply?.text).contains(
                 "<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/2923\">!2923</a>",
             )
@@ -194,7 +199,7 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
         }
 
     @Test
-    fun testOtherScheduledPipelineStillMentionsHuman() =
+    fun testOtherScheduledPipelineDoesNotMentionHumanOnSuccess() =
         testApplication {
             configureTestApplication()
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
@@ -203,18 +208,33 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val payload = SAMPLE_PAYLOAD_SUCCESS.replace("\"source\": \"push\"", "\"source\": \"schedule\"")
             postWebhook(EVENT_PIPELINE, payload)
 
-            val messages = waitForMessages(mockTelegramService, 2)
-            assertThat(messages.any { it.text.contains("@raquezha") }).isTrue()
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
         }
 
     @Test
-    fun testHumanNamedR3novateStillReceivesCompletionReply() =
+    fun testOtherScheduledPipelineMentionsHumanOnFailure() =
         testApplication {
             configureTestApplication()
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
-            val payload = SAMPLE_PAYLOAD_SUCCESS.replace("\"username\": \"raquezha\"", "\"username\": \"r3novate\"")
+            val payload = SAMPLE_PAYLOAD_FAILED.replace("\"source\": \"push\"", "\"source\": \"schedule\"")
+            postWebhook(EVENT_PIPELINE, payload)
+
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages.any { it.text.contains("@raquezha") }).isTrue()
+        }
+
+    @Test
+    fun testHumanNamedR3novateReceivesFailureReply() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val payload = SAMPLE_PAYLOAD_FAILED.replace("\"username\": \"raquezha\"", "\"username\": \"r3novate\"")
             postWebhook(EVENT_PIPELINE, payload)
 
             val messages = waitForMessages(mockTelegramService, 2)
@@ -298,17 +318,27 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
             // First run: pipeline passes
-            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
             val initialMessages = waitForMessages(mockTelegramService, 2)
             assertThat(initialMessages.size).isEqualTo(2)
             val initialCard = initialMessages[0]
             val initialReply = initialMessages[1]
             assertThat(initialReply.replyToMessageId).isEqualTo(1L)
-            assertThat(initialReply.text).contains("@raquezha")
+            assertThat(initialReply.text).contains("@bob")
 
-            // Second run: retried job finishes and pipeline succeeds again (same pipelineId 53481)
-            val retriedPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"duration\": 178", "\"duration\": 210")
+            // Second run: retried job finishes and pipeline succeeds again (same pipelineId 8888)
+            val retriedPayload = SAMPLE_PAYLOAD_MR_SUCCESS.replace("\"duration\": 300", "\"duration\": 350")
             postWebhook(EVENT_PIPELINE, retriedPayload)
             val updatedMessages = waitForMessages(mockTelegramService, 3)
 
@@ -359,21 +389,30 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
             mockTelegramService.reset()
 
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
             // Pipeline 1 passes
-            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
             val messages1 = waitForMessages(mockTelegramService, 2)
             assertThat(messages1.size).isEqualTo(2)
 
             // Sibling/distinct Pipeline 2 on same commit also passes and is NOT silenced
-            val siblingPayload = SAMPLE_PAYLOAD_SUCCESS
-                .replace("\"id\": 53481", "\"id\": 53482")
-                .replace("\"source\": \"push\"", "\"source\": \"merge_request_event\"")
+            val siblingPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"id\": 8888", "\"id\": 8889")
             postWebhook(EVENT_PIPELINE, siblingPayload)
             val messages2 = waitForMessages(mockTelegramService, 4)
             assertThat(messages2.size).isEqualTo(4)
 
             // Retrying pipeline 1 edits pipeline 1 in-place and does NOT send another reply
-            val retriedPayload = SAMPLE_PAYLOAD_SUCCESS.replace("\"duration\": 178", "\"duration\": 210")
+            val retriedPayload = SAMPLE_PAYLOAD_MR_SUCCESS.replace("\"duration\": 300", "\"duration\": 350")
             postWebhook(EVENT_PIPELINE, retriedPayload)
             val messages3 = waitForMessages(mockTelegramService, 5)
             assertThat(messages3.size).isEqualTo(5)
@@ -402,11 +441,377 @@ class PipelineEventWebhookTest : BaseEventTestHelper() {
             }
 
             postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
-            val messages = waitForMessages(mockTelegramService, 2)
+            val messages = waitForMessages(mockTelegramService, 1)
             val card = messages[0]
             val expectedMrLink =
                 "<b>main</b> (<a href=\"https://gitlab.com/android-team/customer-app/-/merge_requests/42\">!42</a>)"
             assertThat(card.text).contains(expectedMrLink)
+        }
+
+    @Test
+    fun testSoloPassingPipelineEmitsZeroReplyBubbles() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
+        }
+
+    @Test
+    fun testDraftMrPipelineSuccessSuppressesReviewerPings() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob", "charlie"),
+                )
+            }
+
+            val draftPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"title\": \"Add feature\"", "\"title\": \"Draft: Add feature\"")
+            postWebhook(EVENT_PIPELINE, draftPayload)
+
+            waitForMessages(mockTelegramService, 1)
+            kotlinx.coroutines.delay(150)
+            assertThat(mockTelegramService.sentMessages().filter { it.replyToMessageId != null }).isEmpty()
+        }
+
+    @Test
+    fun testDraftMrPipelineFailureStillPingsAuthor() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2924L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            val draftFailedPayload = SAMPLE_PAYLOAD_MR_FAILED
+                .replace("\"title\": \"Add feature\"", "\"title\": \"Draft: Add feature\"")
+            postWebhook(EVENT_PIPELINE, draftFailedPayload)
+
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages.any { it.text.contains("@alice") }).isTrue()
+        }
+
+    @Test
+    fun testPipelineAdoptsExistingPushMessageByCommitSha() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val successPipeline = JacksonJson().unmarshal(PipelineEvent::class.java, SAMPLE_PAYLOAD_SUCCESS)
+            val pipelineSha = requireNotNull(successPipeline.objectAttributes?.sha)
+            val pushEvent = JacksonJson().unmarshal(PushEvent::class.java, PushEventWebhookTest.SAMPLE_PAYLOAD)
+            val pushSha = requireNotNull(pushEvent.after)
+
+            val pushPayload = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace(pushSha, pipelineSha)
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+
+            postWebhook(EVENT_PUSH, pushPayload)
+            val pushMessages = waitForMessages(mockTelegramService, 1)
+            assertThat(pushMessages).hasSize(1)
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_SUCCESS)
+            val allMessages = waitForMessages(mockTelegramService, 2)
+            assertThat(allMessages).hasSize(2)
+            assertThat(allMessages.last().messageId).isEqualTo("1")
+            assertThat(allMessages.last().text).contains("📤 Push to")
+            assertThat(allMessages.last().text).contains("Pipeline")
+            assertThat(allMessages.last().text).contains("prepare")
+            assertThat(allMessages.last().text).contains("Enable crashlytics collection")
+        }
+
+    @Test
+    fun testRapidDoublePushEditsSameCardInPlace() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val pushEvent = JacksonJson().unmarshal(PushEvent::class.java, PushEventWebhookTest.SAMPLE_PAYLOAD)
+            val firstSha = requireNotNull(pushEvent.after)
+            val secondSha = firstSha.dropLast(4) + "abcd"
+
+            val firstPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature/slice4")
+            postWebhook(EVENT_PUSH, firstPush)
+            waitForMessages(mockTelegramService, 1)
+
+            val secondPush = firstPush
+                .replace(firstSha, secondSha)
+            postWebhook(EVENT_PUSH, secondPush)
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages).hasSize(2)
+            assertThat(messages[0].messageId).isNull()
+            assertThat(messages[1].messageId).isEqualTo("1")
+            assertThat(messages[1].text).contains("📤 Push to")
+        }
+
+    @Test
+    fun testSupersededCanceledPipelineIsIgnoredAfterTipAdvances() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val successPipeline = JacksonJson().unmarshal(PipelineEvent::class.java, SAMPLE_PAYLOAD_SUCCESS)
+            val tipSha = requireNotNull(successPipeline.objectAttributes?.sha)
+            val pushEvent = JacksonJson().unmarshal(PushEvent::class.java, PushEventWebhookTest.SAMPLE_PAYLOAD)
+            val firstSha = requireNotNull(pushEvent.after)
+
+            val firstPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace(firstSha, tipSha)
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature/slice4")
+            postWebhook(EVENT_PUSH, firstPush)
+            waitForMessages(mockTelegramService, 1)
+
+            val nextSha = tipSha.dropLast(4) + "abcd"
+            val secondPush = firstPush.replace(tipSha, nextSha)
+            postWebhook(EVENT_PUSH, secondPush)
+            waitForMessages(mockTelegramService, 2)
+
+            val canceledOldTip = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"status\": \"success\"", "\"status\": \"canceled\"")
+                .replace("\"detailed_status\": \"passed\"", "\"detailed_status\": \"canceled\"")
+                .replace("\"ref\": \"main\"", "\"ref\": \"feature/slice4\"")
+            postWebhook(EVENT_PIPELINE, canceledOldTip)
+
+            kotlinx.coroutines.delay(150)
+            val messages = mockTelegramService.sentMessages()
+            assertThat(messages).hasSize(2)
+            assertThat(messages.none { it.text.contains("canceled") }).isTrue()
+        }
+
+    @Test
+    fun testOlderPipelineCannotRevertNewerBranchCard() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val newerSuccess = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"ref\": \"main\"", "\"ref\": \"feature/mono\"")
+            postWebhook(EVENT_PIPELINE, newerSuccess)
+            val afterNewer = waitForMessages(mockTelegramService, 1)
+            assertThat(afterNewer).hasSize(1)
+            assertThat(afterNewer[0].text).contains("passed")
+
+            val olderSuccess = SAMPLE_PAYLOAD_SUCCESS
+                .replace("\"id\": 53481", "\"id\": 53480")
+                .replace("\"iid\": 2925", "\"iid\": 2924")
+                .replace("\"ref\": \"main\"", "\"ref\": \"feature/mono\"")
+                .replace("\"status\": \"success\"", "\"status\": \"failed\"")
+                .replace("\"detailed_status\": \"passed\"", "\"detailed_status\": \"failed\"")
+            postWebhook(EVENT_PIPELINE, olderSuccess)
+
+            kotlinx.coroutines.delay(150)
+            val messages = mockTelegramService.sentMessages()
+            assertThat(messages).hasSize(1)
+            assertThat(messages[0].text).contains("passed")
+            assertThat(messages[0].text).doesNotContain("failed")
+        }
+
+    @Test
+    fun testRunningBuildShowsRunnerNameAndStage() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val runningWithRunner = SAMPLE_PAYLOAD_RUNNING.replaceFirst(
+                Regex("(\"name\": \"ktlint\",[\\s\\S]*?)\"runner\": null,"),
+                "$1\"runner\": {" +
+                    "\"id\": 202," +
+                    "\"description\": \"Android Team Runner - Mac Shell 6\"," +
+                    "\"runner_type\": \"group_type\"," +
+                    "\"active\": true," +
+                    "\"is_shared\": false," +
+                    "\"tags\": [\"android\"]" +
+                    "},",
+            )
+
+            postWebhook(EVENT_PIPELINE, runningWithRunner)
+            val messages = waitForMessages(mockTelegramService, 1)
+            assertThat(messages[0].text).contains("running on Android Team Runner - Mac Shell 6")
+            assertThat(messages[0].text).contains("(test)")
+        }
+
+    @Test
+    fun testMainPushCreatesDedicatedCardNotEditingFeatureCard() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val featurePush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/feature/ship")
+            postWebhook(EVENT_PUSH, featurePush)
+            waitForMessages(mockTelegramService, 1)
+
+            val mainPush = PushEventWebhookTest.SAMPLE_PAYLOAD
+                .replace("282", "105")
+                .replace("refs/heads/nuecalytics", "refs/heads/main")
+            postWebhook(EVENT_PUSH, mainPush)
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages).hasSize(2)
+            assertThat(messages[0].messageId).isNull()
+            assertThat(messages[1].messageId).isNull()
+            assertThat(messages[1].text).contains("main")
+        }
+
+    @Test
+    fun testManualDeployOnFrozenCardPingsOnlyTriggerHuman() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+            val initialMessages = waitForMessages(mockTelegramService, 2)
+            assertThat(initialMessages).hasSize(2)
+            assertThat(initialMessages[1].text).contains("@bob")
+
+            val manualDeployPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"id\": 8888", "\"id\": 8889")
+                .replace("\"username\": \"alice\"", "\"username\": \"ralpheufracio\"")
+                .replace(
+                    "\"stages\": [\"test\"],",
+                    "\"stages\": [\"test\", \"deploy\"],",
+                )
+                .replace(
+                    "\"object_attributes\": {",
+                    "\"builds\": [" +
+                        "{" +
+                        "\"id\": 99991," +
+                        "\"stage\": \"deploy\"," +
+                        "\"name\": \"deploy:firebase:review\"," +
+                        "\"status\": \"success\"," +
+                        "\"manual\": true" +
+                        "}]," +
+                        "\"object_attributes\": {",
+                )
+            postWebhook(EVENT_PIPELINE, manualDeployPayload)
+            val allMessages = waitForMessages(mockTelegramService, 4)
+            assertThat(allMessages).hasSize(4)
+            assertThat(allMessages[3].text).contains("↳ 🚀 deploy:firebase:review passed! Ready for you @ralpheufracio")
+            assertThat(allMessages[3].text).doesNotContain("@bob")
+        }
+
+    @Test
+    fun testManualDeployOnFrozenCardByBotEmitsZeroPings() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            kotlinx.coroutines.runBlocking {
+                installationRepository.upsertMrParticipants(
+                    installationId = installation.id,
+                    projectId = 105L,
+                    mrIid = 2923L,
+                    authorUsername = "alice",
+                    reviewerUsernames = listOf("bob"),
+                )
+            }
+
+            postWebhook(EVENT_PIPELINE, SAMPLE_PAYLOAD_MR_SUCCESS)
+            waitForMessages(mockTelegramService, 2)
+
+            val botDeployPayload = SAMPLE_PAYLOAD_MR_SUCCESS
+                .replace("\"id\": 8888", "\"id\": 8889")
+                .replace("\"username\": \"alice\"", "\"username\": \"project_105_bot\"")
+                .replace(
+                    "\"stages\": [\"test\"],",
+                    "\"stages\": [\"test\", \"deploy\"],",
+                )
+                .replace(
+                    "\"object_attributes\": {",
+                    "\"builds\": [" +
+                        "{" +
+                        "\"id\": 99991," +
+                        "\"stage\": \"deploy\"," +
+                        "\"name\": \"deploy:firebase:review\"," +
+                        "\"status\": \"success\"," +
+                        "\"manual\": true" +
+                        "}]," +
+                        "\"object_attributes\": {",
+                )
+            postWebhook(EVENT_PIPELINE, botDeployPayload)
+            kotlinx.coroutines.delay(150)
+            val replies = mockTelegramService.sentMessages().filter { it.replyToMessageId != null }
+            assertThat(replies).hasSize(1)
+        }
+
+    @Test
+    fun testMatrixJobsCollapsedWhenOverLimit() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val buildsJson = (1..15).joinToString(",") { i ->
+                """{"id": $i, "stage": "test", "name": "matrix-test-$i", "status": "success"}"""
+            }
+            val matrixPayload = SAMPLE_PAYLOAD_SUCCESS.replace(
+                "\"builds\": [",
+                "\"builds\": [$buildsJson,",
+            )
+            postWebhook(EVENT_PIPELINE, matrixPayload)
+            val messages = waitForMessages(mockTelegramService, 1)
+            assertThat(messages[0].text).contains("passed jobs hidden...")
+        }
+
+    @Test
+    fun testUnmappedUserFormattedAsPlainTextWithoutAtPrefix() =
+        testApplication {
+            configureTestApplication()
+            val mockTelegramService = (telegramService as net.raquezha.nuecagram.telegram.MockTelegramService)
+            mockTelegramService.reset()
+
+            val failedPayload = SAMPLE_PAYLOAD_FAILED
+                .replace("\"id\": 53480", "\"id\": 53499")
+                .replace("\"username\": \"raquezha\"", "\"username\": \"dev.alex\"")
+
+            postWebhook(EVENT_PIPELINE, failedPayload)
+            val messages = waitForMessages(mockTelegramService, 2)
+            assertThat(messages).hasSize(2)
+            assertThat(messages[1].text).contains("dev.alex")
+            assertThat(messages[1].text).doesNotContain("@dev.alex")
         }
 
     private fun waitForMessages(

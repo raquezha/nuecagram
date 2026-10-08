@@ -85,6 +85,49 @@ class TelegramServiceImplTest {
     )
 
     @Test
+    fun threadNotFoundFallsBackToRootChatSilently() = testApplication {
+        val requests = mutableListOf<String>()
+        externalServices {
+            hosts("https://api.telegram.org") {
+                routing {
+                    post("/bottest/sendMessage") {
+                        requests += call.receiveText()
+                        if (requests.size == 1) {
+                            call.respondText(
+                                """{"ok":false,"description":"Bad Request: message thread not found"}""",
+                                ContentType.Application.Json,
+                                HttpStatusCode.BadRequest,
+                            )
+                        } else {
+                            call.respondText(
+                                """{"ok":true,"result":{"message_id":101}}""",
+                                ContentType.Application.Json,
+                                HttpStatusCode.OK,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val config = mockk<ConfigWithSecrets>()
+        every { config.botApi } returns "test"
+        val productionClient = createClient { expectSuccess = true }
+        val service = TelegramServiceImpl(productionClient, config)
+        val result = service.sendMessage(
+            Message(
+                chatId = "123",
+                threadId = 456L,
+                text = "hello",
+                disableNotification = true,
+            ),
+        )
+        assertThat(result).isEqualTo("101")
+        assertThat(requests).hasSize(2)
+        assertThat(requests[0]).contains("\"message_thread_id\":456")
+        assertThat(requests[1]).doesNotContain("message_thread_id")
+    }
+
+    @Test
     fun failedReplacementIsNotRetriedRecursively() = checkResponse(
         HttpStatusCode.BadRequest,
         """{"ok":false,"description":"Bad Request: message to edit not found"}""",
